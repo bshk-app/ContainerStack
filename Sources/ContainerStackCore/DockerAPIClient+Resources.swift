@@ -294,7 +294,7 @@ public extension DockerAPIClient {
         value.addingPercentEncoding(withAllowedCharacters: .dockerPathSegment) ?? value
     }
 
-    private static func pathEncoded(_ value: String) -> String {
+    static func pathEncoded(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .dockerPathSegment) ?? value
     }
 }

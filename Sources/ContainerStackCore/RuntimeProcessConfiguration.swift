@@ -40,6 +40,64 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
     ///
     /// A system install is still honoured when nothing is vendored, which keeps
     /// a development checkout working without a staged bundle.
+    /// The vendored runtime inside the app bundle, or nil outside a staged bundle.
+    ///
+    /// Works for both executables that need it: `Contents/MacOS/ContainerStack` and
+    /// `Contents/Helpers/ContainerStackRuntime` sit two levels below `Contents`.
+    public static func bundledInstallRoot(
+        forExecutableAt executable: URL?,
+        exists: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
+    ) -> String? {
+        guard let executable else { return nil }
+        let root = executable
+            .resolvingSymlinksInPath()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Resources/container")
+        return exists(root.appending(path: "bin/container").path) ? root.path : nil
+    }
+
+    /// The single owner of runtime resolution.
+    ///
+    /// The binary and its install root are decided together, and the
+    /// `CONTAINERSTACK_CONTAINER_PATH` override is read here rather than at each caller.
+    /// Deriving them separately is how they drift apart — which is exactly what the helper's
+    /// own comment warns about, and what every other caller was doing.
+    public static func make(
+        socktainerPath: String,
+        socketPath: String = RuntimeProcessConfiguration.defaultSocketPath,
+        bundledInstallRoot: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        exists: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
+    ) -> RuntimeProcessConfiguration {
+        // The override exists to rescue a machine the search order cannot reach, so it wins.
+        // It carries no install root: it may point at a copy unrelated to this bundle.
+        if let override = environment["CONTAINERSTACK_CONTAINER_PATH"], !override.isEmpty {
+            return RuntimeProcessConfiguration(
+                containerPath: override,
+                socktainerPath: socktainerPath,
+                socketPath: socketPath,
+                containerInstallRoot: nil
+            )
+        }
+
+        if let bundledInstallRoot, exists("\(bundledInstallRoot)/bin/container") {
+            return RuntimeProcessConfiguration(
+                containerPath: "\(bundledInstallRoot)/bin/container",
+                socktainerPath: socktainerPath,
+                socketPath: socketPath,
+                containerInstallRoot: bundledInstallRoot
+            )
+        }
+
+        return RuntimeProcessConfiguration(
+            containerPath: containerSearchPaths.first(where: exists) ?? containerSearchPaths[0],
+            socktainerPath: socktainerPath,
+            socketPath: socketPath,
+            containerInstallRoot: nil
+        )
+    }
+
     public static func resolvedContainerPath(
         bundledInstallRoot: String? = nil,
         exists: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)

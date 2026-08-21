@@ -97,7 +97,8 @@ public enum DockerHTTPResponseParser {
                 maxSplits: 1,
                 omittingEmptySubsequences: true
             ).first,
-            let size = Int(sizeToken, radix: 16)
+            let size = Int(sizeToken, radix: 16),
+            size >= 0
             else {
                 throw DockerHTTPParseError.invalidChunkedBody
             }
@@ -107,8 +108,14 @@ public enum DockerHTTPResponseParser {
                 return decoded
             }
 
-            let chunkEnd = offset + size
-            guard chunkEnd + 2 <= data.count,
+            // A chunk-size line is attacker- or corruption-controlled and parses up to
+            // Int.max, so `offset + size` can overflow. Swift traps on overflow, which would
+            // crash the process instead of reporting a malformed body.
+            let (chunkEnd, chunkEndOverflowed) = offset.addingReportingOverflow(size)
+            let (terminatorEnd, terminatorOverflowed) = chunkEnd.addingReportingOverflow(2)
+            guard !chunkEndOverflowed,
+                  !terminatorOverflowed,
+                  terminatorEnd <= data.count,
                   data[chunkEnd] == 13,
                   data[chunkEnd + 1] == 10
             else {

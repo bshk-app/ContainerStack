@@ -37,3 +37,26 @@ struct DockerHTTPResponseParserTests {
         }
     }
 }
+
+extension DockerHTTPResponseParserTests {
+    /// A chunk-size line parses as hex up to `Int.max`, so `offset + size` can overflow.
+    /// Swift traps on overflow, so before the guard this crashed the process instead of
+    /// reporting a malformed body.
+    @Test
+    func oversizedChunkSizeThrowsInsteadOfTrapping() throws {
+        let raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n7fffffffffffffff\r\nabc\r\n0\r\n\r\n"
+        #expect(throws: DockerHTTPParseError.invalidChunkedBody) {
+            try DockerHTTPResponseParser.parse(Data(raw.utf8))
+        }
+    }
+
+    /// `Int(_:radix:)` accepts a leading minus, and a negative size built a reversed
+    /// `offset..<chunkEnd` range, which also trapped.
+    @Test
+    func negativeChunkSizeThrowsInsteadOfTrapping() throws {
+        let raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n-1\r\nabc\r\n0\r\n\r\n"
+        #expect(throws: DockerHTTPParseError.invalidChunkedBody) {
+            try DockerHTTPResponseParser.parse(Data(raw.utf8))
+        }
+    }
+}

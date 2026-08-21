@@ -1,5 +1,7 @@
 # ContainerStack
 
+[![CI](https://github.com/bshk-app/ContainerStack/actions/workflows/ci.yml/badge.svg)](https://github.com/bshk-app/ContainerStack/actions/workflows/ci.yml)
+
 A native macOS app and `cstack` CLI for Apple Container, with a Docker-compatible
 socket via [socktainer](https://github.com/beshkenadze/socktainer).
 

@@ -1,0 +1,105 @@
+version: "3"
+
+# ContainerStack build and release entry points.
+#
+# Secrets live in .env as `av://` references and are resolved at run time by
+# `av env`, so no real credential is ever written to disk. That is why the
+# release tasks wrap their script in `av env --` rather than using task's own
+# `dotenv:` -- dotenv would hand zamokctl the literal string "av://...".
+
+vars:
+  APP_NAME: ContainerStack
+  BUILD_DIR: "{{.ROOT_DIR}}/build"
+  OUT_DIR: "{{.ROOT_DIR}}/out"
+  APP_PATH: "{{.ROOT_DIR}}/build/ContainerStack.app"
+  SHORT_VERSION:
+    sh: tr -d '[:space:]' < VERSION
+  BUILD_NUMBER:
+    sh: ./scripts/build-number.sh
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  version:
+    desc: Print the version this working tree would release
+    silent: true
+    cmds:
+      - |
+        printf 'marketing version  %s   (VERSION)\n' '{{.SHORT_VERSION}}'
+        printf 'build number       %s   (BUILD_NUMBER_BASE + commit count)\n' '{{.BUILD_NUMBER}}'
+        printf '\nZamok rejects a duplicate build number + channel across every status,\n'
+        printf 'so each publish needs a new commit.\n'
+
+  runtime:check:
+    desc: Report which socktainer build would be staged into the bundle
+    silent: true
+    cmds:
+      # Under `av env` so SOCKTAINER_BINARY from .env is honoured. Without it
+      # this checked ~/.local/bin while the release staged from somewhere else
+      # entirely — reporting on a binary that was never going to ship.
+      - av env -- ./scripts/check-socktainer.sh
+
+  test:
+    desc: Run the Swift test suites
+    cmds:
+      - swift test
+
+  build:
+    desc: Debug build of every product
+    cmds:
+      - swift build --product ContainerStack
+      - swift build --product cstack
+      - swift build --product ContainerStackRuntime
+
+  build:app:
+    desc: Stage an unsigned .app bundle into build/
+    deps: [runtime:check]
+    cmds:
+      - |
+        APP_VERSION='{{.SHORT_VERSION}}' \
+        BUILD_NUMBER='{{.BUILD_NUMBER}}' \
+          av env -- ./scripts/stage-containerstack-app.sh '{{.APP_PATH}}'
+
+  build:signed:
+    desc: Stage a standalone Developer ID signed .app (release:zamok signs through zamokctl instead)
+    deps: [runtime:check]
+    cmds:
+      - av env -- ./scripts/stage-signed.sh '{{.APP_PATH}}' '{{.SHORT_VERSION}}' '{{.BUILD_NUMBER}}'
+
+  signing:notary-profile:
+    desc: Store and verify the ContainerStack notary profile through AgentVault (one-time per Mac)
+    cmds:
+      - av env --profile notarize -- ./scripts/configure-notary-profile.sh
+
+  release:notes:
+    desc: Print the CHANGELOG section that this release would ship
+    silent: true
+    cmds:
+      - ./scripts/extract-release-notes.sh '{{.SHORT_VERSION}}' CHANGELOG.md
+
+  release:zamok:
+    desc: >-
+      ONE-COMMAND RELEASE — stage unsigned app, then zamokctl codesign → notarize
+      → staple → DMG → Zamok/Sparkle publish → GitHub Release mirror. Config
+      comes from .env, so no arguments. Pass PUBLISH=0 for matching drafts.
+    deps: [runtime:check]
+    cmds:
+      - av env -- ./scripts/release-zamok.sh
+    env:
+      PUBLISH: '{{if hasKey . "PUBLISH"}}{{.PUBLISH}}{{else}}1{{end}}'
+
+  release:github:
+    desc: Re-create or repair GitHub from the exact DMG/notes recorded by release:zamok
+    cmds:
+      - av env -- ./scripts/publish-github-release.sh
+    env:
+      PUBLISH: '{{if hasKey . "PUBLISH"}}{{.PUBLISH}}{{else}}1{{end}}'
+
+  clean:
+    desc: Remove build and release output
+    cmds:
+      - rm -rf '{{.BUILD_DIR}}' '{{.OUT_DIR}}' .build

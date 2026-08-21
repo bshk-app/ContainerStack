@@ -1,0 +1,33 @@
+.build/
+build/
+DerivedData/
+
+Derived/
+
+ContainerStack.xcodeproj/
+ContainerStack.xcworkspace/
+
+.tuist-cache/
+
+# Python bytecode from scripts/
+__pycache__/
+
+# Timestamped run dumps from the conformance harnesses.
+# Rerun the named script to regenerate the rows.
+/apiv2-conformance-*.tsv
+/docker-api-coverage-*.tsv
+
+# Vendored spec copy pulled for local probing; scripts/docker-api-coverage.sh fetches its own.
+/test-conformance/
+
+# Operator-only. Stay on disk; not part of the public tree.
+/agentvault.yaml
+/.claude/skills/
+/claudedocs/
+
+# Release configuration. Holds av:// references rather than literal secrets, but it is
+# per-machine (notary key path, signing identity), so .env.example is what ships.
+/.env
+
+# zamokctl packaging output: DMG, manifest.json, extracted release notes.
+/out/

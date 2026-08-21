@@ -1,0 +1,14 @@
+# Copy to agentvault.yaml (gitignored) and replace ITEM_ID with the 1Password
+# item that holds the Apple notarization credentials. AgentVault references use
+# av://1p, never 1Password's op:// scheme.
+profiles:
+  notarize:
+    NOTARY_APPLE_ID:
+      ref: av://1p/Private/ITEM_ID/username
+      tier: normal
+    NOTARY_PASSWORD:
+      ref: av://1p/Private/ITEM_ID/xcode notarize
+      tier: dangerous
+    NOTARY_TEAM_ID:
+      ref: av://1p/Private/ITEM_ID/Team ID
+      tier: normal

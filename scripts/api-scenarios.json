@@ -1,0 +1,254 @@
+{
+  "_comment": [
+    "Docker-native conformance scenarios for scripts/api-diff.py.",
+    "Every expectation is observed from a live dockerd at run time, never written",
+    "here — so these cases stay correct as the Engine API moves. Add a case by",
+    "appending a scenario; mark the steps whose responses should be compared with",
+    "\"compare\": true. Setup and teardown steps are left uncompared.",
+    "Placeholders: {{ns}} run-unique namespace, {{image}} test image,",
+    "plus anything a step captures. Captures resolve per-daemon, so ids differ",
+    "between the two sides without breaking the comparison."
+  ],
+  "_expected_comment": [
+    "Divergences the target cannot close, matched with fnmatch against the field",
+    "path. Suppressed, never dropped: the run prints how many were filtered and",
+    "--no-expected shows them, because the line between 'does not apply to this",
+    "runtime' and 'not implemented yet' moves as the target matures.",
+    "Add a pattern only with the reason it can never be satisfied — not because",
+    "the finding is currently inconvenient."
+  ],
+  "expected_divergences": [
+    ".GraphDriver*",
+
+    ".Driver", ".DriverStatus", ".Plugins", ".Runtimes", ".DefaultRuntime",
+    ".CgroupDriver", ".CgroupVersion", ".MemoryLimit", ".SwapLimit",
+    ".CpuCfsPeriod", ".CpuCfsQuota", ".CPUShares", ".CPUSet", ".PidsLimit",
+    ".IPv4Forwarding", ".BridgeNfIptables", ".BridgeNfIp6tables",
+    ".OomKillDisable", ".NFd", ".NGoroutines", ".NEventsListener",
+    ".LoggingDriver", ".RegistryConfig*", ".IndexServerAddress",
+    ".GenericResources", ".HttpProxy", ".HttpsProxy", ".NoProxy",
+    ".SecurityOptions*", ".InitBinary", ".ContainerdCommit*", ".RuncCommit*",
+    ".InitCommit*", ".KernelVersion", ".OperatingSystem", ".OSVersion",
+    ".OSType", ".Architecture", ".SystemTime", ".ServerVersion",
+
+    ".GoVersion", ".Components*", ".BuildTime", ".GitCommit", ".Experimental",
+
+    ".Labels.org*", ".Config.Labels.org*"
+  ],
+  "scenarios": [
+    {
+      "name": "handshake: version and info field shapes",
+      "steps": [
+        { "method": "GET", "path": "/version", "compare": true, "label": "GET /version" },
+        { "method": "GET", "path": "/info", "compare": true, "label": "GET /info" }
+      ]
+    },
+    {
+      "name": "wrong method on an existing route returns 405",
+      "steps": [
+        { "method": "POST", "path": "/info", "compare": true, "label": "POST /info (expect 405)" },
+        { "method": "DELETE", "path": "/version", "compare": true, "label": "DELETE /version (expect 405)" }
+      ]
+    },
+    {
+      "name": "container: created but never started",
+      "steps": [
+        { "method": "POST", "path": "/images/create?fromImage={{image}}" },
+        {
+          "method": "POST", "path": "/containers/create?name={{ns}}-created",
+          "body": { "Image": "{{image}}", "Cmd": ["sleep", "60"] },
+          "capture": { "cid": ".Id" },
+          "compare": true, "label": "POST /containers/create"
+        },
+        {
+          "method": "GET", "path": "/containers/{{cid}}/json",
+          "compare": true, "label": "inspect a created container"
+        },
+        {
+          "method": "GET", "path": "/containers/json?all=true&filters=%7B%22status%22%3A%5B%22created%22%5D%7D",
+          "compare": true, "label": "list filter status=created"
+        },
+        { "method": "DELETE", "path": "/containers/{{cid}}?force=true&v=true" }
+      ]
+    },
+    {
+      "name": "container: full lifecycle with wait and logs",
+      "steps": [
+        { "method": "POST", "path": "/images/create?fromImage={{image}}" },
+        {
+          "method": "POST", "path": "/containers/create?name={{ns}}-life",
+          "body": { "Image": "{{image}}", "Cmd": ["sh", "-c", "echo hello-stdout; echo hello-stderr >&2; exit 7"] },
+          "capture": { "cid": ".Id" }
+        },
+        { "method": "POST", "path": "/containers/{{cid}}/start" },
+        {
+          "method": "POST", "path": "/containers/{{cid}}/wait?condition=not-running",
+          "compare": true, "label": "POST /containers/{id}/wait"
+        },
+        {
+          "method": "GET", "path": "/containers/{{cid}}/json",
+          "await": { "path": "/containers/{{cid}}/json", "field": ".State.Running", "value": "false", "timeout": 40 },
+          "compare": true, "label": "inspect after exit (State, ExitCode)"
+        },
+        { "method": "DELETE", "path": "/containers/{{cid}}?force=true&v=true" }
+      ]
+    },
+    {
+      "name": "compose discovery: labels round-trip and filter",
+      "steps": [
+        { "method": "POST", "path": "/images/create?fromImage={{image}}" },
+        {
+          "method": "POST", "path": "/containers/create?name={{ns}}-svc",
+          "body": {
+            "Image": "{{image}}",
+            "Cmd": ["sleep", "60"],
+            "Labels": {
+              "com.docker.compose.project": "{{ns}}",
+              "com.docker.compose.service": "web",
+              "com.docker.compose.container-number": "1",
+              "com.docker.compose.config-hash": "deadbeef",
+              "com.docker.compose.oneoff": "False"
+            }
+          },
+          "capture": { "cid": ".Id" }
+        },
+        {
+          "method": "GET", "path": "/containers/{{cid}}/json",
+          "compare": true, "label": "labels survive inspect"
+        },
+        {
+          "method": "GET", "path": "/containers/json?all=true&filters=%7B%22label%22%3A%5B%22com.docker.compose.project%3D{{ns}}%22%5D%7D",
+          "compare": true, "label": "list filtered by compose project label"
+        },
+        { "method": "DELETE", "path": "/containers/{{cid}}?force=true&v=true" }
+      ]
+    },
+    {
+      "name": "container rename",
+      "steps": [
+        { "method": "POST", "path": "/images/create?fromImage={{image}}" },
+        {
+          "method": "POST", "path": "/containers/create?name={{ns}}-before",
+          "body": { "Image": "{{image}}", "Cmd": ["sleep", "60"] },
+          "capture": { "cid": ".Id" }
+        },
+        {
+          "method": "POST", "path": "/containers/{{cid}}/rename?name={{ns}}-after",
+          "compare": true, "label": "POST /containers/{id}/rename"
+        },
+        {
+          "method": "GET", "path": "/containers/{{cid}}/json",
+          "compare": true, "label": "inspect after rename (Name changed, Id stable)"
+        },
+        { "method": "DELETE", "path": "/containers/{{cid}}?force=true&v=true" }
+      ]
+    },
+    {
+      "name": "exec: create, start, inspect exit code",
+      "steps": [
+        { "method": "POST", "path": "/images/create?fromImage={{image}}" },
+        {
+          "method": "POST", "path": "/containers/create?name={{ns}}-exec",
+          "body": { "Image": "{{image}}", "Cmd": ["sleep", "120"] },
+          "capture": { "cid": ".Id" }
+        },
+        { "method": "POST", "path": "/containers/{{cid}}/start" },
+        {
+          "method": "POST", "path": "/containers/{{cid}}/exec",
+          "body": { "AttachStdout": true, "AttachStderr": true, "Cmd": ["sh", "-c", "exit 3"] },
+          "capture": { "eid": ".Id" },
+          "compare": true, "label": "POST /containers/{id}/exec"
+        },
+        { "method": "POST", "path": "/exec/{{eid}}/start", "body": { "Detach": false, "Tty": false } },
+        {
+          "method": "GET", "path": "/exec/{{eid}}/json",
+          "compare": true, "label": "GET /exec/{id}/json (ExitCode)"
+        },
+        { "method": "DELETE", "path": "/containers/{{cid}}?force=true&v=true" }
+      ]
+    },
+    {
+      "name": "networks: create, inspect, list",
+      "steps": [
+        {
+          "method": "POST", "path": "/networks/create",
+          "body": { "Name": "{{ns}}-net", "Driver": "bridge", "Labels": { "com.docker.compose.project": "{{ns}}" } },
+          "capture": { "nid": ".Id" },
+          "compare": true, "label": "POST /networks/create"
+        },
+        {
+          "method": "GET", "path": "/networks/{{nid}}",
+          "compare": true, "label": "GET /networks/{id}"
+        },
+        {
+          "method": "GET", "path": "/networks?filters=%7B%22label%22%3A%5B%22com.docker.compose.project%3D{{ns}}%22%5D%7D",
+          "compare": true, "label": "list networks by compose label"
+        },
+        { "method": "DELETE", "path": "/networks/{{nid}}" }
+      ]
+    },
+    {
+      "name": "volumes: create, inspect, list",
+      "steps": [
+        {
+          "method": "POST", "path": "/volumes/create",
+          "body": { "Name": "{{ns}}-vol", "Labels": { "com.docker.compose.project": "{{ns}}" } },
+          "compare": true, "label": "POST /volumes/create"
+        },
+        {
+          "method": "GET", "path": "/volumes/{{ns}}-vol",
+          "compare": true, "label": "GET /volumes/{name}"
+        },
+        {
+          "method": "GET", "path": "/volumes?filters=%7B%22label%22%3A%5B%22com.docker.compose.project%3D{{ns}}%22%5D%7D",
+          "compare": true, "label": "list volumes by compose label"
+        },
+        { "method": "DELETE", "path": "/volumes/{{ns}}-vol" }
+      ]
+    },
+    {
+      "name": "images: list and inspect shapes",
+      "steps": [
+        { "method": "POST", "path": "/images/create?fromImage={{image}}" },
+        {
+          "method": "GET", "path": "/images/json",
+          "compare": true, "label": "GET /images/json"
+        },
+        {
+          "method": "GET", "path": "/images/{{image}}/json",
+          "compare": true, "label": "GET /images/{name}/json"
+        }
+      ]
+    },
+    {
+      "name": "errors: absent objects return Docker-shaped messages",
+      "steps": [
+        {
+          "method": "GET", "path": "/containers/{{ns}}-nonexistent/json",
+          "compare": true, "label": "inspect missing container"
+        },
+        {
+          "method": "GET", "path": "/networks/{{ns}}-nonexistent",
+          "compare": true, "label": "inspect missing network"
+        },
+        {
+          "method": "GET", "path": "/volumes/{{ns}}-nonexistent",
+          "compare": true, "label": "inspect missing volume"
+        },
+        {
+          "method": "DELETE", "path": "/containers/{{ns}}-nonexistent",
+          "compare": true, "label": "delete missing container"
+        }
+      ]
+    },
+    {
+      "name": "events: non-streaming query returns and terminates",
+      "steps": [
+        {
+          "method": "GET", "path": "/events?stream=false&since=0&until=1",
+          "compare": true, "label": "GET /events (bounded)"
+        }
+      ]
+    }
+  ]
+}

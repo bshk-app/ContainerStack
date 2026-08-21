@@ -204,8 +204,17 @@ private struct ImageInspector: View {
     }
 
     private func formattedCreated(_ created: Int64?) -> String {
-        guard let created else { return "—" }
-        let date = Date(timeIntervalSince1970: TimeInterval(created))
-        return date.formatted(.relative(presentation: .named))
+        ImageCreatedLabel.text(for: created)
+    }
+}
+
+enum ImageCreatedLabel {
+    /// `Created` is absent for some images — Apple's `vminit` reports it in neither
+    /// `/images/json` nor image inspect, and `/images/json` sends `0` rather than omitting
+    /// the key. Rendering the epoch claimed "56 years ago", so non-positive means unknown.
+    static func text(for created: Int64?) -> String {
+        guard let created, created > 0 else { return "—" }
+        return Date(timeIntervalSince1970: TimeInterval(created))
+            .formatted(.relative(presentation: .named))
     }
 }

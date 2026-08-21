@@ -39,10 +39,16 @@ gh api "repos/${REPOSITORY}/commits/${HEAD_SHA}" --silent >/dev/null \
     || die "$HEAD_SHA is not present in $REPOSITORY"
 
 [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || die "working tree is dirty; commit the release inputs first"
-upstream="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" \
-    || die "current branch has no upstream"
-[[ "$HEAD_SHA" == "$(git -C "$ROOT" rev-parse "$upstream")" ]] \
-    || die "HEAD is not pushed to $upstream"
+# A release build must come from source that is already on the remote. On a
+# branch the upstream ref proves it. A detached checkout of a tag -- what CI does
+# for a release event -- has no upstream, and the commit check above is stronger
+# evidence anyway: GitHub itself confirmed the SHA is in the repository.
+if upstream="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)"; then
+    [[ "$HEAD_SHA" == "$(git -C "$ROOT" rev-parse "$upstream")" ]] \
+        || die "HEAD is not pushed to $upstream"
+elif git -C "$ROOT" symbolic-ref --quiet HEAD >/dev/null 2>&1; then
+    die "current branch has no upstream"
+fi
 
 if [[ "$CHANNEL" == "stable" ]]; then
     tag="v${SHORT_VERSION}"

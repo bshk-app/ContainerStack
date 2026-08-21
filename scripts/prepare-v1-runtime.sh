@@ -58,6 +58,7 @@ usage() {
 Usage:
   ./scripts/prepare-v1-runtime.sh prepare
   ./scripts/prepare-v1-runtime.sh verify
+  ./scripts/prepare-v1-runtime.sh build-socktainer
 
 prepare:
   - downloads the signed Apple Container 1.2.2 installer
@@ -74,6 +75,11 @@ verify:
   - checks Socktainer's Docker socket
   - verifies Docker API access through the socktainer context
   - runs `hello-world` through Docker CLI
+
+build-socktainer:
+  - clones and builds the pinned Socktainer only, into ~/.local/bin/socktainer
+  - touches no daemon and moves no data, so it is safe on a build machine
+  - this is what CI uses to stage the sidecar
 
 Start both manually before `verify`:
   export PATH="$HOME/.local/bin:$PATH"
@@ -261,5 +267,6 @@ verify() {
 case "${1:-}" in
     prepare) prepare ;;
     verify) verify ;;
+    build-socktainer) install_socktainer ;;
     *) usage; exit 2 ;;
 esac

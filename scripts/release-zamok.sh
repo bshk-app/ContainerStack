@@ -75,10 +75,15 @@ BUILD_NUMBER="$("$ROOT/scripts/build-number.sh")"
 # source. Drafts obey the same rule.
 [[ -z "$(git -C "$ROOT" status --porcelain)" ]] \
     || die "working tree is dirty; commit the release inputs first"
-upstream="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" \
-    || die "current branch has no upstream"
-[[ "$(git -C "$ROOT" rev-parse HEAD)" == "$(git -C "$ROOT" rev-parse "$upstream")" ]] \
-    || die "HEAD is not pushed to $upstream"
+# A detached checkout of a tag -- what CI does for a release event -- has no
+# upstream. publish-github-release.sh still proves the commit is on the remote
+# by asking GitHub for it, which is stronger than an upstream ref.
+if upstream="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)"; then
+    [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$(git -C "$ROOT" rev-parse "$upstream")" ]] \
+        || die "HEAD is not pushed to $upstream"
+elif git -C "$ROOT" symbolic-ref --quiet HEAD >/dev/null 2>&1; then
+    die "current branch has no upstream"
+fi
 
 # zamokctl signs arbitrary Helpers/loose Mach-O deepest-first with hardened
 # runtime + timestamp. A vendored Apple Container runtime additionally needs a

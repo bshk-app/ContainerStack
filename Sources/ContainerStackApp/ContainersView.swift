@@ -149,6 +149,7 @@ private struct ContainerGroupHeader: View {
 }
 
 struct ContainerRow: View {
+    @State private var isConfirmingDelete = false
     let container: DockerContainerSummary
     let model: RuntimeViewModel
     var onShowLogs: () -> Void = {}
@@ -208,10 +209,18 @@ struct ContainerRow: View {
                     onShowLogs()
                 }
                 rowButton(icon: .trash, help: "Delete", destructive: true) {
-                    Task { await model.remove(container: container) }
+                    isConfirmingDelete = true
                 }
             }
             .disabled(isBusy || !model.isHealthy)
+            .confirmDestructive(
+                $isConfirmingDelete,
+                title: "Delete container \(container.name)?",
+                confirmTitle: "Delete Container",
+                message: "The container and its writable layer are deleted. Named volumes are kept."
+            ) {
+                Task { await model.remove(container: container) }
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: 44)

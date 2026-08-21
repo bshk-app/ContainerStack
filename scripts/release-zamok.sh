@@ -201,6 +201,12 @@ env PUBLISH="$PUBLISH_MODE" RELEASE_CHANNEL="$RELEASE_CHANNEL_LOWER" \
     "$ROOT/scripts/publish-github-release.sh" \
         "$dmg_path" "$notes_file" "$staged_short" "$github_manifest"
 
+if [[ "$PUBLISH_MODE" == "1" ]]; then
+    note "== moving the published enclosure to GitHub storage =="
+    RELEASE_CHANNEL="$RELEASE_CHANNEL_LOWER" \
+        "$ROOT/scripts/externalize-zamok-release.sh" "$staged_short" "$staged_build"
+fi
+
 printf '\nReleased %s %s (%s) to the %s channel.\n' \
     "$ZAMOK_PRODUCT_SLUG" "$staged_short" "$staged_build" "$RELEASE_CHANNEL_LOWER"
 printf 'Appcast: https://dl.bshk.app/products/%s/appcast/%s.xml\n' \

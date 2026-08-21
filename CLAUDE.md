@@ -58,8 +58,9 @@ task release:zamok PUBLISH=0  # draft, safe pipeline test
   the product's `CaskConfig`. There is deliberately no cask metadata file, no tap
   token and no `zamokctl cask` call here — `zamokctl cask` exists for products
   released outside the API, which this is not.
-- Zamok publishes the Sparkle appcast/CDN release; GitHub Releases mirrors the
-  same DMG and Markdown notes. Apple credentials never enter GitHub Actions.
+- GitHub Releases is the durable DMG store. Zamok verifies the GitHub bytes,
+  repoints and signs the Sparkle appcast, regenerates the cask, then deletes its
+  temporary enclosure object. Apple credentials never enter GitHub Actions.
 
 ## Secrets
 

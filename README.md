@@ -44,13 +44,15 @@ docker info
 ## Release
 
 `zamokctl` owns the release signature: codesign, notarization, stapling, and DMG
-packaging all happen inside the CLI. Apple credentials stay on the release Mac;
-GitHub receives only the finished artifact.
+packaging all happen inside the CLI. GitHub Releases is the durable artifact
+store. Zamok signs and serves the small Sparkle appcast; after GitHub upload it
+verifies the external asset byte-for-byte and deletes its temporary DMG copy.
 
 ```sh
 task signing:notary-profile       # once per Mac, through AgentVault
 task release:zamok PUBLISH=0      # matching Zamok + GitHub drafts
-task release:zamok                # publish, verify Sparkle, mirror to GitHub
+task release:zamok                # publish GitHub asset + signed Sparkle appcast
+task release:externalize BUILD=70 # retry only the storage handoff
 ```
 
 Copy `agentvault.yaml.example` to the gitignored `agentvault.yaml` and point its

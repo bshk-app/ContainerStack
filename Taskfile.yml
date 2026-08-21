@@ -84,8 +84,8 @@ tasks:
   release:zamok:
     desc: >-
       ONE-COMMAND RELEASE — stage unsigned app, then zamokctl codesign → notarize
-      → staple → DMG → Zamok/Sparkle publish → GitHub Release mirror. Config
-      comes from .env, so no arguments. Pass PUBLISH=0 for matching drafts.
+      → staple → DMG → GitHub asset → Sparkle appcast. Config comes from .env,
+      so no arguments. Pass PUBLISH=0 for matching drafts.
     deps: [runtime:check]
     cmds:
       - av env -- ./scripts/release-zamok.sh
@@ -98,6 +98,13 @@ tasks:
       - av env -- ./scripts/publish-github-release.sh
     env:
       PUBLISH: '{{if hasKey . "PUBLISH"}}{{.PUBLISH}}{{else}}1{{end}}'
+
+  release:externalize:
+    desc: Move a published build enclosure to its verified GitHub Release asset
+    requires:
+      vars: [BUILD]
+    cmds:
+      - av env -- ./scripts/externalize-zamok-release.sh '{{.SHORT_VERSION}}' '{{.BUILD}}'
 
   clean:
     desc: Remove build and release output

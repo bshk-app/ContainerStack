@@ -13,7 +13,9 @@ if [[ "${1:-}" == "--preflight" ]]; then
     readonly MANIFEST=""
 else
     readonly SHORT_VERSION="${3:-$(tr -d '[:space:]' < "$ROOT/VERSION")}"
-    readonly ARTIFACT="${1:-${ROOT}/out/${ZAMOK_PRODUCT_SLUG:-containerstack}/ContainerStack-${SHORT_VERSION}.dmg}"
+    # zamokctl chooses the subdirectory under out/, so a bare invocation looks
+    # for the DMG rather than assuming one path.
+    readonly ARTIFACT="${1:-$(find "$ROOT/out" -maxdepth 3 -type f -name "ContainerStack-${SHORT_VERSION}.dmg" -print 2>/dev/null | head -1)}"
     readonly NOTES_FILE="${2:-${ROOT}/out/release-notes.md}"
     readonly MANIFEST="${4:-${ROOT}/out/github-release-manifest}"
 fi

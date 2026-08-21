@@ -38,8 +38,8 @@ build task. `task runtime:check` verifies the checkout is at the pin.
 One command, everything from `.env` plus the committed `VERSION`:
 
 ```bash
-task release:zamok            # publish
-task release:zamok PUBLISH=0  # draft, safe pipeline test
+task release            # publish
+task release PUBLISH=0  # draft, safe pipeline test
 ```
 
 - **Version SSOT** — marketing version in `VERSION`; build number is
@@ -82,10 +82,9 @@ locally if you need them; they are not shipped.
 | Bundle id | `app.bshk.containerstack` |
 | Team | `Q8H6GWJ658` |
 | Signing identity | Developer ID Application (SHA1 `2A2950821B52BF1AC289AC2ED60F8740732FCCC6`) |
-| Zamok slug | `containerstack` |
-| Appcast | `https://dl.bshk.app/products/containerstack/appcast/stable.xml` |
+| Appcast | `https://bshk-app.github.io/ContainerStack/appcast/stable.xml` (gh-pages) |
 | Landing | `https://containerstack.bshk.app` |
-| Source | MIT. The product itself has no license check — Zamok hosts releases only. |
+| Source | MIT. The product has no license check; GitHub hosts every artifact. |
 
 ## Not yet wired
 

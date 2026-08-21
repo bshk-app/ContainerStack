@@ -1,12 +1,12 @@
 # Release on a GitHub Release you create by hand.
 #
-# The pipeline itself is scripts/release-zamok.sh -- the same script a human
-# runs. This file only assembles the environment that script expects, because
+# The pipeline itself is scripts/release.sh -- the same script a human runs.
+# This file only assembles the environment that script expects, because
 # duplicating the pipeline in YAML is how the two copies drift apart.
 #
 # Publishing needs a new commit: the Sparkle build number is
-# BUILD_NUMBER_BASE + commit count, and Zamok rejects a duplicate build number
-# per channel. Tag the commit you want, publish the release, and this runs.
+# BUILD_NUMBER_BASE + commit count, and a Sparkle build number is monotonic and
+# unrecallable. Tag the commit you want, publish the release, and this runs.
 name: Release
 
 on:
@@ -29,17 +29,18 @@ jobs:
     runs-on: macos-26
     env:
       RELEASE_CHANNEL: ${{ github.event.release.prerelease && 'beta' || 'stable' }}
-      ZAMOK_PRODUCT_SLUG: containerstack
-      ZAMOK_BASE_URL: ${{ vars.ZAMOK_BASE_URL }}
-      ZAMOK_API_KEY: ${{ secrets.ZAMOK_API_KEY }}
+      SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+      # Optional: the tap is another repository, so github.token cannot write
+      # it. Unset means the release still ships; only the cask lags.
+      TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
       SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
       RELEASE_SIGNING_IDENTITY_SHA1: ${{ secrets.RELEASE_SIGNING_IDENTITY_SHA1 }}
       NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
       NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
       GITHUB_RELEASE_REPOSITORY: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
-      # Outside the workspace on purpose: release-zamok.sh refuses a dirty tree,
-      # and an untracked directory in the checkout is dirty.
+      # Outside the workspace on purpose: release.sh refuses a dirty tree, and
+      # an untracked directory in the checkout is dirty.
       SOCKTAINER_BINARY: ${{ runner.temp }}/socktainer-bin/socktainer
     steps:
       # fetch-depth: 0 is load-bearing. build-number.sh counts commits, and a
@@ -70,8 +71,10 @@ jobs:
           diff -u <(printf '%s' "$notes") <(printf '%s' "$body") \
             || { echo "release body differs from the CHANGELOG section"; exit 1; }
 
-      - name: Install zamokctl
-        run: brew install bshk-app/tap/zamokctl
+      - name: Install zamokctl and the Sparkle tools
+        run: |
+          brew install bshk-app/tap/zamokctl
+          brew install --cask sparkle
 
       - name: Cache the socktainer sidecar
         id: socktainer
@@ -127,7 +130,7 @@ jobs:
       - name: Release
         env:
           PUBLISH: "1"
-        run: ./scripts/release-zamok.sh
+        run: ./scripts/release.sh
 
       - name: Remove the keychain
         if: always()

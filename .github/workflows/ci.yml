@@ -1,6 +1,6 @@
 # Build and test only. The release path is deliberately absent: codesign,
 # notarytool and stapling need the Developer ID on the release Mac, and the
-# Zamok API key never enters Actions. `task release:zamok` is the whole CD.
+# no Zamok API key exists any more. `task release` is the whole CD.
 name: CI
 
 on:

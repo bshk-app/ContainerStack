@@ -3,7 +3,7 @@
 All notable changes to ContainerStack are recorded here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-This file is the single source of truth for release notes: `task release:zamok`
+This file is the single source of truth for release notes: `task release`
 extracts the `## [<version>]` section matching `VERSION` and ships it as the
 Sparkle update description. A publish with no matching section is refused.
 

@@ -12,9 +12,10 @@ Driven by `Taskfile.yml` — see `task --list`.
 | `stage-signed.sh` | standalone Developer ID `.app`, outside the Zamok pipeline |
 | `extract-release-notes.sh` | the `CHANGELOG.md` section for a version |
 | `write-release-manifest.sh` | records what was released, for GitHub to verify against |
-| `release-zamok.sh` | the whole release: zamokctl, GitHub asset, externalize |
+| `release.sh` | the whole release: package, GitHub asset, signed feed, cask |
 | `publish-github-release.sh` | GitHub Release mirror |
-| `externalize-zamok-release.sh` | repoints the enclosure at the GitHub asset |
+| `publish-appcast.sh` | signs the DMG into the gh-pages Sparkle feed |
+| `publish-cask.sh` | renders and pushes the Homebrew cask (needs a tap token) |
 | `configure-notary-profile.sh` | one-time notarytool keychain profile |
 
 ## Runtime preparation

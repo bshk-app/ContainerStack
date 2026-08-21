@@ -192,6 +192,9 @@ struct RowActionButton: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        // The glyph is an Image(nsImage:) with no text, so without this the button
+        // announces only as "button" to VoiceOver. `help` is the hint, not the label.
+        .accessibilityLabel(help)
     }
 
     private var color: Color {

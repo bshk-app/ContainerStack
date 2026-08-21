@@ -104,11 +104,17 @@ struct DashboardSidebar: View {
     let model: RuntimeViewModel
     @Environment(\.appTheme) private var theme
     @State private var hovered: DashboardDestination?
+    // ponytail: comma-joined raw values; a Set<String> in defaults would need a Codable box for no gain
+    @AppStorage("sidebarHiddenItems") private var hiddenRaw = ""
+
+    private var hidden: Set<DashboardDestination> {
+        Set(hiddenRaw.split(separator: ",").compactMap { DashboardDestination(rawValue: String($0)) })
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionLabel("Docker")
-            ForEach(DashboardDestination.dockerItems) { item in
+            ForEach(DashboardDestination.dockerItems.filter { !hidden.contains($0) }) { item in
                 sidebarRow(item)
             }
             sectionLabel("General")
@@ -122,6 +128,25 @@ struct DashboardSidebar: View {
         .padding(.top, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(theme.sidebarBackground)
+        .contextMenu {
+            Section("Show in Sidebar") {
+                ForEach(DashboardDestination.dockerItems) { item in
+                    Toggle(item.sidebarTitle, isOn: visibility(of: item))
+                }
+            }
+        }
+    }
+
+    private func visibility(of item: DashboardDestination) -> Binding<Bool> {
+        Binding(
+            get: { !hidden.contains(item) },
+            set: { show in
+                var next = hidden
+                if show { next.remove(item) } else { next.insert(item) }
+                hiddenRaw = next.map(\.rawValue).sorted().joined(separator: ",")
+                if !show, selection == item { selection = .overview }
+            }
+        )
     }
 
     private func sectionLabel(_ title: String) -> some View {

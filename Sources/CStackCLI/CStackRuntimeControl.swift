@@ -4,13 +4,15 @@ import Foundation
 
 /// Minimal process plumbing for the CLI. The decisions live in `RuntimeRestartPlan`.
 enum CommandShell {
-    static func run(executablePath: String, arguments: [String]) throws {
+    @discardableResult
+    static func run(executablePath: String, arguments: [String]) throws -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
         process.standardInput = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
+        return process.terminationStatus
     }
 
     static func output(executablePath: String, arguments: [String]) -> String {
@@ -44,11 +46,15 @@ extension CStackCLI {
 
         switch invocation.positional.first {
         case "restart", .none:
-            try apply(
+            let failed = try apply(
                 RuntimeRestartPlan.steps(configuration: configuration, agentRegistered: agentRegistered()),
                 configuration: configuration
             )
-            print("Runtime restarted. Check with: cstack doctor")
+            if failed.isEmpty {
+                print("Runtime restarted. Check with: cstack doctor")
+            } else {
+                print("Runtime restart incomplete: \(failed.count) step(s) failed. Check with: cstack doctor")
+            }
         case "stop":
             try apply(RuntimeRestartPlan.stopSteps(configuration: configuration), configuration: configuration)
             print("Docker bridge stopped. Apple Container is still running.")
@@ -61,29 +67,46 @@ extension CStackCLI {
         }
     }
 
+    /// Returns the steps that exited non-zero. Apple Container's `system stop`/`start` are
+    /// best-effort inside a recovery sequence, so a failure is reported rather than aborting
+    /// the remaining steps — but it must not be swallowed, or the CLI claims a restart that
+    /// never happened.
+    @discardableResult
     private static func apply(
         _ steps: [RuntimeControlStep],
         configuration: RuntimeProcessConfiguration
-    ) throws {
+    ) throws -> [String] {
+        var failed: [String] = []
         for step in steps {
             switch step {
             case let .stopBridge(executablePath):
                 let stopped = CommandShell.terminate(executablePath: executablePath)
                 print("Stopped \(stopped) bridge process(es)")
             case let .run(executablePath, arguments):
-                print("Running \(executablePath) \(arguments.joined(separator: " "))")
-                try CommandShell.run(executablePath: executablePath, arguments: arguments)
+                let description = "\(executablePath) \(arguments.joined(separator: " "))"
+                print("Running \(description)")
+                let status = try CommandShell.run(executablePath: executablePath, arguments: arguments)
+                if status != 0 {
+                    failed.append(description)
+                    fputs("warning: \(description) exited with status \(status)\n", stderr)
+                }
             case .startBridge:
                 print("Starting \(configuration.socktainerPath)")
                 try startBridge(configuration: configuration)
             case let .kickstartAgent(label):
                 print("Restarting LaunchAgent \(label)")
-                try CommandShell.run(
+                let status = try CommandShell.run(
                     executablePath: "/bin/launchctl",
                     arguments: ["kickstart", "-k", "gui/\(getuid())/\(label)"]
                 )
+                if status != 0 {
+                    let description = "launchctl kickstart gui/\(getuid())/\(label)"
+                    failed.append(description)
+                    fputs("warning: \(description) exited with status \(status)\n", stderr)
+                }
             }
         }
+        return failed
     }
 
     /// The bridge must outlive the CLI invocation, so it is detached instead of waited on.
@@ -125,7 +148,14 @@ extension CStackCLI {
             return override
         }
 
-        let executable = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        // `CommandLine.arguments[0]` is whatever the caller typed. Invoked by name through
+        // `$PATH` it is the bare string "cstack", which resolves against the current working
+        // directory, so Contents/Helpers is never found and this falls through to a
+        // ~/.local/bin path that does not exist in a normal install.
+        guard let executable = Bundle.main.executableURL?.resolvingSymlinksInPath() else {
+            return FileManager.default.homeDirectoryForCurrentUser
+                .appending(path: ".local/bin/socktainer").path
+        }
         let helpers = executable
             .deletingLastPathComponent()
             .deletingLastPathComponent()

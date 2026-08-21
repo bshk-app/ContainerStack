@@ -52,6 +52,11 @@ struct ImagesView: View {
                     }
                 } inspector: {
                     ImageInspector(image: selectedImage, model: model)
+                        .task(id: selectedImageID) {
+                            if let image = selectedImage {
+                                await model.loadImageDetail(for: image)
+                            }
+                        }
                 }
             }
 
@@ -159,14 +164,19 @@ struct ImageRow: View {
     }
 
     private var subtitle: String {
-        let platform = "\(image.operatingSystem ?? "unknown")/\(image.architecture ?? "unknown")"
-        return "\(platform) · \(ByteSize.formatted(image.size))"
+        // The platform used to be asserted here from /images/json, which never carries it,
+        // so every row read "unknown/unknown". It lives in the inspector now.
+        ByteSize.formatted(image.size)
     }
 }
 
 private struct ImageInspector: View {
     let image: DockerImageSummary?
     let model: RuntimeViewModel
+
+    private var detail: DockerImageDetail? {
+        image.flatMap { model.imageDetail(for: $0) }
+    }
 
     var body: some View {
         if let image {
@@ -186,8 +196,8 @@ private struct ImageInspector: View {
                 InspectorStatBlock(
                     rows: [
                         ("ID", ResourceIdentifier.short(image.id), true),
-                        ("Arch", image.architecture ?? "—", true),
-                        ("OS", image.operatingSystem ?? "—", false),
+                        ("Arch", detail?.architecture ?? "—", true),
+                        ("OS", detail?.operatingSystem ?? "—", false),
                         ("Size", ByteSize.formatted(image.size), false),
                         ("Created", formattedCreated(image.created), false),
                         (

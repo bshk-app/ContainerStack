@@ -231,3 +231,20 @@ extension RuntimeViewModel {
         }
     }
 }
+
+extension RuntimeViewModel {
+    /// Fetched per selection rather than for the whole list: it is one request per image and
+    /// only the inspector shows it. Cached because an image's platform cannot change.
+    func loadImageDetail(for image: DockerImageSummary) async {
+        guard imageDetails[image.id] == nil else { return }
+        guard let reference = image.repositoryTags?.first, !reference.isEmpty else {
+            imageDetails[image.id] = .some(nil)  // untagged: inspect cannot resolve it
+            return
+        }
+        imageDetails[image.id] = try? await client.inspectImage(reference: reference)
+    }
+
+    func imageDetail(for image: DockerImageSummary) -> DockerImageDetail? {
+        imageDetails[image.id] ?? nil
+    }
+}

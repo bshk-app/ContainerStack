@@ -47,6 +47,9 @@ final class RuntimeViewModel {
     private(set) var errorMessage: String?
     internal(set) var imagesErrorMessage: String?
     internal(set) var containersErrorMessage: String?
+    /// Image platform, keyed by image id. The outer optional means "not fetched", the inner
+    /// means "fetched and the runtime reported nothing".
+    var imageDetails: [String: DockerImageDetail?] = [:]
     internal(set) var serviceMessage: String? {
         didSet {
             serviceMessageExpiresAt =

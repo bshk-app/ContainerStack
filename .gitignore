@@ -25,6 +25,12 @@ __pycache__/
 /.claude/skills/
 /claudedocs/
 
+# Working material, not documentation: icon explorations, research briefs, and
+# throwaway API spikes. Kept locally; docs/ carries what is still true.
+/Design/
+/research-*.md
+/spikes/
+
 # Release configuration. Holds av:// references rather than literal secrets, but it is
 # per-machine (notary key path, signing identity), so .env.example is what ships.
 /.env

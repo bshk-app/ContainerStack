@@ -141,12 +141,14 @@ struct ContainerStackRuntime {
             print("Removed stale socket \(configuration.socketPath).")
             try run(
                 executablePath: configuration.socktainerPath,
-                arguments: configuration.socktainerArguments
+                arguments: configuration.socktainerArguments,
+                environment: RuntimeProcessConfiguration.socktainerEnvironment()
             )
         case .startBridge:
             try run(
                 executablePath: configuration.socktainerPath,
-                arguments: configuration.socktainerArguments
+                arguments: configuration.socktainerArguments,
+                environment: RuntimeProcessConfiguration.socktainerEnvironment()
             )
         }
     }
@@ -179,10 +181,17 @@ struct ContainerStackRuntime {
         )
     }
 
-    private static func run(executablePath: String, arguments: [String]) throws {
+    private static func run(
+        executablePath: String,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
+        if let environment {
+            process.environment = environment
+        }
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.standardOutput
         process.standardError = FileHandle.standardError

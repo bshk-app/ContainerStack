@@ -88,6 +88,30 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
     public var socktainerArguments: [String] {
         ["--no-check-compatibility", "--no-docker-context"]
     }
+
+    /// Environment for the bridge, quieting its request log.
+    ///
+    /// socktainer logs every request it serves at INFO, and the destination is the helper's own
+    /// `runtime.log`, which nothing rotates. Against the app's 3s poll that measured ~11 MB a
+    /// day — a 20 MB file of 203,910 lines, 67,541 of them one container's stats — which buries
+    /// the startup and XPC-failure lines that are the reason to open the file at all.
+    ///
+    /// The bridge has no log-level flag, but it is Vapor-based and honours `LOG_LEVEL`.
+    /// Verified against the shipped binary: request lines disappear at `notice` while
+    /// `Server started`, the DNS port fallback and every warning still appear.
+    ///
+    /// An explicit `LOG_LEVEL` is left untouched, so request logging can be turned back on for
+    /// debugging.
+    public static func socktainerEnvironment(
+        from environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        guard (environment["LOG_LEVEL"] ?? "").isEmpty else {
+            return environment
+        }
+        var quieted = environment
+        quieted["LOG_LEVEL"] = "notice"
+        return quieted
+    }
 }
 
 public struct RuntimeLaunchPlan: Equatable, Sendable {

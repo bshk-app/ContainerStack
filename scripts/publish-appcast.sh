@@ -18,10 +18,11 @@ set -euo pipefail
 # into the app, or Sparkle silently rejects every update.
 
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-readonly DMG="${1:?usage: publish-appcast.sh DMG SHORT_VERSION CHANNEL TAG}"
-readonly SHORT_VERSION="${2:?usage: publish-appcast.sh DMG SHORT_VERSION CHANNEL TAG}"
-readonly CHANNEL="$(printf '%s' "${3:?usage: publish-appcast.sh DMG SHORT_VERSION CHANNEL TAG}" | tr '[:upper:]' '[:lower:]')"
-readonly TAG="${4:?usage: publish-appcast.sh DMG SHORT_VERSION CHANNEL TAG}"
+readonly DMG="${1:?usage: publish-appcast.sh DMG SHORT_VERSION CHANNEL TAG [NOTES.md]}"
+readonly SHORT_VERSION="${2:?usage: publish-appcast.sh DMG SHORT_VERSION CHANNEL TAG [NOTES.md]}"
+readonly CHANNEL="$(printf '%s' "${3:?usage: publish-appcast.sh DMG SHORT_VERSION CHANNEL TAG [NOTES.md]}" | tr '[:upper:]' '[:lower:]')"
+readonly TAG="${4:?usage: publish-appcast.sh DMG SHORT_VERSION CHANNEL TAG [NOTES.md]}"
+readonly NOTES_MD="${5:-}"
 readonly REPOSITORY="${GITHUB_RELEASE_REPOSITORY:-bshk-app/ContainerStack}"
 readonly PAGES_BRANCH="${APPCAST_BRANCH:-gh-pages}"
 readonly KEYCHAIN_ACCOUNT="${SPARKLE_KEYCHAIN_ACCOUNT:-containerstack}"
@@ -80,14 +81,33 @@ git -C "$ROOT" fetch --quiet origin "$PAGES_BRANCH" \
 git -C "$ROOT" worktree add --quiet --detach "$worktree" "origin/$PAGES_BRANCH"
 mkdir -p "$worktree/appcast"
 
+# Sparkle shows the item's <description> as "What's new". generate_appcast reads
+# it from an HTML file beside the archive, and the CHANGELOG is markdown, so
+# without this step the panel is empty -- the prose the release PR exists to get
+# right would reach nobody. Rendering goes through the GitHub markdown API
+# because `gh` is already a requirement here and a second markdown converter is
+# one more thing to install and keep honest.
+notes_args=()
+if [[ -n "$NOTES_MD" ]]; then
+    [[ -s "$NOTES_MD" ]] || die "release notes file is empty: $NOTES_MD"
+    command -v jq >/dev/null 2>&1 || die "jq is required to render release notes"
+    jq -n --arg t "$(cat "$NOTES_MD")" '{mode:"gfm",text:$t}' \
+        | gh api -X POST /markdown --input - > "$work/notes.html" \
+        || die "could not render release notes to HTML"
+    [[ -s "$work/notes.html" ]] || die "rendered release notes are empty"
+    notes_args=(--release-notes "$work/notes.html")
+else
+    note "note: no release notes given — the update panel will be empty."
+fi
+
 note "== signing $(basename "$DMG") into $feed =="
 zamokctl appcast \
     --input "$DMG" \
     --ed-key-file "$work/ed-key" \
     --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/${TAG}/" \
     --appcast "$worktree/$feed" \
+    "${notes_args[@]}" \
     --maximum-versions 10
-
 [[ -f "$worktree/$feed" ]] || die "zamokctl appcast wrote no feed"
 # An unsigned item is worse than no item: Sparkle would reject the update while
 # the feed still looked healthy. That is what a key mismatch produces.

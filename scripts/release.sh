@@ -198,7 +198,7 @@ if [[ "$PUBLISH_MODE" == "1" ]]; then
     tag="v${staged_short}"
     [[ "$RELEASE_CHANNEL_LOWER" == "stable" ]] || tag="v${staged_short}-${RELEASE_CHANNEL_LOWER}"
     "$ROOT/scripts/publish-appcast.sh" \
-        "$dmg_path" "$staged_short" "$RELEASE_CHANNEL_LOWER" "$tag"
+        "$dmg_path" "$staged_short" "$RELEASE_CHANNEL_LOWER" "$tag" "$notes_file"
 
     # The cask lives in another repository, so the workflow token cannot reach
     # it. Without a tap credential the release still stands; only `brew upgrade`

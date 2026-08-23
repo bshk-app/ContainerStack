@@ -104,7 +104,7 @@ tasks:
     requires:
       vars: [DMG, TAG]
     cmds:
-      - av env --profile sparkle -- ./scripts/publish-appcast.sh '{{.DMG}}' '{{.SHORT_VERSION}}' '{{.RELEASE_CHANNEL | default "stable"}}' '{{.TAG}}'
+      - av env --profile sparkle -- ./scripts/publish-appcast.sh '{{.DMG}}' '{{.SHORT_VERSION}}' '{{.RELEASE_CHANNEL | default "stable"}}' '{{.TAG}}' '{{.OUT_DIR}}/release-notes.md'
 
   clean:
     desc: Remove build and release output

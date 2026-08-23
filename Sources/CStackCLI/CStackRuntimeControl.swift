@@ -4,28 +4,28 @@ import Foundation
 
 /// Minimal process plumbing for the CLI. The decisions live in `RuntimeRestartPlan`.
 enum CommandShell {
+    /// Backs `container system start`/`stop` and `launchctl kickstart`, so the deadline is the
+    /// lifecycle one. Output stays inherited: the person ran the command and wants to see it.
     static func run(executablePath: String, arguments: [String]) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
+        _ = try ProcessRunner.run(
+            executablePath: executablePath,
+            arguments: arguments,
+            output: .inherit,
+            timeout: ProcessRunner.lifecycleTimeout
+        )
     }
 
+    /// stderr stays discarded on purpose: `launchctl print` reports a missing service on
+    /// stderr with an empty stdout, and `agentRegistered()` depends on that split to tell a
+    /// registered agent from an unregistered one.
     static func output(executablePath: String, arguments: [String]) -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return "" }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(decoding: data, as: UTF8.self)
+        let result = try? ProcessRunner.run(
+            executablePath: executablePath,
+            arguments: arguments,
+            output: .capture(includingStandardError: false),
+            timeout: ProcessRunner.diagnosticTimeout
+        )
+        return result?.output ?? ""
     }
 
     static func terminate(executablePath: String) -> Int {

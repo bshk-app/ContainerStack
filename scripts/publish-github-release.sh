@@ -37,9 +37,13 @@ esac
 
 command -v gh >/dev/null 2>&1 || die "gh is required. Install it and run gh auth login."
 gh auth status --hostname github.com >/dev/null 2>&1 || die "gh is not authenticated for github.com"
-can_push="$(gh api "repos/${REPOSITORY}" --jq '.permissions.push // false')" \
-    || die "could not verify GitHub permissions for $REPOSITORY"
-[[ "$can_push" == "true" ]] || die "GitHub credential cannot publish to $REPOSITORY"
+# There is deliberately no write-permission preflight. `repos/{owner}/{repo}`
+# reports `.permissions` for a *user's* role, not a credential's scope: a
+# workflow's GITHUB_TOKEN reads `push: false` there while holding
+# contents: write, and this gate then refused every CI release. It was not a
+# theory -- the same token, in the same run, had already created the branch,
+# commit, tag and release that this script was about to add an asset to.
+# A genuine lack of write access surfaces on the first mutating call below.
 gh api "repos/${REPOSITORY}/commits/${HEAD_SHA}" --silent >/dev/null \
     || die "$HEAD_SHA is not present in $REPOSITORY"
 

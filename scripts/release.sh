@@ -203,11 +203,19 @@ if [[ "$PUBLISH_MODE" == "1" ]]; then
     # The cask lives in another repository, so the workflow token cannot reach
     # it. Without a tap credential the release still stands; only `brew upgrade`
     # lags until the cask is regenerated.
-    if [[ -n "${TAP_GITHUB_TOKEN:-}" ]]; then
+    #
+    # Stable only. There is one cask file, `Casks/containerstack.rb`, and its
+    # url is templated on `#{version}` off the stable tag -- publishing a beta
+    # through it would point every `brew install` at a v<version> asset that
+    # only exists under v<version>-beta. A prerelease channel needs its own
+    # cask token before this can run for it.
+    if [[ -z "${TAP_GITHUB_TOKEN:-}" ]]; then
+        note "note: TAP_GITHUB_TOKEN unset — skipping the Homebrew cask."
+    elif [[ "$RELEASE_CHANNEL_LOWER" != "stable" ]]; then
+        note "note: $RELEASE_CHANNEL_LOWER channel — leaving the stable cask alone."
+    else
         note "== regenerating the Homebrew cask =="
         "$ROOT/scripts/publish-cask.sh" "$dmg_path" "$staged_short" "$tag"
-    else
-        note "note: TAP_GITHUB_TOKEN unset — skipping the Homebrew cask."
     fi
 else
     note "note: PUBLISH=0 — draft only, so the Sparkle feed is untouched."

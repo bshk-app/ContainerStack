@@ -59,6 +59,7 @@ Usage:
   ./scripts/prepare-v1-runtime.sh prepare
   ./scripts/prepare-v1-runtime.sh verify
   ./scripts/prepare-v1-runtime.sh build-socktainer
+  ./scripts/prepare-v1-runtime.sh pin              # print SOCKTAINER_REV
 
 prepare:
   - downloads the signed Apple Container 1.2.2 installer
@@ -268,5 +269,8 @@ case "${1:-}" in
     prepare) prepare ;;
     verify) verify ;;
     build-socktainer) install_socktainer ;;
+    # The pin decides which binary ships, so everything that needs to know it
+    # asks here rather than re-implementing the same grep somewhere else.
+    pin) printf '%s\n' "$SOCKTAINER_REV" ;;
     *) usage; exit 2 ;;
 esac

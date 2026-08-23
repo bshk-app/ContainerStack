@@ -105,12 +105,20 @@ jobs:
           brew install bshk-app/tap/zamokctl
           brew install --cask sparkle
 
+      # Key on the pinned revision, not the file's hash: the pin is the only
+      # thing that decides which binary comes out, and hashing the whole script
+      # threw away a good 18 MB cache every time a comment in it changed.
+      # check-socktainer.sh asks the restored binary for its revision, so a wrong
+      # cache fails loudly rather than shipping a sidecar nobody asked for.
+      - name: Resolve the socktainer pin
+        run: echo "SOCKTAINER_REV=$(./scripts/prepare-v1-runtime.sh pin)" >> "$GITHUB_ENV"
+
       - name: Cache the socktainer sidecar
         id: socktainer
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/socktainer-bin
-          key: socktainer-${{ hashFiles('scripts/prepare-v1-runtime.sh') }}
+          key: socktainer-${{ env.SOCKTAINER_REV }}-${{ runner.os }}-${{ runner.arch }}
 
       # Built from the pinned fork, never from HEAD: the pin carries three fixes
       # the app depends on. task runtime:check verifies the staged binary reports

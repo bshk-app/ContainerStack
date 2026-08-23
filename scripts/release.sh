@@ -205,7 +205,7 @@ if [[ "$PUBLISH_MODE" == "1" ]]; then
     # lags until the cask is regenerated.
     if [[ -n "${TAP_GITHUB_TOKEN:-}" ]]; then
         note "== regenerating the Homebrew cask =="
-        "$ROOT/scripts/publish-cask.sh" "$dmg_path" "$staged_short"
+        "$ROOT/scripts/publish-cask.sh" "$dmg_path" "$staged_short" "$tag"
     else
         note "note: TAP_GITHUB_TOKEN unset — skipping the Homebrew cask."
     fi

@@ -14,8 +14,8 @@ Driven by `Taskfile.yml` — see `task --list`.
 | `write-release-manifest.sh` | records what was released, for GitHub to verify against |
 | `release.sh` | the whole release: package, GitHub asset, signed feed, cask |
 | `publish-github-release.sh` | GitHub Release mirror |
-| `publish-appcast.sh` | signs the DMG into the gh-pages Sparkle feed |
-| `publish-cask.sh` | renders and pushes the Homebrew cask (needs a tap token) |
+| `publish-appcast.sh` | zamokctl signs the DMG into the gh-pages Sparkle feed |
+| `publish-cask.sh` | zamokctl renders and pushes the Homebrew cask (needs a tap token) |
 | `configure-notary-profile.sh` | one-time notarytool keychain profile |
 
 ## Runtime preparation

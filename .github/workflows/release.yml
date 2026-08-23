@@ -1,4 +1,4 @@
-# Release on a GitHub Release you create by hand.
+# Build, sign, notarize and publish one already-tagged release.
 #
 # The pipeline itself is scripts/release.sh -- the same script a human runs.
 # This file only assembles the environment that script expects, because
@@ -7,6 +7,10 @@
 # Publishing needs a new commit: the Sparkle build number is
 # BUILD_NUMBER_BASE + commit count, and a Sparkle build number is monotonic and
 # unrecallable. Tag the commit you want, publish the release, and this runs.
+#
+# Two entry points, one body: `release: published` for a release created by
+# hand, and `workflow_call` for release-please, whose GITHUB_TOKEN-created
+# release cannot start a workflow of its own.
 name: Release
 
 on:
@@ -16,9 +20,20 @@ on:
     # way to write a body by hand would never start this. `published` covers a
     # direct publish and a draft being published, stable and prerelease alike.
     types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag of an existing, published release
+        required: true
+        type: string
+      prerelease:
+        description: Ship to the beta channel
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ inputs.tag || github.event.release.tag_name }}
   cancel-in-progress: false
 
 permissions:
@@ -28,7 +43,8 @@ jobs:
   release:
     runs-on: macos-26
     env:
-      RELEASE_CHANNEL: ${{ github.event.release.prerelease && 'beta' || 'stable' }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      RELEASE_CHANNEL: ${{ (inputs.prerelease || github.event.release.prerelease) && 'beta' || 'stable' }}
       SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
       # Optional: the tap is another repository, so github.token cannot write
       # it. Unset means the release still ships; only the cask lags.
@@ -45,7 +61,7 @@ jobs:
       # which Sparkle would treat as a downgrade.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
           fetch-depth: 0
 
       # Outside the workspace on purpose: release.sh refuses a dirty tree, and an
@@ -61,20 +77,28 @@ jobs:
           version="$(tr -d '[:space:]' < VERSION)"
           expected="v${version}"
           [[ "$RELEASE_CHANNEL" == "stable" ]] || expected="v${version}-${RELEASE_CHANNEL}"
-          [[ "${{ github.event.release.tag_name }}" == "$expected" ]] \
-            || { echo "tag ${{ github.event.release.tag_name }} does not match $expected from VERSION"; exit 1; }
+          [[ "$TAG" == "$expected" ]] \
+            || { echo "tag $TAG does not match $expected from VERSION"; exit 1; }
 
-      # CHANGELOG.md is the release-notes SSOT, and the appcast and the GitHub
-      # body must be the same bytes. Fail here rather than ship two stories.
-      - name: Check the release body matches CHANGELOG
+      # CHANGELOG.md is the release-notes SSOT: it is the text a human wrote, and
+      # the same bytes have to reach Sparkle's "What's new" and the GitHub
+      # release. release-please drafts its body from commit subjects, so after a
+      # human rewrites the prose in the release PR the two diverge -- sync the
+      # release from the file rather than failing, since the file is the source.
+      - name: Sync the release body from CHANGELOG
         run: |
+          notes="$(./scripts/extract-release-notes.sh "$(tr -d '[:space:]' < VERSION)" CHANGELOG.md)"
+          [[ -n "$notes" ]] || { echo "CHANGELOG has no section for this version"; exit 1; }
           # $(...) drops the trailing newline the API adds, and tr drops CR: a
           # body typed in the browser is stored CRLF. Neither is a difference in
           # the story being told.
-          notes="$(./scripts/extract-release-notes.sh "$(tr -d '[:space:]' < VERSION)" CHANGELOG.md)"
-          body="$(gh release view "${{ github.event.release.tag_name }}" --json body --jq .body | tr -d '\r')"
-          diff -u <(printf '%s' "$notes") <(printf '%s' "$body") \
-            || { echo "release body differs from the CHANGELOG section"; exit 1; }
+          body="$(gh release view "$TAG" --json body --jq .body | tr -d '\r')"
+          if diff -q <(printf '%s' "$notes") <(printf '%s' "$body") >/dev/null; then
+            echo "release body already matches CHANGELOG"
+          else
+            printf '%s\n' "$notes" | gh release edit "$TAG" --notes-file -
+            echo "release body updated from CHANGELOG"
+          fi
 
       - name: Install zamokctl and the Sparkle tools
         run: |

@@ -35,21 +35,28 @@ build task. `task runtime:check` verifies the checkout is at the pin.
 
 ## Release
 
-One command, everything from `.env` plus the committed `VERSION`:
+Merge the release PR release-please keeps open. It bumps `VERSION` and drafts a
+`CHANGELOG.md` section; the prose in that section is the release, so rewrite it
+before merging. Merging tags the commit, publishes the release, and chains the
+build. `task release` still does the whole thing locally when needed.
 
 ```bash
-task release            # publish
-task release PUBLISH=0  # draft, safe pipeline test
+task release            # local publish
+task release PUBLISH=0  # local draft, safe pipeline test
 ```
 
-- **Version SSOT** — marketing version in `VERSION`; build number is
-  `BUILD_NUMBER_BASE + git rev-list --count HEAD` via `scripts/build-number.sh`.
-  The base preserves monotonic Sparkle versions after the sanitized history
-  reset. Never hand-set a release build number; each publish needs a new commit.
-- **Release-notes SSOT** — `CHANGELOG.md`. Move entries from `## [Unreleased]`
-  into `## [<version>]` before releasing; a publish without that section is
-  refused. One extractor produces `out/release-notes.md`; both Sparkle and
-  GitHub Releases consume that exact file.
+- **Version SSOT** — marketing version in `VERSION`, written by release-please;
+  build number is `BUILD_NUMBER_BASE + git rev-list --count HEAD` via
+  `scripts/build-number.sh`. The base preserves monotonic Sparkle versions after
+  the sanitized history reset. Never hand-set a build number; each publish needs
+  a new commit, which the release PR provides.
+- **Release-notes SSOT** — `CHANGELOG.md`. The generated lines are commit
+  subjects: precise for a reviewer, useless in a Sparkle "What's new" panel, so
+  they are a starting point rather than the release. CI syncs the GitHub release
+  body from the file, and the same bytes reach the appcast.
+- The build is *called* by the release-please workflow, not triggered by the
+  release: a release created with `GITHUB_TOKEN` starts no workflow, and the
+  alternative is a long-lived PAT this repo does not need.
 - **DMG assembly, signing, notarization and stapling happen inside `zamokctl`.**
   The staging script only assembles an unsigned `.app` for the release path.
   Do not add parallel `hdiutil`, codesign, or notarytool release steps.

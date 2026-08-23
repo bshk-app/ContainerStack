@@ -3,9 +3,14 @@
 All notable changes to ContainerStack are recorded here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-This file is the single source of truth for release notes: `task release`
-extracts the `## [<version>]` section matching `VERSION` and ships it as the
-Sparkle update description. A publish with no matching section is refused.
+This file is the single source of truth for release notes: the section matching
+`VERSION` becomes both the Sparkle update description and the GitHub release
+body. A publish with no matching section is refused.
+
+release-please drafts each section from conventional commits and opens a release
+PR. Those lines are commit subjects; rewrite them in the PR into what a user
+should read in an update panel. Notes jotted under `## [Unreleased]` between
+releases belong in that section — move them there while reviewing.
 
 ## [Unreleased]
 

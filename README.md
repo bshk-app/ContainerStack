@@ -50,10 +50,15 @@ packaging all happen inside the CLI. GitHub Releases stores the DMG and GitHub
 Pages serves the EdDSA-signed Sparkle feed, so no server sits between a release
 and its users.
 
+Releases run themselves: release-please keeps one open PR that bumps `VERSION`
+and drafts a `CHANGELOG.md` section from conventional commits. Rewrite that
+section into prose a user would want in an update panel, merge, and CI tags the
+commit, publishes the asset, signs the feed and updates the cask.
+
 ```sh
 task signing:notary-profile   # once per Mac, through AgentVault
-task release PUBLISH=0        # draft: no feed, no cask
-task release                  # publish asset, sign the feed, update the cask
+task release PUBLISH=0        # local dry run: no feed, no cask
+task release                  # local release, if you need one without the PR
 ```
 
 Copy `agentvault.yaml.example` to the gitignored `agentvault.yaml` and point its

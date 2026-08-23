@@ -58,6 +58,47 @@ extension CStackCLI {
             print("Published ports accept connections and then hang.")
             print("Restarting the containers does not fix it. Run: cstack runtime restart")
         }
+
+        await reportMemoryCommitment(client, running: containers.filter(\.isRunning))
+    }
+
+    /// Every container here runs in its own micro-VM whose memory is resident in the host, so the
+    /// sum of the allocations is a claim on the machine — and nothing else reported it. The
+    /// numbers come from the same inspect call `cstack inspect` already makes.
+    private static func reportMemoryCommitment(
+        _ client: DockerAPIClient,
+        running: [DockerContainerSummary]
+    ) async {
+        var limits: [Int64?] = []
+        for container in running {
+            limits.append(try? await client.inspectContainer(id: container.id).memoryLimitBytes)
+        }
+
+        guard let hostBytes = HostMemory.totalBytes() else {
+            print("Container memory: \(ByteSize.formatted(limits.compactMap { $0 }.reduce(0, +))) allocated (host memory unknown)")
+            return
+        }
+
+        let commitment = MemoryCommitment.measure(limits: limits, hostBytes: hostBytes)
+        let summary =
+            "\(ByteSize.formatted(commitment.allocatedBytes)) allocated of \(ByteSize.formatted(hostBytes)) host memory"
+
+        switch commitment.verdict {
+        case .within:
+            print("Container memory: \(summary)")
+        case .approaching:
+            print("Container memory: \(summary) — other applications will feel this")
+        case .exceeding:
+            print("Container memory: OVER-COMMITTED — \(summary)")
+            print("A guest holds its allocation as host memory once it fills its caches.")
+            print("Stop a container or recreate it with a smaller --memory.")
+        }
+
+        if commitment.containersWithoutLimit > 0 {
+            print(
+                "\(commitment.containersWithoutLimit) running container(s) report no memory limit, so the total is a floor."
+            )
+        }
     }
 
     static func listContainers(_ client: DockerAPIClient, all: Bool) async throws {
@@ -83,6 +124,7 @@ extension CStackCLI {
         print("Running:   \(detail.isRunning)")
         print("Exit code: \(detail.exitCode.map(String.init) ?? "—")")
         print("Command:   \(detail.command ?? "—")")
+        print("Memory:    \(detail.memoryLimitBytes.map(ByteSize.formatted) ?? "no limit reported")")
         if let project = detail.composeProject {
             print("Compose:   \(project)/\(detail.composeService ?? "—")")
         }

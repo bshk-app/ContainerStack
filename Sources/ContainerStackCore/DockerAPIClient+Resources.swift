@@ -94,6 +94,16 @@ private struct ContainerConfigPayload: Decodable {
     }
 }
 
+/// Only the fields this app reads. `HostConfig` was already arriving on every inspect and
+/// being discarded; the micro-VM size is the part worth keeping.
+private struct ContainerHostConfigPayload: Decodable {
+    let memory: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case memory = "Memory"
+    }
+}
+
 private struct ContainerDetailPayload: Decodable {
     let id: String
     let name: String?
@@ -101,6 +111,7 @@ private struct ContainerDetailPayload: Decodable {
     let image: String?
     let state: ContainerStatePayload?
     let config: ContainerConfigPayload?
+    let hostConfig: ContainerHostConfigPayload?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -109,6 +120,7 @@ private struct ContainerDetailPayload: Decodable {
         case image = "Image"
         case state = "State"
         case config = "Config"
+        case hostConfig = "HostConfig"
     }
 
     var detail: DockerContainerDetail {
@@ -124,7 +136,9 @@ private struct ContainerDetailPayload: Decodable {
             startedAt: state?.startedAt,
             finishedAt: state?.finishedAt,
             command: arguments.isEmpty ? nil : arguments.joined(separator: " "),
-            labels: config?.labels ?? [:]
+            labels: config?.labels ?? [:],
+            // Docker writes 0 for "no limit", which is not the same as a 0-byte VM.
+            memoryLimitBytes: (hostConfig?.memory).flatMap { $0 > 0 ? $0 : nil }
         )
     }
 }

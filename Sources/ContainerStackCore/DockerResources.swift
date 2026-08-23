@@ -120,6 +120,10 @@ public struct DockerContainerDetail: Equatable, Sendable, Identifiable {
     public let finishedAt: String?
     public let command: String?
     public let labels: [String: String]
+    /// `HostConfig.Memory`: the size of this container's own micro-VM. nil when the runtime
+    /// reports no limit. Host-resident as the guest fills it, not a free ceiling — see
+    /// `MemoryCommitment`.
+    public let memoryLimitBytes: Int64?
 
     public var composeProject: String? {
         labels["com.docker.compose.project"]
@@ -140,7 +144,8 @@ public struct DockerContainerDetail: Equatable, Sendable, Identifiable {
         startedAt: String?,
         finishedAt: String?,
         command: String?,
-        labels: [String: String]
+        labels: [String: String],
+        memoryLimitBytes: Int64? = nil
     ) {
         self.id = id
         self.name = name
@@ -153,6 +158,7 @@ public struct DockerContainerDetail: Equatable, Sendable, Identifiable {
         self.finishedAt = finishedAt
         self.command = command
         self.labels = labels
+        self.memoryLimitBytes = memoryLimitBytes
     }
 }
 

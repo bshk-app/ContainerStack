@@ -12,6 +12,23 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.3.0](https://github.com/bshk-app/ContainerStack/compare/v0.2.0...v0.3.0) (2026-08-23)
+
+
+### Added
+
+* publish ContainerStack 0.1.0 source snapshot ([85e97c2](https://github.com/bshk-app/ContainerStack/commit/85e97c2c07125fc46f49162b54f71525311510aa))
+* **release:** move Sparkle enclosures to GitHub assets ([e1e13ca](https://github.com/bshk-app/ContainerStack/commit/e1e13ca8a332f7bc8eba5b3f0ffac70dfb077b1c))
+* **release:** serve updates from GitHub, drop the release server ([eed5e96](https://github.com/bshk-app/ContainerStack/commit/eed5e9646f224079669dc892da820d2e48583208))
+
+
+### Fixed
+
+* **ci:** repair the invalid release workflow and lint for the cause ([b3710a7](https://github.com/bshk-app/ContainerStack/commit/b3710a78048b5f50616e0538a35440b9452be40a))
+* **release:** put the release notes back in the update panel ([50abe1b](https://github.com/bshk-app/ContainerStack/commit/50abe1b9c14dd90d117fbe8276b6fcb018136f05))
+* **release:** stop a false preflight from blocking every CI release ([4d82ebb](https://github.com/bshk-app/ContainerStack/commit/4d82ebb6ea6c26a2ef23735edf913f6650774bcc))
+* **release:** two silent failures on the repair and beta paths ([53dcccf](https://github.com/bshk-app/ContainerStack/commit/53dcccf0249e2a91d25af331909cfe7266b3ec56))
+
 ## [0.2.0](https://github.com/bshk-app/ContainerStack/compare/v0.1.0...v0.2.0) (2026-08-23)
 
 Updates now come from GitHub. Nothing in the app itself changed: no file under

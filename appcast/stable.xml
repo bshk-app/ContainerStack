@@ -1,0 +1,32 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>ContainerStack</title>
+        <item>
+            <title>0.2.0</title>
+            <pubDate>Sun, 23 Aug 2026 20:00:23 +0000</pubDate>
+            <sparkle:version>83</sparkle:version>
+            <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>Updates now come from GitHub. Nothing in the app itself changed: no file under<br>
+<code class="notranslate">Sources/</code> differs from 0.1.0, and the only edit to the shipped bundle is the<br>
+update feed it points at.</p>
+<h3>Changed</h3>
+<ul>
+<li>Updates are served from a signed feed on GitHub Pages, and the DMG is a GitHub<br>
+Release asset. Both used to come from a server that had to be reachable for an<br>
+update to be found at all; now the artifact lives where the source does.</li>
+<li>The update signing key was rotated as part of the move, so this build trusts a<br>
+different key than 0.1.0 did.</li>
+</ul>
+<h3>Known limitations</h3>
+<p>Unchanged from 0.1.0, and still the two worth knowing before installing:<br>
+published ports stop working until the runtime is restarted when a<br>
+bridge-created network's vmnet helper dies, and ContainerStack is slower than<br>
+OrbStack on an idle M1/16 GiB — container round trip 4.6x, bind mount writes<br>
+3.6x, because Apple Container boots one micro-VM per container.</p>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.2.0/ContainerStack-0.2.0.dmg" length="21221165" type="application/octet-stream" sparkle:edSignature="C1UgwKLoId3tPFZXF/oQz/9RIzeV8IEOqlEhuEtCCVjLFCUQrLbUPV7S2fQUgvMGrAvXUyhxO0CS+W2/8c6jAw=="/>
+        </item>
+    </channel>
+</rss>

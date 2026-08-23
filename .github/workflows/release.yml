@@ -39,9 +39,6 @@ jobs:
       NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
       GITHUB_RELEASE_REPOSITORY: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
-      # Outside the workspace on purpose: release.sh refuses a dirty tree, and
-      # an untracked directory in the checkout is dirty.
-      SOCKTAINER_BINARY: ${{ runner.temp }}/socktainer-bin/socktainer
     steps:
       # fetch-depth: 0 is load-bearing. build-number.sh counts commits, and a
       # shallow clone would count 1 -- a build number below every release so far,
@@ -50,6 +47,14 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
+
+      # Outside the workspace on purpose: release.sh refuses a dirty tree, and an
+      # untracked directory in the checkout is dirty. Set in a step rather than
+      # the job `env:`, where the `runner` context is unavailable -- putting it
+      # there made the whole workflow file invalid, which GitHub reports only as
+      # a failed run named after the file.
+      - name: Point at the sidecar outside the workspace
+        run: echo "SOCKTAINER_BINARY=$RUNNER_TEMP/socktainer-bin/socktainer" >> "$GITHUB_ENV"
 
       - name: Check the tag matches VERSION
         run: |
@@ -114,7 +119,14 @@ jobs:
           rm -f "$RUNNER_TEMP/cert.p12"
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$password" "$keychain" >/dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # Preserve the existing search list: `list-keychains -s` replaces it
+          # outright, and dropping the login keychain breaks later lookups. Read
+          # into an array so a path with spaces stays one argument.
+          existing=()
+          while IFS= read -r entry; do
+            existing+=("${entry//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
           security find-identity -v -p codesigning "$keychain"
 
       - name: Write the notary key

@@ -12,6 +12,20 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.4.0](https://github.com/bshk-app/ContainerStack/compare/v0.3.0...v0.4.0) (2026-08-24)
+
+
+### Added
+
+* **updates:** ship the updater the bundle already advertised ([b2f0d61](https://github.com/bshk-app/ContainerStack/commit/b2f0d612f97d48c76057cb23771c8bbe2f13ffea))
+* **updates:** ship the updater the bundle already advertised ([c02f491](https://github.com/bshk-app/ContainerStack/commit/c02f49116e014d8913f1902e3cea8e23e25355c7))
+
+
+### Fixed
+
+* **release:** build the DMG before publishing the release ([8009109](https://github.com/bshk-app/ContainerStack/commit/80091093d13c0d3c6aa8d235886b19afd6f339d8))
+* **release:** build the DMG before publishing the release ([a8d3414](https://github.com/bshk-app/ContainerStack/commit/a8d341469c1ee0841b77bbe5892d555546ba64af))
+
 ## [0.3.0](https://github.com/bshk-app/ContainerStack/compare/v0.2.0...v0.3.0) (2026-08-24)
 
 This release makes runtime control harder to wedge, destructive actions harder

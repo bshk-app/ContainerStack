@@ -12,6 +12,54 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.3.0](https://github.com/bshk-app/ContainerStack/compare/v0.2.0...v0.3.0) (2026-08-24)
+
+This release makes runtime control harder to wedge, destructive actions harder
+to trigger by accident, and diagnostics more honest.
+
+### Added
+
+- Docker sections can be hidden from the sidebar through its context menu. Even
+  with every Docker item hidden, the same menu remains available to restore them.
+- `cstack doctor` reports the configured memory limits of running containers
+  against host memory. Unlimited containers and failed inspections are named
+  separately instead of being counted as zero.
+- Every icon-only action has a descriptive, resource-specific VoiceOver name.
+
+### Fixed
+
+- Every subprocess wait now has an explicit deadline, except the deliberately
+  supervised socktainer process. A child that hangs — or exits while a descendant
+  keeps its output pipe open — can no longer wedge monitoring and runtime controls
+  forever.
+- `cstack runtime restart` continues best-effort recovery after a failed step,
+  names each failure, and exits non-zero instead of claiming success.
+- GUI, helper, `cstack runtime`, and `cstack doctor` resolve the Apple Container
+  binary and its install root through one owner. Environment overrides and the
+  vendored runtime no longer apply to only part of the system.
+- The bridge no longer writes an INFO request line for every 3-second poll into
+  `runtime.log`; warnings, errors, startup and DNS fallback messages remain.
+- Deleting a container, image, volume, or network now requires confirmation.
+  In-use volumes are not force-deleted.
+- Malformed chunked HTTP sizes return a parse error instead of trapping on
+  integer overflow or a reversed range.
+- Image creation time reports unknown when the runtime returns zero, rather than
+  “56 years ago”. Architecture and OS now come from image inspect, the endpoint
+  that actually provides them.
+
+### Changed
+
+- The expensive missing-app-root diagnostic runs at most every 30 seconds
+  instead of spawning the `container` CLI on every 3-second monitor tick. Manual
+  refresh still probes immediately.
+
+### Known limitations
+
+Published ports still require a runtime restart if a bridge-created network's
+vmnet helper dies; restarting only the containers does not repair the host route.
+The per-container micro-VM architecture also remains slower than OrbStack on the
+measured M1 system (4.6x container round trip, 3.6x bind-mount writes).
+
 ## [0.2.0](https://github.com/bshk-app/ContainerStack/compare/v0.1.0...v0.2.0) (2026-08-23)
 
 Updates now come from GitHub. Nothing in the app itself changed: no file under

@@ -63,6 +63,67 @@ extension CStackCLI {
             print("Published ports accept connections and then hang.")
             print("Restarting the containers does not fix it. Run: cstack runtime restart")
         }
+
+        await reportMemoryCommitment(client, running: containers.filter(\.isRunning))
+    }
+
+    /// Every container here runs in its own micro-VM. The inspect value is the
+    /// configured limit, not current RSS, but host use can grow toward it as the
+    /// guest fills caches. Report that capacity without pretending it is already
+    /// resident.
+    private static func reportMemoryCommitment(
+        _ client: DockerAPIClient,
+        running: [DockerContainerSummary]
+    ) async {
+        var limits: [Int64?] = []
+        var inspectFailures = 0
+        for container in running {
+            do {
+                limits.append(try await client.inspectContainer(id: container.id).memoryLimitBytes)
+            } catch {
+                inspectFailures += 1
+            }
+        }
+
+        guard !limits.isEmpty else {
+            print(
+                "Container memory limits: unavailable — \(inspectFailures) running container(s) could not be inspected."
+            )
+            return
+        }
+
+        let hostBytes = HostMemory.totalBytes() ?? 0
+        let commitment = MemoryCommitment.measure(limits: limits, hostBytes: hostBytes)
+
+        if hostBytes > 0 {
+            let summary =
+                "\(ByteSize.formatted(commitment.configuredBytes)) in explicit container limits vs \(ByteSize.formatted(hostBytes)) host memory"
+            switch commitment.verdict {
+            case .within:
+                print("Container memory limits: \(summary)")
+            case .approaching:
+                print("Container memory limits: \(summary) — guests approaching their limits may pressure other applications")
+            case .exceeding:
+                print("Container memory limits: HIGH — \(summary)")
+                print("Guests do not reserve every byte immediately, but host use can grow toward these limits.")
+                print("Stop a container or recreate it with a smaller --memory.")
+            }
+        } else {
+            print(
+                "Container memory limits: \(ByteSize.formatted(commitment.configuredBytes)) configured (host memory unknown)"
+            )
+        }
+
+        if commitment.containersWithoutLimit > 0 {
+            print(
+                "\(commitment.containersWithoutLimit) running container(s) have no explicit memory limit and are excluded from that total."
+            )
+        }
+        if inspectFailures > 0 {
+            print(
+                "\(inspectFailures) running container(s) could not be inspected, so the total is incomplete."
+            )
+        }
     }
 
     static func listContainers(_ client: DockerAPIClient, all: Bool) async throws {
@@ -88,6 +149,7 @@ extension CStackCLI {
         print("Running:   \(detail.isRunning)")
         print("Exit code: \(detail.exitCode.map(String.init) ?? "—")")
         print("Command:   \(detail.command ?? "—")")
+        print("Memory:    \(detail.memoryLimitBytes.map(ByteSize.formatted) ?? "no limit reported")")
         if let project = detail.composeProject {
             print("Compose:   \(project)/\(detail.composeService ?? "—")")
         }

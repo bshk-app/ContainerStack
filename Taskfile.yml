@@ -99,6 +99,13 @@ tasks:
     env:
       PUBLISH: '{{if hasKey . "PUBLISH"}}{{.PUBLISH}}{{else}}1{{end}}'
 
+  release:repair:
+    desc: Rebuild the feed and cask for TAG from the bytes already published on GitHub
+    requires:
+      vars: [TAG]
+    cmds:
+      - av env --profile sparkle -- ./scripts/repair-release-distribution.sh '{{.TAG}}' '{{.RELEASE_CHANNEL | default "stable"}}'
+
   release:appcast:
     desc: Re-sign the Sparkle feed for a DMG already published under TAG
     requires:

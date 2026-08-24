@@ -1,6 +1,5 @@
-# Build and test only. The release path is deliberately absent: codesign,
-# notarytool and stapling need the Developer ID on the release Mac, and the
-# no Zamok API key exists any more. `task release` is the whole CD.
+# Build and test only. Signing/notarization lives in release.yml, where secrets
+# are available and every release step runs as one pipeline.
 name: CI
 
 on:

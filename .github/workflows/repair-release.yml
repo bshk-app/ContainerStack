@@ -1,0 +1,46 @@
+# Rebuild neither code nor DMG. An immutable release's exact hosted bytes are
+# the only bytes Sparkle may sign after publication.
+name: Repair Release Distribution
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published tag whose feed/cask needs repair
+        required: true
+        type: string
+      prerelease:
+        description: Repair the beta feed and leave the stable cask alone
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: repair-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: macos-26
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_RELEASE_REPOSITORY: ${{ github.repository }}
+      SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+      TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+      RELEASE_CHANNEL: ${{ inputs.prerelease && 'beta' || 'stable' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Install zamokctl and the Sparkle tools
+        run: |
+          brew install bshk-app/tap/zamokctl
+          brew install --cask sparkle
+
+      - name: Repair the feed and cask from the immutable assets
+        run: ./scripts/repair-release-distribution.sh "${{ inputs.tag }}" "$RELEASE_CHANNEL"

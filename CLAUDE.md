@@ -37,8 +37,9 @@ build task. `task runtime:check` verifies the checkout is at the pin.
 
 Merge the release PR release-please keeps open. It bumps `VERSION` and drafts a
 `CHANGELOG.md` section; the prose in that section is the release, so rewrite it
-before merging. Merging tags the commit, publishes the release, and chains the
-build. `task release` still does the whole thing locally when needed.
+before merging. Merging tags the commit and creates a draft. CI signs and uploads
+the DMG, then publishes the complete release; publishing an empty release first
+would make it immutable. `task release` remains the local path.
 
 ```bash
 task release            # local publish

@@ -133,7 +133,14 @@ if [[ "$PUBLISH_MODE" == "0" && "$RELEASE_EXISTS" == "true" && "$RELEASE_IS_DRAF
     die "$tag is already published; a draft run will not replace or demote it"
 fi
 if [[ "$RELEASE_EXISTS" == "true" && "$RELEASE_IS_IMMUTABLE" == "true" ]]; then
-    die "$tag is immutable; refusing to replace its artifact or notes"
+    asset_names="$(
+        gh release view "$tag" --repo "$REPOSITORY" --json assets \
+            --jq '[.assets[].name] | join(", ")'
+    )"
+    if [[ -z "$asset_names" ]]; then
+        die "$tag is immutable and has no assets; its tag name cannot be reused. Publish a new version."
+    fi
+    die "$tag is immutable with assets [$asset_names]. Run the Repair Release Distribution workflow; do not rebuild the DMG."
 fi
 
 if [[ "$preflight" == "true" ]]; then
@@ -144,6 +151,9 @@ fi
 command -v shasum >/dev/null 2>&1 || die "shasum is required"
 [[ -f "$ARTIFACT" ]] || die "release artifact is missing: $ARTIFACT"
 [[ -f "$MANIFEST" ]] || die "release provenance manifest is missing: $MANIFEST"
+PACKAGE_MANIFEST="$(dirname "$ARTIFACT")/manifest.json"
+[[ -f "$PACKAGE_MANIFEST" ]] \
+    || die "zamokctl package manifest is missing beside the DMG: $PACKAGE_MANIFEST"
 if [[ "$PUBLISH_MODE" != "0" && ! -s "$NOTES_FILE" ]]; then
     die "release notes are missing: $NOTES_FILE"
 fi
@@ -165,9 +175,14 @@ manifest_notes_sha="$(manifest_value notes_sha256)"
 [[ "$manifest_publish" == "$PUBLISH_MODE" ]] || die "manifest draft/live mode does not match PUBLISH=$PUBLISH_MODE"
 [[ "$manifest_artifact" == "$(basename "$ARTIFACT")" ]] || die "manifest artifact name does not match"
 [[ "$manifest_artifact_sha" == "$(shasum -a 256 "$ARTIFACT" | cut -d' ' -f1)" ]] \
-    || die "artifact SHA-256 does not match the Zamok release manifest"
+    || die "artifact SHA-256 does not match the release manifest"
 [[ "$manifest_notes_sha" == "$(shasum -a 256 "$NOTES_FILE" | cut -d' ' -f1)" ]] \
     || die "release notes differ from the Markdown sent to Sparkle"
+
+# Publishing is the irreversible point. Both assets must be attached while the
+# release is still a draft: the DMG is what Sparkle downloads; manifest.json is
+# what a repair run needs to regenerate the cask from the exact published bytes
+# instead of rebuilding a nondeterministic signed/notarized/stapled artifact.
 
 common=(
     --repo "$REPOSITORY"
@@ -180,10 +195,10 @@ common=(
 )
 
 if [[ "$RELEASE_EXISTS" == "true" ]]; then
-    gh release upload "$tag" "$ARTIFACT" --repo "$REPOSITORY" --clobber
+    gh release upload "$tag" "$ARTIFACT" "$PACKAGE_MANIFEST" --repo "$REPOSITORY" --clobber
     gh release edit "$tag" "${common[@]}"
 else
-    gh release create "$tag" "$ARTIFACT" "${common[@]}"
+    gh release create "$tag" "$ARTIFACT" "$PACKAGE_MANIFEST" "${common[@]}"
 fi
 
 printf 'GitHub release: https://github.com/%s/releases/tag/%s\n' "$REPOSITORY" "$tag"

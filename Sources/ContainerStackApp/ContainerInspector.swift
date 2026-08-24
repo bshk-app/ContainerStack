@@ -3,6 +3,7 @@ import ContainerStackCore
 import SwiftUI
 
 struct ContainerInspector: View {
+    @State private var isConfirmingDelete = false
     enum Tab: String, CaseIterable, Identifiable {
         case stats = "Stats"
         case logs = "Logs"
@@ -82,11 +83,19 @@ struct ContainerInspector: View {
                     Task { await model.restart(container: container) }
                 }
                 actionButton("Delete", destructive: true) {
-                    Task { await model.remove(container: container) }
+                    isConfirmingDelete = true
                 }
             }
             .padding(.top, 12)
             .disabled(model.busyContainerID != nil || !model.isHealthy)
+            .confirmDestructive(
+                $isConfirmingDelete,
+                title: "Delete container \(container.name)?",
+                confirmTitle: "Delete Container",
+                message: "A running container is stopped first. Its writable layer is deleted; named volumes are kept."
+            ) {
+                Task { await model.remove(container: container) }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 15)

@@ -151,6 +151,7 @@ private struct ContainerGroupHeader: View {
 }
 
 struct ContainerRow: View {
+    @State private var isConfirmingDelete = false
     let container: DockerContainerSummary
     let model: RuntimeViewModel
     var onShowLogs: () -> Void = {}
@@ -220,10 +221,18 @@ struct ContainerRow: View {
                     accessibilityLabel: "Delete \(container.name)",
                     destructive: true
                 ) {
-                    Task { await model.remove(container: container) }
+                    isConfirmingDelete = true
                 }
             }
             .disabled(isBusy || !model.isHealthy)
+            .confirmDestructive(
+                $isConfirmingDelete,
+                title: "Delete container \(container.name)?",
+                confirmTitle: "Delete Container",
+                message: "A running container is stopped first. Its writable layer is deleted; named volumes are kept."
+            ) {
+                Task { await model.remove(container: container) }
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: 44)

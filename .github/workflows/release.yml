@@ -1,12 +1,16 @@
-# Release on a GitHub Release you create by hand.
+# Build, sign, notarize and publish one already-tagged release.
 #
-# The pipeline itself is scripts/release-zamok.sh -- the same script a human
-# runs. This file only assembles the environment that script expects, because
+# The pipeline itself is scripts/release.sh -- the same script a human runs.
+# This file only assembles the environment that script expects, because
 # duplicating the pipeline in YAML is how the two copies drift apart.
 #
 # Publishing needs a new commit: the Sparkle build number is
-# BUILD_NUMBER_BASE + commit count, and Zamok rejects a duplicate build number
-# per channel. Tag the commit you want, publish the release, and this runs.
+# BUILD_NUMBER_BASE + commit count, and a Sparkle build number is monotonic and
+# unrecallable. Tag the commit you want, publish the release, and this runs.
+#
+# Two entry points, one body: `release: published` for a release created by
+# hand, and `workflow_call` for release-please, whose GITHUB_TOKEN-created
+# release cannot start a workflow of its own.
 name: Release
 
 on:
@@ -16,9 +20,20 @@ on:
     # way to write a body by hand would never start this. `published` covers a
     # direct publish and a draft being published, stable and prerelease alike.
     types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag of an existing, published release
+        required: true
+        type: string
+      prerelease:
+        description: Ship to the beta channel
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ inputs.tag || github.event.release.tag_name }}
   cancel-in-progress: false
 
 permissions:
@@ -28,57 +43,82 @@ jobs:
   release:
     runs-on: macos-26
     env:
-      RELEASE_CHANNEL: ${{ github.event.release.prerelease && 'beta' || 'stable' }}
-      ZAMOK_PRODUCT_SLUG: containerstack
-      ZAMOK_BASE_URL: ${{ vars.ZAMOK_BASE_URL }}
-      ZAMOK_API_KEY: ${{ secrets.ZAMOK_API_KEY }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      RELEASE_CHANNEL: ${{ (inputs.prerelease || github.event.release.prerelease) && 'beta' || 'stable' }}
+      SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+      # Optional: the tap is another repository, so github.token cannot write
+      # it. Unset means the release still ships; only the cask lags.
+      TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
       SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
       RELEASE_SIGNING_IDENTITY_SHA1: ${{ secrets.RELEASE_SIGNING_IDENTITY_SHA1 }}
       NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
       NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
       GITHUB_RELEASE_REPOSITORY: ${{ github.repository }}
       GH_TOKEN: ${{ github.token }}
-      # Outside the workspace on purpose: release-zamok.sh refuses a dirty tree,
-      # and an untracked directory in the checkout is dirty.
-      SOCKTAINER_BINARY: ${{ runner.temp }}/socktainer-bin/socktainer
     steps:
       # fetch-depth: 0 is load-bearing. build-number.sh counts commits, and a
       # shallow clone would count 1 -- a build number below every release so far,
       # which Sparkle would treat as a downgrade.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
           fetch-depth: 0
+
+      # Outside the workspace on purpose: release.sh refuses a dirty tree, and an
+      # untracked directory in the checkout is dirty. Set in a step rather than
+      # the job `env:`, where the `runner` context is unavailable -- putting it
+      # there made the whole workflow file invalid, which GitHub reports only as
+      # a failed run named after the file.
+      - name: Point at the sidecar outside the workspace
+        run: echo "SOCKTAINER_BINARY=$RUNNER_TEMP/socktainer-bin/socktainer" >> "$GITHUB_ENV"
 
       - name: Check the tag matches VERSION
         run: |
           version="$(tr -d '[:space:]' < VERSION)"
           expected="v${version}"
           [[ "$RELEASE_CHANNEL" == "stable" ]] || expected="v${version}-${RELEASE_CHANNEL}"
-          [[ "${{ github.event.release.tag_name }}" == "$expected" ]] \
-            || { echo "tag ${{ github.event.release.tag_name }} does not match $expected from VERSION"; exit 1; }
+          [[ "$TAG" == "$expected" ]] \
+            || { echo "tag $TAG does not match $expected from VERSION"; exit 1; }
 
-      # CHANGELOG.md is the release-notes SSOT, and the appcast and the GitHub
-      # body must be the same bytes. Fail here rather than ship two stories.
-      - name: Check the release body matches CHANGELOG
+      # CHANGELOG.md is the release-notes SSOT: it is the text a human wrote, and
+      # the same bytes have to reach Sparkle's "What's new" and the GitHub
+      # release. release-please drafts its body from commit subjects, so after a
+      # human rewrites the prose in the release PR the two diverge -- sync the
+      # release from the file rather than failing, since the file is the source.
+      - name: Sync the release body from CHANGELOG
         run: |
+          notes="$(./scripts/extract-release-notes.sh "$(tr -d '[:space:]' < VERSION)" CHANGELOG.md)"
+          [[ -n "$notes" ]] || { echo "CHANGELOG has no section for this version"; exit 1; }
           # $(...) drops the trailing newline the API adds, and tr drops CR: a
           # body typed in the browser is stored CRLF. Neither is a difference in
           # the story being told.
-          notes="$(./scripts/extract-release-notes.sh "$(tr -d '[:space:]' < VERSION)" CHANGELOG.md)"
-          body="$(gh release view "${{ github.event.release.tag_name }}" --json body --jq .body | tr -d '\r')"
-          diff -u <(printf '%s' "$notes") <(printf '%s' "$body") \
-            || { echo "release body differs from the CHANGELOG section"; exit 1; }
+          body="$(gh release view "$TAG" --json body --jq .body | tr -d '\r')"
+          if diff -q <(printf '%s' "$notes") <(printf '%s' "$body") >/dev/null; then
+            echo "release body already matches CHANGELOG"
+          else
+            printf '%s\n' "$notes" | gh release edit "$TAG" --notes-file -
+            echo "release body updated from CHANGELOG"
+          fi
 
-      - name: Install zamokctl
-        run: brew install bshk-app/tap/zamokctl
+      - name: Install zamokctl and the Sparkle tools
+        run: |
+          brew install bshk-app/tap/zamokctl
+          brew install --cask sparkle
+
+      # Key on the pinned revision, not the file's hash: the pin is the only
+      # thing that decides which binary comes out, and hashing the whole script
+      # threw away a good 18 MB cache every time a comment in it changed.
+      # check-socktainer.sh asks the restored binary for its revision, so a wrong
+      # cache fails loudly rather than shipping a sidecar nobody asked for.
+      - name: Resolve the socktainer pin
+        run: echo "SOCKTAINER_REV=$(./scripts/prepare-v1-runtime.sh pin)" >> "$GITHUB_ENV"
 
       - name: Cache the socktainer sidecar
         id: socktainer
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/socktainer-bin
-          key: socktainer-${{ hashFiles('scripts/prepare-v1-runtime.sh') }}
+          key: socktainer-${{ env.SOCKTAINER_REV }}-${{ runner.os }}-${{ runner.arch }}
 
       # Built from the pinned fork, never from HEAD: the pin carries three fixes
       # the app depends on. task runtime:check verifies the staged binary reports
@@ -111,7 +151,14 @@ jobs:
           rm -f "$RUNNER_TEMP/cert.p12"
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$password" "$keychain" >/dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # Preserve the existing search list: `list-keychains -s` replaces it
+          # outright, and dropping the login keychain breaks later lookups. Read
+          # into an array so a path with spaces stays one argument.
+          existing=()
+          while IFS= read -r entry; do
+            existing+=("${entry//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
           security find-identity -v -p codesigning "$keychain"
 
       - name: Write the notary key
@@ -127,7 +174,7 @@ jobs:
       - name: Release
         env:
           PUBLISH: "1"
-        run: ./scripts/release-zamok.sh
+        run: ./scripts/release.sh
 
       - name: Remove the keychain
         if: always()

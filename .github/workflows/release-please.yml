@@ -1,0 +1,43 @@
+# Mechanics of a release, so the prose stays human.
+#
+# release-please keeps one open PR that bumps VERSION and drafts a CHANGELOG
+# section from conventional commits. Edit that section in the PR -- the generated
+# lines are commit subjects, which are precise for a reviewer and useless in a
+# Sparkle "What's new" panel. Merging the PR tags the commit and publishes the
+# Release, which is what the build job below reacts to.
+#
+# The build is chained rather than triggered: a Release created with GITHUB_TOKEN
+# does not start another workflow, so `on: release` in release.yml would never
+# fire for a release-please release. Calling the workflow directly avoids
+# handing this repo a long-lived PAT purely to work around that.
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag }}
+    secrets: inherit

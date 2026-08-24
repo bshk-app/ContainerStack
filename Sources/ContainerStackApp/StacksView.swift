@@ -176,6 +176,7 @@ private struct StackRow: View {
                 RowActionButton(
                     icon: .play,
                     help: "Start stack",
+                    accessibilityLabel: "Start stack \(stack.name)",
                     isSelected: isSelected
                 ) {
                     Task { await model.upStack(stack) }
@@ -183,6 +184,7 @@ private struct StackRow: View {
                 RowActionButton(
                     icon: .square,
                     help: "Stop stack",
+                    accessibilityLabel: "Stop stack \(stack.name)",
                     isSelected: isSelected
                 ) {
                     Task { await model.downStack(stack, removeVolumes: false) }

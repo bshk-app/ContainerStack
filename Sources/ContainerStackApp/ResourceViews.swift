@@ -164,6 +164,7 @@ private struct VolumeRow: View {
     let isSelected: Bool
     let onSelect: () -> Void
     @Environment(\.appTheme) private var theme
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         SelectableResourceRow(
@@ -192,12 +193,21 @@ private struct VolumeRow: View {
             RowActionButton(
                 icon: .trash,
                 help: "Delete",
+                accessibilityLabel: "Delete volume \(volume.name)",
                 destructive: true,
                 isSelected: isSelected
             ) {
-                Task { await model.remove(volume: volume) }
+                isConfirmingDelete = true
             }
             .disabled(model.busyResource != nil || !model.isHealthy)
+            .confirmDestructive(
+                $isConfirmingDelete,
+                title: "Delete volume \(volume.name)?",
+                confirmTitle: "Delete Volume",
+                message: "Volume data is deleted permanently and cannot be restored."
+            ) {
+                Task { await model.remove(volume: volume) }
+            }
         }
     }
 }
@@ -208,6 +218,7 @@ private struct NetworkRow: View {
     let isSelected: Bool
     let onSelect: () -> Void
     @Environment(\.appTheme) private var theme
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         SelectableResourceRow(
@@ -239,12 +250,21 @@ private struct NetworkRow: View {
             RowActionButton(
                 icon: .trash,
                 help: "Delete",
+                accessibilityLabel: "Delete network \(network.name)",
                 destructive: true,
                 isSelected: isSelected
             ) {
-                Task { await model.remove(network: network) }
+                isConfirmingDelete = true
             }
             .disabled(model.busyResource != nil || !model.isHealthy)
+            .confirmDestructive(
+                $isConfirmingDelete,
+                title: "Delete network \(network.name)?",
+                confirmTitle: "Delete Network",
+                message: "Containers attached to this network lose it until they are recreated."
+            ) {
+                Task { await model.remove(network: network) }
+            }
         }
     }
 }
@@ -252,6 +272,7 @@ private struct NetworkRow: View {
 private struct VolumeInspector: View {
     let volume: DockerVolumeSummary?
     let model: RuntimeViewModel
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         if let volume {
@@ -261,10 +282,18 @@ private struct VolumeInspector: View {
                     subtitle: volume.mountpoint ?? "No mountpoint"
                 ) {
                     InspectorAction(title: "Delete", destructive: true) {
-                        Task { await model.remove(volume: volume) }
+                        isConfirmingDelete = true
                     }
                 }
                 .disabled(model.busyResource != nil || !model.isHealthy)
+                .confirmDestructive(
+                    $isConfirmingDelete,
+                    title: "Delete volume \(volume.name)?",
+                    confirmTitle: "Delete Volume",
+                    message: "Volume data is deleted permanently and cannot be restored."
+                ) {
+                    Task { await model.remove(volume: volume) }
+                }
 
                 InspectorStatBlock(
                     rows: [
@@ -284,6 +313,7 @@ private struct VolumeInspector: View {
 private struct NetworkInspector: View {
     let network: DockerNetworkSummary?
     let model: RuntimeViewModel
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         if let network {
@@ -295,10 +325,18 @@ private struct NetworkInspector: View {
                     pill: network.driver
                 ) {
                     InspectorAction(title: "Delete", destructive: true) {
-                        Task { await model.remove(network: network) }
+                        isConfirmingDelete = true
                     }
                 }
                 .disabled(model.busyResource != nil || !model.isHealthy)
+                .confirmDestructive(
+                    $isConfirmingDelete,
+                    title: "Delete network \(network.name)?",
+                    confirmTitle: "Delete Network",
+                    message: "Containers attached to this network lose it until they are recreated."
+                ) {
+                    Task { await model.remove(network: network) }
+                }
 
                 InspectorStatBlock(
                     rows: [

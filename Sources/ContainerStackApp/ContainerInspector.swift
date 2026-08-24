@@ -92,7 +92,7 @@ struct ContainerInspector: View {
                 $isConfirmingDelete,
                 title: "Delete container \(container.name)?",
                 confirmTitle: "Delete Container",
-                message: "The container and its writable layer are deleted. Named volumes are kept."
+                message: "A running container is stopped first. Its writable layer is deleted; named volumes are kept."
             ) {
                 Task { await model.remove(container: container) }
             }

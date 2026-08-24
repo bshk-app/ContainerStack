@@ -268,6 +268,7 @@ private struct PortsEditor: View {
             .buttonStyle(.borderless)
             .foregroundStyle(.red)
             .disabled(isApplyingEdit)
+            .accessibilityLabel("Delete port \(label(for: port))")
         }
     }
 
@@ -390,6 +391,9 @@ private struct VolumesEditor: View {
             .buttonStyle(.borderless)
             .foregroundStyle(.red)
             .disabled(isApplyingEdit)
+            .accessibilityLabel(
+                "Delete volume mapping \(displaySource(volume)) to \(volume.target)"
+            )
         }
     }
 

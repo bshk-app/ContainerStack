@@ -103,6 +103,7 @@ struct ImagesView: View {
 }
 
 struct ImageRow: View {
+    @State private var isConfirmingDelete = false
     let image: DockerImageSummary
     let model: RuntimeViewModel
     var isSelected: Bool = false
@@ -141,6 +142,7 @@ struct ImageRow: View {
                 RowActionButton(
                     icon: .play,
                     help: "Run",
+                    accessibilityLabel: "Run \(imageName)",
                     isSelected: isSelected
                 ) {
                     Task { await model.run(image: imageName) }
@@ -148,13 +150,22 @@ struct ImageRow: View {
                 RowActionButton(
                     icon: .trash,
                     help: "Delete",
+                    accessibilityLabel: "Delete \(imageName)",
                     destructive: true,
                     isSelected: isSelected
                 ) {
-                    Task { await model.remove(image: image) }
+                    isConfirmingDelete = true
                 }
             }
             .disabled(model.busyResource != nil || model.isRunningContainer || !model.isHealthy)
+            .confirmDestructive(
+                $isConfirmingDelete,
+                title: "Delete image \(imageName)?",
+                confirmTitle: "Delete Image",
+                message: "The image is deleted locally and must be pulled again to be used."
+            ) {
+                Task { await model.remove(image: image) }
+            }
         }
     }
 
@@ -165,6 +176,7 @@ struct ImageRow: View {
 }
 
 private struct ImageInspector: View {
+    @State private var isConfirmingDelete = false
     let image: DockerImageSummary?
     let model: RuntimeViewModel
 
@@ -178,10 +190,18 @@ private struct ImageInspector: View {
                         Task { await model.run(image: name) }
                     }
                     InspectorAction(title: "Delete", destructive: true) {
-                        Task { await model.remove(image: image) }
+                        isConfirmingDelete = true
                     }
                 }
                 .disabled(model.busyResource != nil || model.isRunningContainer || !model.isHealthy)
+                .confirmDestructive(
+                    $isConfirmingDelete,
+                    title: "Delete image \(name)?",
+                    confirmTitle: "Delete Image",
+                    message: "The image is deleted locally and must be pulled again to be used."
+                ) {
+                    Task { await model.remove(image: image) }
+                }
 
                 InspectorStatBlock(
                     rows: [

@@ -27,7 +27,7 @@ if [[ ! -x "$BIN" ]]; then
     exit 1
 fi
 
-pinned="$(grep -oE 'SOCKTAINER_REV="[0-9a-f]+"' "$ROOT/scripts/prepare-v1-runtime.sh" | cut -d'"' -f2)"
+pinned="$("$ROOT/scripts/prepare-v1-runtime.sh" pin)"
 reported="$("$BIN" --version 2>/dev/null || true)"
 
 case "$reported" in

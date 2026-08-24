@@ -197,7 +197,7 @@ extension RuntimeViewModel {
         refreshList: Bool = true,
         _ body: @escaping () async throws -> Void
     ) async {
-        guard isHealthy, !busyContainerIDs.contains(container.id) else { return }
+        guard canMutate, !busyContainerIDs.contains(container.id) else { return }
 
         busyContainerIDs.insert(container.id)
         containerMessage = "\(action) \(container.name)…"
@@ -221,7 +221,7 @@ extension RuntimeViewModel {
         message: String,
         _ body: @escaping () async throws -> Void
     ) async {
-        guard isHealthy, busyResource == nil else { return }
+        guard canMutate, busyResource == nil else { return }
 
         busyResource = id
         resourceMessage = message

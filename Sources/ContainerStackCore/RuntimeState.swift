@@ -40,9 +40,13 @@ public enum RuntimeState: Equatable, Sendable {
         //
         // Safe outside the branch because `RuntimeStatusParser.missingAppRoot` already requires the
         // apiserver to report itself running: a stopped runtime yields nil and falls through.
+        // Ahead of the app root: a foreign bridge makes every mutation hang, and
+        // `missingAppRoot` describes the local runtime rather than who serves this
+        // socket, so letting it win would print the wrong remedy and leave the
+        // mutation gate open. It is already nil unless the socket answers.
+        if socketResponds, let foreignBridge { return .foreignBridge(socketPath: foreignBridge) }
         if let missingAppRoot { return .detached(appRoot: missingAppRoot) }
         if socketResponds {
-            if let foreignBridge { return .foreignBridge(socketPath: foreignBridge) }
             return unroutableNetworks.isEmpty ? .running : .degraded(networks: unroutableNetworks)
         }
         if isStarting || helperRunning {
@@ -56,6 +60,19 @@ public enum RuntimeState: Equatable, Sendable {
         switch self {
         case .running, .degraded, .detached, .foreignBridge: true
         case .unknown, .starting, .offline: false
+        }
+    }
+
+    /// Whether changing anything is worth attempting.
+    ///
+    /// Distinct from `isHealthy`, which describes whether the API answers: against
+    /// a bridge from another build every read succeeded while `start` and `stop`
+    /// hung past 150s, so offering those actions only produces a frozen row and a
+    /// two-minute timeout.
+    public var allowsMutations: Bool {
+        switch self {
+        case .running, .degraded, .detached: true
+        case .foreignBridge, .unknown, .starting, .offline: false
         }
     }
 

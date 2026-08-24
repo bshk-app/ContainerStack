@@ -138,7 +138,7 @@ private struct ContainerGroupHeader: View {
                 .buttonStyle(.plain)
                 .help(runningCount > 0 ? "Stop the stack" : "Start the stack")
                 .accessibilityLabel(runningCount > 0 ? "Stop stack \(title)" : "Start stack \(title)")
-                .disabled(model.busyResource != nil || !model.isHealthy)
+                .disabled(model.busyResource != nil || !model.canMutate)
             }
         }
         .padding(.horizontal, 12)
@@ -224,7 +224,7 @@ struct ContainerRow: View {
                     isConfirmingDelete = true
                 }
             }
-            .disabled(isBusy || !model.isHealthy)
+            .disabled(isBusy || !model.canMutate)
             .confirmDestructive(
                 $isConfirmingDelete,
                 title: "Delete container \(container.name)?",

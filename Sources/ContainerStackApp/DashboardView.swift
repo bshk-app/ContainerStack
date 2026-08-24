@@ -72,12 +72,12 @@ struct DashboardView: View {
                             selection = .images
                             focusImagePull = true
                         }
-                        .disabled(!model.isHealthy)
+                        .disabled(!model.canMutate)
                     }
                     ToolbarItem {
                         Menu {
                             Button("Reclaim Space") { isConfirmingPrune = true }
-                                .disabled(!model.isHealthy || model.busyResource != nil)
+                                .disabled(!model.canMutate || model.busyResource != nil)
                             Button("Refresh") {
                                 Task { await model.refresh() }
                             }

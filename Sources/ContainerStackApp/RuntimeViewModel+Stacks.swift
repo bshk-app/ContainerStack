@@ -125,7 +125,7 @@ extension RuntimeViewModel {
     }
 
     func stackLogs(_ stack: ComposeStack, service: String?) async {
-        guard isHealthy, busyStackID == nil else { return }
+        guard canMutate, busyStackID == nil else { return }
         busyStackID = stack.id
         defer { busyStackID = nil }
         do {
@@ -142,7 +142,7 @@ extension RuntimeViewModel {
         pastTense: String,
         operation: () async throws -> String
     ) async {
-        guard isHealthy, busyStackID == nil else { return }
+        guard canMutate, busyStackID == nil else { return }
         busyStackID = stack.id
         stackMessage = "\(verb) \(stack.name)…"
         defer { busyStackID = nil }

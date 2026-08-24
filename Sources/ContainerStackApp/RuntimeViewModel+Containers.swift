@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 extension RuntimeViewModel {
     func run(image: String) async {
-        guard isHealthy else {
+        guard canMutate else {
             containerMessage = "Start the runtime before launching a container."
             return
         }

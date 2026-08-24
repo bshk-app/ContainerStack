@@ -17,7 +17,7 @@ struct ImagesView: View {
                 actionTitle: "Pull",
                 icon: .download,
                 isBusy: model.busyResource != nil,
-                isEnabled: model.isHealthy,
+                isEnabled: model.canMutate,
                 focused: $pullFocused
             ) { reference in
                 Task { await model.pull(reference: reference) }
@@ -162,7 +162,7 @@ struct ImageRow: View {
                     isConfirmingDelete = true
                 }
             }
-            .disabled(model.busyResource != nil || model.isRunningContainer || !model.isHealthy)
+            .disabled(model.busyResource != nil || model.isRunningContainer || !model.canMutate)
             .confirmDestructive(
                 $isConfirmingDelete,
                 title: "Delete image \(imageName)?",
@@ -203,7 +203,7 @@ private struct ImageInspector: View {
                         isConfirmingDelete = true
                     }
                 }
-                .disabled(model.busyResource != nil || model.isRunningContainer || !model.isHealthy)
+                .disabled(model.busyResource != nil || model.isRunningContainer || !model.canMutate)
                 .confirmDestructive(
                     $isConfirmingDelete,
                     title: "Delete image \(name)?",

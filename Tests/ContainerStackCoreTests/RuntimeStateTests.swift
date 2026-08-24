@@ -130,8 +130,11 @@ struct RuntimeStateTests {
         #expect(state.detail?.contains("can hang") == true)
     }
 
+    /// A foreign bridge outranks missing storage: it makes every mutation hang, and
+    /// the app-root probe describes the local runtime rather than who serves this
+    /// socket, so leading with storage would print the wrong remedy.
     @Test
-    func missingStorageOutranksAForeignBridge() {
+    func aForeignBridgeOutranksMissingStorage() {
         let state = RuntimeState.resolve(
             socketResponds: true,
             helperRunning: true,
@@ -141,7 +144,8 @@ struct RuntimeStateTests {
             foreignBridge: "/tmp/socket"
         )
 
-        #expect(state == .detached(appRoot: "/tmp/gone"))
+        #expect(state == .foreignBridge(socketPath: "/tmp/socket"))
+        #expect(state.allowsMutations == false)
     }
 
     @Test

@@ -128,6 +128,13 @@ final class RuntimeViewModel {
         runtimeState.isHealthy
     }
 
+    /// Whether an action is worth attempting, which is not the same as whether the
+    /// API answers: against a bridge from another build every read succeeded while
+    /// start and stop hung past 150s.
+    var canMutate: Bool {
+        runtimeState.allowsMutations
+    }
+
     var statusTitle: String {
         runtimeState.title
     }
@@ -345,6 +352,15 @@ final class RuntimeViewModel {
         return lastForeignBridge
     }
 
+    /// Probes now and feeds the same cache, for the same reason `freshMissingAppRoot`
+    /// does: a refresh that answered from nothing would clear the banner the poll
+    /// had just raised.
+    private func freshForeignBridge() -> String? {
+        lastForeignBridge = servesOurBridge() ? nil : socketPath
+        bridgeOwnerCadence.recordRun()
+        return lastForeignBridge
+    }
+
     /// Probes now and feeds the cache, so the next poll does not revert to a stale answer.
     /// Without sharing the cache, a refresh that raised the banner would have it cleared again
     /// on the following tick — the failure the comment in `refresh(health:)` already warns of.
@@ -443,7 +459,11 @@ final class RuntimeViewModel {
             runtimeFailure = nil
             // Supplied here as well as in the poll: a full refresh that left it out would clear the
             // banner it had just raised and put it back on the next tick.
-            applyState(socketResponds: true, missingAppRoot: await freshMissingAppRoot())
+            applyState(
+                socketResponds: true,
+                missingAppRoot: await freshMissingAppRoot(),
+                foreignBridge: freshForeignBridge()
+            )
             await refreshImages()
             await refreshContainers()
             await refreshVolumes()

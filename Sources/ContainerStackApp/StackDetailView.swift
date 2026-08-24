@@ -112,7 +112,7 @@ struct StackDetailView: View {
                 // in the forms above is applied by Up, not by this button.
                 .help("Restart the existing containers — use Up to apply compose file changes")
             }
-            .disabled(model.busyStackID == stack.id || !model.isHealthy)
+            .disabled(model.busyStackID == stack.id || !model.canMutate)
         }
         .padding(16)
         .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 12))

@@ -29,7 +29,7 @@ final class ServiceMessageExpiryTests: XCTestCase {
         model.serviceMessage = "Docker context configured, but it is not active."
         XCTAssertEqual(model.serviceMessage, "Docker context configured, but it is not active.")
         XCTAssertNotEqual(model.serviceMessageExpiresAt, firstExpiry)
-        model.expireServiceMessage(now: base.addingTimeInterval(1))
+        model.expireServiceMessage(now: base.addingTimeInterval(5.5))
         XCTAssertEqual(model.serviceMessage, "Docker context configured, but it is not active.")
     }
 }

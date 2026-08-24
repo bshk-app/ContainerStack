@@ -50,11 +50,12 @@ extension DockerHTTPResponseParserTests {
         }
     }
 
-    /// `Int(_:radix:)` accepts a leading minus, and a negative size built a reversed
-    /// `offset..<chunkEnd` range, which also trapped.
+    /// `Int(_:radix:)` accepts a leading minus. A size of `-2` moves `chunkEnd`
+    /// back onto the size line's CRLF, so the terminator checks pass and the
+    /// subsequent `offset..<chunkEnd` constructs a reversed range that traps.
     @Test
     func negativeChunkSizeThrowsInsteadOfTrapping() throws {
-        let raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n-1\r\nabc\r\n0\r\n\r\n"
+        let raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n-2\r\nabc\r\n0\r\n\r\n"
         #expect(throws: DockerHTTPParseError.invalidChunkedBody) {
             try DockerHTTPResponseParser.parse(Data(raw.utf8))
         }

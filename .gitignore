@@ -35,5 +35,9 @@ __pycache__/
 # per-machine (notary key path, signing identity), so .env.example is what ships.
 /.env
 
+# Per-machine notes for agents: the release Mac's signing identity and team.
+# Identifiers, not secrets - and still nobody else's business.
+/CLAUDE.local.md
+
 # zamokctl packaging output: DMG, manifest.json, extracted release notes.
 /out/

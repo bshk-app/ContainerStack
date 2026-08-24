@@ -48,25 +48,22 @@ public enum DockerCLI {
             throw DockerCLIError.notInstalled
         }
 
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-        process.environment = environment
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
+        // Context reads and edits are local file operations behind the CLI, so the diagnostic
+        // deadline is generous. It exists so a docker binary wedged on its own daemon socket
+        // cannot pin the caller — `refreshDockerContext` runs from the 3s monitor loop.
+        let result = try ProcessRunner.run(
+            executablePath: executablePath,
+            arguments: arguments,
+            output: .capture(includingStandardError: true),
+            environment: environment,
+            timeout: ProcessRunner.diagnosticTimeout
+        )
 
-        let output = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        let text = String(decoding: output, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard process.terminationStatus == 0 else {
+        let text = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard result.status == 0 else {
             throw DockerCLIError.failed(
                 command: arguments.joined(separator: " "),
-                status: process.terminationStatus,
+                status: result.status,
                 output: text
             )
         }

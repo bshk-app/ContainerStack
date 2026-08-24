@@ -41,10 +41,10 @@ extension RuntimeViewModel {
         )
     }
 
-    /// One wording for both places that can discover it, so the two cannot drift.
+    /// The banner owns this wording; the launch-time discovery reuses it so the
+    /// two cannot drift apart.
     var foreignBridgeMessage: String {
-        "Another Docker bridge holds \(socketPath). Stop it and start the runtime again; "
-            + "until then starting and stopping containers can hang."
+        RuntimeState.foreignBridge(socketPath: socketPath).detail ?? ""
     }
 
     func adoptBridgeIfStale(
@@ -106,16 +106,27 @@ extension RuntimeViewModel {
         }
     }
 
-    /// Whether the bridge this bundle ships is the process serving. The Docker
-    /// API cannot answer this - every socktainer replies the same - so the
-    /// process table is asked instead.
+    /// Whether the bridge this bundle ships is the process holding the socket.
+    /// The Docker API cannot answer this - every socktainer replies the same - and
+    /// neither can "is our binary running", since the bridge takes a `--socket`
+    /// argument and ours may be serving a different path.
     func servesOurBridge() -> Bool {
         let plan = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL)
-        let listing = RuntimeShell.output(
-            executablePath: "/bin/ps",
-            arguments: ["-A", "-o", "pid=,command="]
+        return BridgeOwnership.isOurs(
+            holder: BridgeOwnership.holder(
+                lsofOutput: RuntimeShell.output(
+                    executablePath: "/usr/sbin/lsof",
+                    arguments: ["-Fpcn", "--", socketPath]
+                )
+            ),
+            ourPIDs: ProcessTable.pids(
+                forExecutable: plan.bridgePath,
+                in: RuntimeShell.output(
+                    executablePath: "/bin/ps",
+                    arguments: ["-A", "-o", "pid=,command="]
+                )
+            )
         )
-        return !ProcessTable.pids(forExecutable: plan.bridgePath, in: listing).isEmpty
     }
 
     /// Records the bridge this app just launched, so a later launch can tell it apart from one it

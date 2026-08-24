@@ -110,6 +110,52 @@ struct RuntimeStateTests {
 
         #expect(state == .offline("Docker socket is not responding."))
     }
+
+    /// Reads work through a foreign bridge, so this stays "healthy" like the other
+    /// answering-but-wrong states - and degraded, so the banner keeps saying it
+    /// for as long as it is true.
+    @Test
+    func reportsAForeignBridgeWhileTheSocketAnswers() {
+        let state = RuntimeState.resolve(
+            socketResponds: true,
+            helperRunning: true,
+            isStarting: false,
+            failure: nil,
+            foreignBridge: "/Users/someone/.socktainer/container.sock"
+        )
+
+        #expect(state == .foreignBridge(socketPath: "/Users/someone/.socktainer/container.sock"))
+        #expect(state.isHealthy)
+        #expect(state.isDegraded)
+        #expect(state.detail?.contains("can hang") == true)
+    }
+
+    @Test
+    func missingStorageOutranksAForeignBridge() {
+        let state = RuntimeState.resolve(
+            socketResponds: true,
+            helperRunning: true,
+            isStarting: false,
+            failure: nil,
+            missingAppRoot: "/tmp/gone",
+            foreignBridge: "/tmp/socket"
+        )
+
+        #expect(state == .detached(appRoot: "/tmp/gone"))
+    }
+
+    @Test
+    func aSilentSocketIsOfflineRatherThanForeign() {
+        let state = RuntimeState.resolve(
+            socketResponds: false,
+            helperRunning: false,
+            isStarting: false,
+            failure: nil,
+            foreignBridge: "/tmp/socket"
+        )
+
+        #expect(state == .offline("Docker socket is not responding."))
+    }
 }
 
 struct RuntimeStartupPlannerTests {

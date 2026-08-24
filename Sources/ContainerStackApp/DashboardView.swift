@@ -214,7 +214,7 @@ private struct RuntimeHero: View {
         switch model.runtimeState {
         case .running: .green
         case .degraded: .yellow
-        case .detached: .yellow
+        case .detached, .foreignBridge: .yellow
         case .starting: .blue
         case .offline: .orange
         case .unknown: .secondary

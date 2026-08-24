@@ -6,10 +6,16 @@ public enum ProcessRunnerError: Error, Equatable, Sendable, CustomStringConverti
     /// caller can say "the runtime stopped answering" instead of "the command failed".
     case timedOut(executablePath: String, seconds: Double)
 
+    /// The process is shutting down, so nothing would be left to wait on this
+    /// child. It was killed rather than started and abandoned.
+    case terminatingBeforeWait(executablePath: String)
+
     public var description: String {
         switch self {
         case .timedOut(let executablePath, let seconds):
             "\(executablePath) did not exit within \(seconds)s and was terminated"
+        case .terminatingBeforeWait(let executablePath):
+            "\(executablePath) was not started: this process is shutting down"
         }
     }
 }
@@ -48,15 +54,19 @@ public enum ProcessRunner {
 
     public static var outstandingBoundedChildren: Int { boundedChildren.count }
 
-    /// Kills every child still under a deadline. For a process about to exit:
-    /// its waits die with it, its children do not.
+    /// Kills every child still under a deadline and closes the registry, so a
+    /// child launched while this runs is killed by its own `run` call rather than
+    /// left behind. For a process about to exit: its waits die with it, its
+    /// children do not.
     @discardableResult
     public static func terminateBoundedChildren() -> Int {
-        let pids = boundedChildren.drain()
-        for pid in pids {
-            kill(pid, SIGKILL)
+        let children = boundedChildren.closeAndDrain()
+        var killed = 0
+        for child in children where child.isRunning {
+            kill(child.processIdentifier, SIGKILL)
+            killed += 1
         }
-        return pids.count
+        return killed
     }
 
     public enum OutputMode: Equatable, Sendable {
@@ -175,8 +185,15 @@ public enum ProcessRunner {
         if let timeout {
             // Registered only while this call is waiting on it, so a process that
             // exits mid-wait can take the child with it instead of orphaning it.
-            boundedChildren.insert(process.processIdentifier)
-            defer { boundedChildren.remove(process.processIdentifier) }
+            // A refusal means shutdown already started: nobody will be here to
+            // wait, so the child goes now rather than surviving this process.
+            guard boundedChildren.insert(process) else {
+                kill(process.processIdentifier, SIGKILL)
+                exited.wait()
+                finishDrain()
+                throw ProcessRunnerError.terminatingBeforeWait(executablePath: executablePath)
+            }
+            defer { boundedChildren.remove(process) }
 
             if exited.wait(timeout: .now() + seconds(timeout)) == .timedOut {
                 process.terminate()
@@ -228,34 +245,45 @@ private final class OutputBuffer: @unchecked Sendable {
 
 /// Registered from whichever thread called `run`, drained from the one that is
 /// shutting down, so the set needs a lock to cross between them.
+///
+/// `Process` rather than a pid: a pid recorded a moment ago can belong to
+/// something else by the time the signal is sent, and `Process` answers whether
+/// *its* child is still alive. Once shutdown starts the registry stays closed,
+/// so a child launched during it is killed by the call that registers it rather
+/// than left behind.
 private final class BoundedChildren: @unchecked Sendable {
     private let lock = NSLock()
-    private var pids: Set<pid_t> = []
+    private var processes: [ObjectIdentifier: Process] = [:]
+    private var isTerminating = false
 
-    func insert(_ pid: pid_t) {
+    /// False when shutdown has begun; the caller must not expect to be waited on.
+    func insert(_ process: Process) -> Bool {
         lock.lock()
-        pids.insert(pid)
+        defer { lock.unlock() }
+        guard !isTerminating else { return false }
+        processes[ObjectIdentifier(process)] = process
+        return true
+    }
+
+    func remove(_ process: Process) {
+        lock.lock()
+        processes.removeValue(forKey: ObjectIdentifier(process))
         lock.unlock()
     }
 
-    func remove(_ pid: pid_t) {
-        lock.lock()
-        pids.remove(pid)
-        lock.unlock()
-    }
-
-    func drain() -> [pid_t] {
+    func closeAndDrain() -> [Process] {
         lock.lock()
         defer {
-            pids.removeAll()
+            processes.removeAll()
             lock.unlock()
         }
-        return Array(pids)
+        isTerminating = true
+        return Array(processes.values)
     }
 
     var count: Int {
         lock.lock()
         defer { lock.unlock() }
-        return pids.count
+        return processes.count
     }
 }

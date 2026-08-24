@@ -13,6 +13,11 @@ public enum RuntimeState: Equatable, Sendable {
     /// The Docker API answers, but the runtime is storing into a directory that no longer exists.
     /// Nothing distinguishes this from a healthy runtime over the API — which is the whole problem.
     case detached(appRoot: String)
+    /// The Docker API answers, but the process holding the socket is not the
+    /// bridge this build ships. Reads work; lifecycle calls were measured hanging
+    /// past 150s against a foreign bridge, so this has to be visible for as long
+    /// as it lasts rather than announced once.
+    case foreignBridge(socketPath: String)
     case offline(String)
 
     public static let genericFailure = "Docker socket is not responding."
@@ -23,7 +28,8 @@ public enum RuntimeState: Equatable, Sendable {
         isStarting: Bool,
         failure: String?,
         unroutableNetworks: [UnroutableNetwork] = [],
-        missingAppRoot: String? = nil
+        missingAppRoot: String? = nil,
+        foreignBridge: String? = nil
     ) -> RuntimeState {
         // Ahead of the socket branch, not inside it. In this state `/info` fails while `_ping`
         // succeeds — measured: `cstack doctor` died on health with "Failed to generate system
@@ -36,6 +42,7 @@ public enum RuntimeState: Equatable, Sendable {
         // apiserver to report itself running: a stopped runtime yields nil and falls through.
         if let missingAppRoot { return .detached(appRoot: missingAppRoot) }
         if socketResponds {
+            if let foreignBridge { return .foreignBridge(socketPath: foreignBridge) }
             return unroutableNetworks.isEmpty ? .running : .degraded(networks: unroutableNetworks)
         }
         if isStarting || helperRunning {
@@ -47,14 +54,14 @@ public enum RuntimeState: Equatable, Sendable {
     /// True whenever the Docker API is usable, so container actions stay enabled while degraded.
     public var isHealthy: Bool {
         switch self {
-        case .running, .degraded, .detached: true
+        case .running, .degraded, .detached, .foreignBridge: true
         case .unknown, .starting, .offline: false
         }
     }
 
     public var isDegraded: Bool {
         switch self {
-        case .degraded, .detached: true
+        case .degraded, .detached, .foreignBridge: true
         default: false
         }
     }
@@ -66,6 +73,7 @@ public enum RuntimeState: Equatable, Sendable {
         case .running: "Runtime ready"
         case .degraded: "Runtime degraded"
         case .detached: "Runtime storage is missing"
+        case .foreignBridge: "Another Docker bridge is in use"
         case .offline: "Runtime unavailable"
         }
     }
@@ -98,6 +106,13 @@ public enum RuntimeState: Equatable, Sendable {
             "The runtime is storing into \(appRoot), which no longer exists. "
                 + "Images, volumes and containers kept there cannot be found. "
                 + "Restart the runtime to move it back to the default location."
+        case let .foreignBridge(socketPath):
+            // Measured: a bridge from another build answered `_ping`, `/version`
+            // and `/info` while `POST /containers/{id}/start` never returned and
+            // the container stayed `Created` past 150s. Nothing else reports it,
+            // and the app deliberately does not kill a bridge someone else runs.
+            "Another Docker bridge holds \(socketPath), so starting and stopping "
+                + "containers can hang. Stop it, then start the runtime again."
         case let .offline(reason): reason
         }
     }
@@ -109,6 +124,7 @@ public enum RuntimeState: Equatable, Sendable {
         case .running: "checkmark.circle.fill"
         case .degraded: "exclamationmark.triangle.fill"
         case .detached: "externaldrive.badge.questionmark"
+        case .foreignBridge: "exclamationmark.triangle.fill"
         case .offline: "exclamationmark.triangle.fill"
         }
     }

@@ -22,6 +22,10 @@ final class RuntimeViewModel {
     /// its last answer between checks instead of asking on every 3s tick.
     private var appRootCadence = DiagnosticCadence(interval: .seconds(30))
     private var lastMissingAppRoot: String?
+    /// Same cadence and the same reason: answering "who holds the socket" costs
+    /// an `lsof` and a `ps`, which is too much for a 3-second poll.
+    private var bridgeOwnerCadence = DiagnosticCadence(interval: .seconds(30))
+    private var lastForeignBridge: String?
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
     let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
@@ -309,7 +313,8 @@ final class RuntimeViewModel {
             applyState(
                 socketResponds: true,
                 unroutableNetworks: await unroutablePublishingNetworks(),
-                missingAppRoot: await throttledMissingAppRoot()
+                missingAppRoot: await throttledMissingAppRoot(),
+                foreignBridge: throttledForeignBridge()
             )
         } else {
             applyState(socketResponds: false)
@@ -328,6 +333,16 @@ final class RuntimeViewModel {
             lastMissingAppRoot = await missingAppRoot()
         }
         return lastMissingAppRoot
+    }
+
+    /// The socket path when a bridge that is not ours holds it, otherwise nil.
+    /// Re-asked on the cadence so the banner clears by itself once the other
+    /// bridge is gone - the reported case sat there for hours with nothing to see.
+    private func throttledForeignBridge() -> String? {
+        if bridgeOwnerCadence.shouldRun() {
+            lastForeignBridge = servesOurBridge() ? nil : socketPath
+        }
+        return lastForeignBridge
     }
 
     /// Probes now and feeds the cache, so the next poll does not revert to a stale answer.
@@ -389,7 +404,8 @@ final class RuntimeViewModel {
     func applyState(
         socketResponds: Bool,
         unroutableNetworks: [UnroutableNetwork] = [],
-        missingAppRoot: String? = nil
+        missingAppRoot: String? = nil,
+        foreignBridge: String? = nil
     ) {
         runtimeState = RuntimeState.resolve(
             socketResponds: socketResponds,
@@ -397,7 +413,8 @@ final class RuntimeViewModel {
             isStarting: isStarting,
             failure: runtimeFailure,
             unroutableNetworks: unroutableNetworks,
-            missingAppRoot: socketResponds ? missingAppRoot : nil
+            missingAppRoot: socketResponds ? missingAppRoot : nil,
+            foreignBridge: socketResponds ? foreignBridge : nil
         )
 
         if socketResponds {

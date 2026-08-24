@@ -3,6 +3,69 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.4.0</title>
+            <pubDate>Mon, 24 Aug 2026 18:14:10 +0000</pubDate>
+            <sparkle:version>140</sparkle:version>
+            <sparkle:shortVersionString>0.4.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>The app can finally update itself. Beyond that: runtime control is harder to<br>
+wedge, destructive actions are harder to trigger by accident, and diagnostics<br>
+are more honest.</p>
+<h3>Added</h3>
+<ul>
+<li>In-app updates. Every build since 0.1.0 advertised an update feed and the<br>
+signed feed has been live the whole time, but nothing read it: there was no<br>
+Sparkle, no menu item, and no way to learn a new version existed. "Check for<br>
+Updates…" now sits in the app menu and the menu bar. Checking happens on its<br>
+own; installing waits for you, because replacing the app while containers run<br>
+is not a decision to make on your behalf.</li>
+<li>Docker sections can be hidden from the sidebar through its context menu. Even<br>
+with every Docker item hidden, the same menu remains available to restore them.</li>
+<li><code class="notranslate">cstack doctor</code> reports the configured memory limits of running containers<br>
+against host memory. Unlimited containers and failed inspections are named<br>
+separately instead of being counted as zero.</li>
+<li>Every icon-only action has a descriptive, resource-specific VoiceOver name.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Releases carry their download again. 0.3.0 was published before its DMG was<br>
+built, and GitHub freezes a release's files the moment it is published, so<br>
+that version shipped empty and could not be repaired. The installer is now<br>
+attached while the release is still a draft, and publishing is the last step.</li>
+<li>Every subprocess wait now has an explicit deadline, except the deliberately<br>
+supervised socktainer process. A child that hangs — or exits while a descendant<br>
+keeps its output pipe open — can no longer wedge monitoring and runtime controls<br>
+forever.</li>
+<li><code class="notranslate">cstack runtime restart</code> continues best-effort recovery after a failed step,<br>
+names each failure, and exits non-zero instead of claiming success.</li>
+<li>GUI, helper, <code class="notranslate">cstack runtime</code>, and <code class="notranslate">cstack doctor</code> resolve the Apple Container<br>
+binary and its install root through one owner. Environment overrides and the<br>
+vendored runtime no longer apply to only part of the system.</li>
+<li>The bridge no longer writes an INFO request line for every 3-second poll into<br>
+<code class="notranslate">runtime.log</code>; warnings, errors, startup and DNS fallback messages remain.</li>
+<li>Deleting a container, image, volume, or network now requires confirmation.<br>
+In-use volumes are not force-deleted.</li>
+<li>Malformed chunked HTTP sizes return a parse error instead of trapping on<br>
+integer overflow or a reversed range.</li>
+<li>Image creation time reports unknown when the runtime returns zero, rather than<br>
+“56 years ago”. Architecture and OS now come from image inspect, the endpoint<br>
+that actually provides them.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>The expensive missing-app-root diagnostic runs at most every 30 seconds<br>
+instead of spawning the <code class="notranslate">container</code> CLI on every 3-second monitor tick. Manual<br>
+refresh still probes immediately.</li>
+</ul>
+<h3>Known limitations</h3>
+<p>Published ports still require a runtime restart if a bridge-created network's<br>
+vmnet helper dies; restarting only the containers does not repair the host route.<br>
+The per-container micro-VM architecture also remains slower than OrbStack on the<br>
+measured M1 system (4.6x container round trip, 3.6x bind-mount writes).</p>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.4.0/ContainerStack-0.4.0.dmg" length="22415085" type="application/octet-stream" sparkle:edSignature="ih5JMvLf/p66bzE6RQAZgP+irE76kQDLxwBQJhms357caHsfgs+SVgR9OKrJxV4WyTNyQ/apEO3IYzmJ+AcoAw=="/>
+        </item>
+        <item>
             <title>0.2.0</title>
             <pubDate>Sun, 23 Aug 2026 20:00:23 +0000</pubDate>
             <sparkle:version>83</sparkle:version>

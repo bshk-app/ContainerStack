@@ -1,0 +1,66 @@
+# Build and test only. The release path is deliberately absent: codesign,
+# notarytool and stapling need the Developer ID on the release Mac, and the
+# no Zamok API key exists any more. `task release` is the whole CD.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # ContainerStack targets .macOS(.v26); older images cannot resolve the manifest.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Report toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build every product
+        run: |
+          swift build --product ContainerStack
+          swift build --product cstack
+          swift build --product ContainerStackRuntime
+
+      # No runtime, no daemon, no socket on a hosted runner: these suites cover
+      # parsing, state rules and view models, which is what CI can honestly test.
+      - name: Test
+        run: swift test
+
+  scripts:
+    # The release path itself cannot run here, but its scripts are where this
+    # repo has actually broken: a stale copy published to the wrong store, and a
+    # retry that recomputed the build number. Parse and lint them every push.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Parse every script
+        run: |
+          for f in scripts/*.sh; do bash -n "$f"; done
+
+      # Style-only findings (SC2155 and friends) are excluded on purpose; this
+      # gate is for genuine breakage, so it stays green until something is wrong.
+      - name: Shellcheck
+        run: shellcheck --severity=error scripts/*.sh
+
+      # An invalid workflow file is not a parse error YAML can see: putting the
+      # `runner` context in a job-level `env:` produced a run whose only symptom
+      # was a failure named after the file. actionlint knows the context rules.
+      - name: Lint the workflows
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint"

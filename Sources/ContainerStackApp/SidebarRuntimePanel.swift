@@ -130,6 +130,7 @@ struct SidebarRuntimePanel: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Runtime actions")
+        .accessibilityLabel("Runtime actions")
     }
 
     private var unhealthyMessage: String? {

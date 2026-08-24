@@ -128,7 +128,7 @@ extension RuntimeViewModel {
 
     func remove(volume: DockerVolumeSummary) async {
         await withResource(volume.name, message: "Removing volume \(volume.name)…") {
-            try await self.client.removeVolume(name: volume.name, force: true)
+            try await self.client.removeVolume(name: volume.name, force: false)
             self.resourceMessage = "Removed volume \(volume.name)."
             await self.refreshVolumes()
         }

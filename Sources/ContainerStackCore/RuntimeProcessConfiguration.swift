@@ -28,29 +28,69 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         "/usr/bin/container"
     ]
 
-    /// Prefers the copy shipped inside the app bundle over anything installed
-    /// system-wide.
+    /// The vendored runtime inside the app bundle, or nil outside a staged bundle.
     ///
-    /// Homebrew cannot pin a dependency's version: declaring a dependency gets
-    /// the user whatever the tap holds that day, so an unrelated `brew upgrade`
-    /// can move Apple Container's API out from under a machine we never
-    /// touched — silently, because neither side checks. Vendoring is what makes
-    /// the pinned version actually reach a user, and `container system start`
+    /// Works for both executables that need it: `Contents/MacOS/ContainerStack` and
+    /// `Contents/Helpers/ContainerStackRuntime` sit two levels below `Contents`.
+    public static func bundledInstallRoot(
+        forExecutableAt executable: URL?,
+        exists: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
+    ) -> String? {
+        guard let executable else { return nil }
+        let root = executable
+            .resolvingSymlinksInPath()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Resources/container")
+        return exists(root.appending(path: "bin/container").path) ? root.path : nil
+    }
+
+    /// The single owner of runtime resolution.
+    ///
+    /// The environment override wins. Otherwise the copy shipped inside the app
+    /// bundle is preferred over anything installed system-wide, and a system copy
+    /// remains the development fallback.
+    ///
+    /// Homebrew cannot pin a dependency's version: an unrelated `brew upgrade`
+    /// can move Apple Container's API out from under a machine we never touched.
+    /// Vendoring is what makes the pin reach a user, and `container system start`
     /// takes `--install-root` precisely so a copy can live elsewhere.
     ///
-    /// A system install is still honoured when nothing is vendored, which keeps
-    /// a development checkout working without a staged bundle.
-    public static func resolvedContainerPath(
+    /// The binary and its install root are decided together. Deriving them
+    /// separately is how they drift apart.
+    public static func make(
+        socktainerPath: String,
+        socketPath: String = RuntimeProcessConfiguration.defaultSocketPath,
         bundledInstallRoot: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
         exists: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
-    ) -> String {
-        if let bundledInstallRoot {
-            let vendored = "\(bundledInstallRoot)/bin/container"
-            if exists(vendored) {
-                return vendored
-            }
+    ) -> RuntimeProcessConfiguration {
+        // The override exists to rescue a machine the search order cannot reach, so it wins.
+        // It carries no install root: it may point at a copy unrelated to this bundle.
+        if let override = environment["CONTAINERSTACK_CONTAINER_PATH"], !override.isEmpty {
+            return RuntimeProcessConfiguration(
+                containerPath: override,
+                socktainerPath: socktainerPath,
+                socketPath: socketPath,
+                containerInstallRoot: nil
+            )
         }
-        return containerSearchPaths.first(where: exists) ?? containerSearchPaths[0]
+
+        if let bundledInstallRoot, exists("\(bundledInstallRoot)/bin/container") {
+            return RuntimeProcessConfiguration(
+                containerPath: "\(bundledInstallRoot)/bin/container",
+                socktainerPath: socktainerPath,
+                socketPath: socketPath,
+                containerInstallRoot: bundledInstallRoot
+            )
+        }
+
+        return RuntimeProcessConfiguration(
+            containerPath: containerSearchPaths.first(where: exists) ?? containerSearchPaths[0],
+            socktainerPath: socktainerPath,
+            socketPath: socketPath,
+            containerInstallRoot: nil
+        )
     }
 
     public let containerPath: String
@@ -87,6 +127,30 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
 
     public var socktainerArguments: [String] {
         ["--no-check-compatibility", "--no-docker-context"]
+    }
+
+    /// Environment for the bridge, quieting its request log.
+    ///
+    /// socktainer logs every request it serves at INFO, and the destination is the helper's own
+    /// `runtime.log`, which nothing rotates. Against the app's 3s poll that measured ~11 MB a
+    /// day — a 20 MB file of 203,910 lines, 67,541 of them one container's stats — which buries
+    /// the startup and XPC-failure lines that are the reason to open the file at all.
+    ///
+    /// The bridge has no log-level flag, but it is Vapor-based and honours `LOG_LEVEL`.
+    /// Verified against the shipped binary: request lines disappear at `notice` while
+    /// `Server started`, the DNS port fallback and every warning still appear.
+    ///
+    /// An explicit `LOG_LEVEL` is left untouched, so request logging can be turned back on for
+    /// debugging.
+    public static func socktainerEnvironment(
+        from environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String: String] {
+        guard (environment["LOG_LEVEL"] ?? "").isEmpty else {
+            return environment
+        }
+        var quieted = environment
+        quieted["LOG_LEVEL"] = "notice"
+        return quieted
     }
 }
 

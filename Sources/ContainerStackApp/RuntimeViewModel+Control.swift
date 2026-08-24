@@ -143,33 +143,28 @@ extension RuntimeViewModel {
 
 /// Process plumbing kept out of the view model so the decision logic stays testable.
 enum RuntimeShell {
+    /// `container system start`/`stop` boots or tears down a micro-VM, so this takes the
+    /// lifecycle deadline. Bounded either way: on the old unbounded wait a wedged runtime left
+    /// `runtimeProcess?.isRunning` true forever, which made every later Start click a silent
+    /// no-op and could strand Restart with `isRestarting` stuck true.
     static func run(executablePath: String, arguments: [String]) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
+        _ = try ProcessRunner.run(
+            executablePath: executablePath,
+            arguments: arguments,
+            timeout: ProcessRunner.lifecycleTimeout
+        )
     }
 
+    /// Called from the 3s monitor loop, so it has to return on a schedule that loop can keep.
+    /// An empty string already meant "could not ask", and a timeout is that same answer.
     static func output(executablePath: String, arguments: [String]) -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return ""
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return String(decoding: data, as: UTF8.self)
+        let result = try? ProcessRunner.run(
+            executablePath: executablePath,
+            arguments: arguments,
+            output: .capture(includingStandardError: false),
+            timeout: ProcessRunner.diagnosticTimeout
+        )
+        return result?.output ?? ""
     }
 
     static func routingTable() -> String {

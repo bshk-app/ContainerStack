@@ -55,11 +55,15 @@ final class RuntimeViewModel {
         didSet {
             serviceMessageExpiresAt =
                 serviceMessage == nil
-                ? nil : Date().addingTimeInterval(Self.serviceMessageLifetime)
+                ? nil : clock().addingTimeInterval(Self.serviceMessageLifetime)
         }
     }
     static let serviceMessageLifetime: TimeInterval = 5
     private(set) var serviceMessageExpiresAt: Date?
+    /// Seam for the expiry deadline only. `Date()` has microsecond resolution, so two
+    /// back-to-back `serviceMessage` assignments can stamp the same instant and make the
+    /// deadline look unchanged. Production always uses `Date.init`.
+    var clock: () -> Date = Date.init
 
     internal(set) var containerMessage: String?
     internal(set) var containerOutput: String?
@@ -351,10 +355,12 @@ final class RuntimeViewModel {
 
     func runtimeConfiguration() -> RuntimeProcessConfiguration {
         let helpers = Bundle.main.bundleURL.appending(path: "Contents/Helpers")
-        return RuntimeProcessConfiguration(
-            containerPath: RuntimeProcessConfiguration.resolvedContainerPath(),
+        return RuntimeProcessConfiguration.make(
             socktainerPath: helpers.appending(path: "socktainer").path,
-            socketPath: socketPath
+            socketPath: socketPath,
+            bundledInstallRoot: RuntimeProcessConfiguration.bundledInstallRoot(
+                forExecutableAt: Bundle.main.executableURL
+            )
         )
     }
 

@@ -3,11 +3,10 @@ import Testing
 
 @testable import ContainerStackCore
 
-/// Apple Container gives every container its own micro-VM, and the guest's memory is resident in
-/// the host — inside Apple's Virtualization XPC service, charged to neither ContainerStack nor
-/// `container-runtime-linux`. A container allocated 6 GB was measured holding 5.5 GB of host
-/// memory after 17 hours. Nothing reported that total, so the numbers below are the point.
-@Suite("Container memory allocations are summed against host memory")
+/// Apple Container gives every container its own micro-VM. `HostConfig.Memory`
+/// is configured capacity rather than current RSS, but measured host use can
+/// approach it. The tests keep that distinction while surfacing the total.
+@Suite("Container memory limits are summed against host memory")
 struct MemoryCommitmentTests {
     private let gigabyte: Int64 = 1_073_741_824
 
@@ -18,7 +17,7 @@ struct MemoryCommitmentTests {
             hostBytes: 32 * gigabyte
         )
 
-        #expect(commitment.allocatedBytes == 6 * gigabyte)
+        #expect(commitment.configuredBytes == 6 * gigabyte)
         #expect(commitment.containersWithoutLimit == 0)
     }
 
@@ -31,7 +30,7 @@ struct MemoryCommitmentTests {
             hostBytes: 32 * gigabyte
         )
 
-        #expect(commitment.allocatedBytes == 4 * gigabyte)
+        #expect(commitment.configuredBytes == 4 * gigabyte)
         #expect(commitment.containersWithoutLimit == 2)
     }
 
@@ -50,8 +49,8 @@ struct MemoryCommitmentTests {
         #expect(commitment.verdict == .approaching)
     }
 
-    @Test("four fifths of host memory reads as exceeding")
-    func exceedingAtFourFifths() {
+    @Test("four fifths of host memory reads as high commitment")
+    func highCommitmentAtFourFifths() {
         let commitment = MemoryCommitment.measure(
             limits: [16 * gigabyte, 10 * gigabyte],
             hostBytes: 32 * gigabyte
@@ -71,7 +70,7 @@ struct MemoryCommitmentTests {
         )
 
         #expect(commitment.verdict == .within)
-        #expect(commitment.allocatedBytes == 6_442_450_944)
+        #expect(commitment.configuredBytes == 6_442_450_944)
     }
 
     /// Dividing by an unknown host size would print a fraction of nothing.
@@ -83,11 +82,22 @@ struct MemoryCommitmentTests {
         #expect(commitment.verdict == .within)
     }
 
-    @Test("no running containers means nothing allocated")
+    @Test("the configured sum saturates instead of trapping on overflow")
+    func configuredSumSaturates() {
+        let commitment = MemoryCommitment.measure(
+            limits: [Int64.max, 1],
+            hostBytes: Int64.max
+        )
+
+        #expect(commitment.configuredBytes == Int64.max)
+        #expect(commitment.verdict == .exceeding)
+    }
+
+    @Test("no running containers means nothing configured")
     func noContainers() {
         let commitment = MemoryCommitment.measure(limits: [], hostBytes: 32 * gigabyte)
 
-        #expect(commitment.allocatedBytes == 0)
+        #expect(commitment.configuredBytes == 0)
         #expect(commitment.containersWithoutLimit == 0)
         #expect(commitment.verdict == .within)
     }

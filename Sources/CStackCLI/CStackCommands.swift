@@ -67,41 +67,61 @@ extension CStackCLI {
         await reportMemoryCommitment(client, running: containers.filter(\.isRunning))
     }
 
-    /// Every container here runs in its own micro-VM whose memory is resident in the host, so the
-    /// sum of the allocations is a claim on the machine — and nothing else reported it. The
-    /// numbers come from the same inspect call `cstack inspect` already makes.
+    /// Every container here runs in its own micro-VM. The inspect value is the
+    /// configured limit, not current RSS, but host use can grow toward it as the
+    /// guest fills caches. Report that capacity without pretending it is already
+    /// resident.
     private static func reportMemoryCommitment(
         _ client: DockerAPIClient,
         running: [DockerContainerSummary]
     ) async {
         var limits: [Int64?] = []
+        var inspectFailures = 0
         for container in running {
-            limits.append(try? await client.inspectContainer(id: container.id).memoryLimitBytes)
+            do {
+                limits.append(try await client.inspectContainer(id: container.id).memoryLimitBytes)
+            } catch {
+                inspectFailures += 1
+            }
         }
 
-        guard let hostBytes = HostMemory.totalBytes() else {
-            print("Container memory: \(ByteSize.formatted(limits.compactMap { $0 }.reduce(0, +))) allocated (host memory unknown)")
+        guard !limits.isEmpty else {
+            print(
+                "Container memory limits: unavailable — \(inspectFailures) running container(s) could not be inspected."
+            )
             return
         }
 
+        let hostBytes = HostMemory.totalBytes() ?? 0
         let commitment = MemoryCommitment.measure(limits: limits, hostBytes: hostBytes)
-        let summary =
-            "\(ByteSize.formatted(commitment.allocatedBytes)) allocated of \(ByteSize.formatted(hostBytes)) host memory"
 
-        switch commitment.verdict {
-        case .within:
-            print("Container memory: \(summary)")
-        case .approaching:
-            print("Container memory: \(summary) — other applications will feel this")
-        case .exceeding:
-            print("Container memory: OVER-COMMITTED — \(summary)")
-            print("A guest holds its allocation as host memory once it fills its caches.")
-            print("Stop a container or recreate it with a smaller --memory.")
+        if hostBytes > 0 {
+            let summary =
+                "\(ByteSize.formatted(commitment.configuredBytes)) in explicit container limits vs \(ByteSize.formatted(hostBytes)) host memory"
+            switch commitment.verdict {
+            case .within:
+                print("Container memory limits: \(summary)")
+            case .approaching:
+                print("Container memory limits: \(summary) — guests approaching their limits may pressure other applications")
+            case .exceeding:
+                print("Container memory limits: HIGH — \(summary)")
+                print("Guests do not reserve every byte immediately, but host use can grow toward these limits.")
+                print("Stop a container or recreate it with a smaller --memory.")
+            }
+        } else {
+            print(
+                "Container memory limits: \(ByteSize.formatted(commitment.configuredBytes)) configured (host memory unknown)"
+            )
         }
 
         if commitment.containersWithoutLimit > 0 {
             print(
-                "\(commitment.containersWithoutLimit) running container(s) report no memory limit, so the total is a floor."
+                "\(commitment.containersWithoutLimit) running container(s) have no explicit memory limit and are excluded from that total."
+            )
+        }
+        if inspectFailures > 0 {
+            print(
+                "\(inspectFailures) running container(s) could not be inspected, so the total is incomplete."
             )
         }
     }

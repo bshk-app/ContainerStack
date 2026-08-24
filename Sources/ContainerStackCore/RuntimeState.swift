@@ -116,14 +116,24 @@ public enum RuntimeState: Equatable, Sendable {
 
 public enum RuntimeStartupDecision: Equatable, Sendable {
     case bridgeAlreadyRunning
+    /// Something answers on the socket and it is not the bridge this bundle
+    /// ships. Measured consequence of adopting one anyway: a bridge from an
+    /// unrelated build served every request while `start` never returned and a
+    /// container stayed `Created` past 150s, with the app reporting a healthy
+    /// engine because `_ping`, `/version` and `/info` all answered.
+    case foreignBridge
     case removeStaleSocket
     case startBridge
 }
 
 public enum RuntimeStartupPlanner {
-    public static func decide(socketFileExists: Bool, bridgeResponds: Bool) -> RuntimeStartupDecision {
+    public static func decide(
+        socketFileExists: Bool,
+        bridgeResponds: Bool,
+        bridgeIsOurs: Bool
+    ) -> RuntimeStartupDecision {
         if bridgeResponds {
-            return .bridgeAlreadyRunning
+            return bridgeIsOurs ? .bridgeAlreadyRunning : .foreignBridge
         }
         return socketFileExists ? .removeStaleSocket : .startBridge
     }

@@ -103,12 +103,24 @@ struct ContainerStackRuntime {
 
         let decision = RuntimeStartupPlanner.decide(
             socketFileExists: FileManager.default.fileExists(atPath: configuration.socketPath),
-            bridgeResponds: await bridgeResponds(socketPath: configuration.socketPath)
+            bridgeResponds: await bridgeResponds(socketPath: configuration.socketPath),
+            bridgeIsOurs: ourBridgeIsRunning(executablePath: configuration.socktainerPath)
         )
 
         switch decision {
         case .bridgeAlreadyRunning:
             print("Docker bridge already listening on \(configuration.socketPath); adopting it.")
+        case .foreignBridge:
+            // Refuse rather than adopt, and refuse rather than kill: a socktainer
+            // someone runs on purpose is theirs. Naming the remedy is the part
+            // that was missing - the socket answers, so nothing else reports it.
+            print(
+                """
+                Docker bridge on \(configuration.socketPath) is not the one this build ships \
+                (\(configuration.socktainerPath) is not running). Lifecycle calls may hang. \
+                Stop the other bridge, then start the runtime again.
+                """
+            )
         case .removeStaleSocket:
             try? FileManager.default.removeItem(atPath: configuration.socketPath)
             print("Removed stale socket \(configuration.socketPath).")
@@ -127,6 +139,20 @@ struct ContainerStackRuntime {
                 timeout: nil
             )
         }
+    }
+
+    /// Whether the bridge this build ships is the process serving. Asked of the
+    /// process table rather than over the socket: the API is Docker's, so every
+    /// socktainer answers it identically and no reply distinguishes builds.
+    private static func ourBridgeIsRunning(executablePath: String) -> Bool {
+        let result = try? ProcessRunner.run(
+            executablePath: "/bin/ps",
+            arguments: ["-A", "-o", "pid=,command="],
+            output: .capture(includingStandardError: false),
+            timeout: ProcessRunner.diagnosticTimeout
+        )
+        guard let listing = result?.output else { return false }
+        return !ProcessTable.pids(forExecutable: executablePath, in: listing).isEmpty
     }
 
     private static func bridgeResponds(socketPath: String) async -> Bool {

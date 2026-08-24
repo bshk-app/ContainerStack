@@ -114,26 +114,48 @@ struct RuntimeStateTests {
 
 struct RuntimeStartupPlannerTests {
     @Test
-    func adoptsRunningBridge() {
+    func adoptsOurOwnRunningBridge() {
         #expect(
-            RuntimeStartupPlanner.decide(socketFileExists: true, bridgeResponds: true)
-                == .bridgeAlreadyRunning
+            RuntimeStartupPlanner.decide(
+                socketFileExists: true,
+                bridgeResponds: true,
+                bridgeIsOurs: true
+            ) == .bridgeAlreadyRunning
+        )
+    }
+
+    /// The reported failure: a socktainer from somewhere else answered every
+    /// request while `start` never returned, and adopting it hid that entirely.
+    @Test
+    func refusesABridgeItDoesNotOwn() {
+        #expect(
+            RuntimeStartupPlanner.decide(
+                socketFileExists: true,
+                bridgeResponds: true,
+                bridgeIsOurs: false
+            ) == .foreignBridge
         )
     }
 
     @Test
     func clearsStaleSocketBeforeStarting() {
         #expect(
-            RuntimeStartupPlanner.decide(socketFileExists: true, bridgeResponds: false)
-                == .removeStaleSocket
+            RuntimeStartupPlanner.decide(
+                socketFileExists: true,
+                bridgeResponds: false,
+                bridgeIsOurs: false
+            ) == .removeStaleSocket
         )
     }
 
     @Test
     func startsBridgeOnCleanHost() {
         #expect(
-            RuntimeStartupPlanner.decide(socketFileExists: false, bridgeResponds: false)
-                == .startBridge
+            RuntimeStartupPlanner.decide(
+                socketFileExists: false,
+                bridgeResponds: false,
+                bridgeIsOurs: false
+            ) == .startBridge
         )
     }
 }

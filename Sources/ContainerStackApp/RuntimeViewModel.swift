@@ -18,6 +18,10 @@ final class RuntimeViewModel {
     private var runtimeProcess: Process?
     private var runtimeLogHandle: FileHandle?
     private var monitorTask: Task<Void, Never>?
+    /// `container system status` costs a CLI spawn plus an XPC round trip, so the poll reuses
+    /// its last answer between checks instead of asking on every 3s tick.
+    private var appRootCadence = DiagnosticCadence(interval: .seconds(30))
+    private var lastMissingAppRoot: String?
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
     let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
@@ -299,11 +303,34 @@ final class RuntimeViewModel {
             applyState(
                 socketResponds: true,
                 unroutableNetworks: await unroutablePublishingNetworks(),
-                missingAppRoot: await missingAppRoot()
+                missingAppRoot: await throttledMissingAppRoot()
             )
         } else {
             applyState(socketResponds: false)
         }
+    }
+
+    /// The poll's view of the app root. Asks the CLI at most once per cadence and reuses the
+    /// last answer in between, so a 3s socket poll no longer implies a 3s process spawn.
+    ///
+    /// Latency is the whole trade: a deleted app root now surfaces within 30s rather than 3s.
+    /// Nothing else can see it — with its app root gone the runtime still answers `_ping` with
+    /// 200 — but reaching that state takes deliberate damage to the runtime's data directory,
+    /// and every user-initiated refresh still asks immediately.
+    private func throttledMissingAppRoot() async -> String? {
+        if appRootCadence.shouldRun() {
+            lastMissingAppRoot = await missingAppRoot()
+        }
+        return lastMissingAppRoot
+    }
+
+    /// Probes now and feeds the cache, so the next poll does not revert to a stale answer.
+    /// Without sharing the cache, a refresh that raised the banner would have it cleared again
+    /// on the following tick — the failure the comment in `refresh(health:)` already warns of.
+    private func freshMissingAppRoot() async -> String? {
+        lastMissingAppRoot = await missingAppRoot()
+        appRootCadence.recordRun()
+        return lastMissingAppRoot
     }
 
     func probeAfterControlChange() async {
@@ -393,7 +420,7 @@ final class RuntimeViewModel {
             runtimeFailure = nil
             // Supplied here as well as in the poll: a full refresh that left it out would clear the
             // banner it had just raised and put it back on the next tick.
-            applyState(socketResponds: true, missingAppRoot: await missingAppRoot())
+            applyState(socketResponds: true, missingAppRoot: await freshMissingAppRoot())
             await refreshImages()
             await refreshContainers()
             await refreshVolumes()
@@ -414,7 +441,7 @@ final class RuntimeViewModel {
             // `health()` is exactly what fails when the runtime's storage is gone, so this is the path
             // that state arrives on. Without the probe here the refresh reported the socket as not
             // responding while the poll reported the missing storage, and the two took turns.
-            applyState(socketResponds: false, missingAppRoot: await missingAppRoot())
+            applyState(socketResponds: false, missingAppRoot: await freshMissingAppRoot())
         }
     }
 

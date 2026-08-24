@@ -51,11 +51,15 @@ final class RuntimeViewModel {
         didSet {
             serviceMessageExpiresAt =
                 serviceMessage == nil
-                ? nil : Date().addingTimeInterval(Self.serviceMessageLifetime)
+                ? nil : clock().addingTimeInterval(Self.serviceMessageLifetime)
         }
     }
     static let serviceMessageLifetime: TimeInterval = 5
     private(set) var serviceMessageExpiresAt: Date?
+    /// Seam for the expiry deadline only. `Date()` has microsecond resolution, so two
+    /// back-to-back `serviceMessage` assignments can stamp the same instant and make the
+    /// deadline look unchanged. Production always uses `Date.init`.
+    var clock: () -> Date = Date.init
 
     internal(set) var containerMessage: String?
     internal(set) var containerOutput: String?

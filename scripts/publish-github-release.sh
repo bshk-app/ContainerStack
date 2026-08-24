@@ -13,7 +13,12 @@ if [[ "${1:-}" == "--preflight" ]]; then
     readonly MANIFEST=""
 else
     readonly SHORT_VERSION="${3:-$(tr -d '[:space:]' < "$ROOT/VERSION")}"
-    readonly ARTIFACT="${1:-${ROOT}/out/${ZAMOK_PRODUCT_SLUG:-containerstack}/ContainerStack-${SHORT_VERSION}.dmg}"
+    # zamokctl chooses the subdirectory under out/, so a bare invocation looks
+    # for the DMG rather than assuming one path. `|| true` is load-bearing: under
+    # `pipefail` a find over a missing out/ fails the assignment and `set -e`
+    # exits with no message at all -- on the documented repair path, from a clean
+    # clone, this script would simply say nothing.
+    readonly ARTIFACT="${1:-$(find "$ROOT/out" -maxdepth 3 -type f -name "ContainerStack-${SHORT_VERSION}.dmg" -print 2>/dev/null | head -1 || true)}"
     readonly NOTES_FILE="${2:-${ROOT}/out/release-notes.md}"
     readonly MANIFEST="${4:-${ROOT}/out/github-release-manifest}"
 fi
@@ -32,17 +37,27 @@ esac
 
 command -v gh >/dev/null 2>&1 || die "gh is required. Install it and run gh auth login."
 gh auth status --hostname github.com >/dev/null 2>&1 || die "gh is not authenticated for github.com"
-can_push="$(gh api "repos/${REPOSITORY}" --jq '.permissions.push // false')" \
-    || die "could not verify GitHub permissions for $REPOSITORY"
-[[ "$can_push" == "true" ]] || die "GitHub credential cannot publish to $REPOSITORY"
+# There is deliberately no write-permission preflight. `repos/{owner}/{repo}`
+# reports `.permissions` for a *user's* role, not a credential's scope: a
+# workflow's GITHUB_TOKEN reads `push: false` there while holding
+# contents: write, and this gate then refused every CI release. It was not a
+# theory -- the same token, in the same run, had already created the branch,
+# commit, tag and release that this script was about to add an asset to.
+# A genuine lack of write access surfaces on the first mutating call below.
 gh api "repos/${REPOSITORY}/commits/${HEAD_SHA}" --silent >/dev/null \
     || die "$HEAD_SHA is not present in $REPOSITORY"
 
 [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || die "working tree is dirty; commit the release inputs first"
-upstream="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" \
-    || die "current branch has no upstream"
-[[ "$HEAD_SHA" == "$(git -C "$ROOT" rev-parse "$upstream")" ]] \
-    || die "HEAD is not pushed to $upstream"
+# A release build must come from source that is already on the remote. On a
+# branch the upstream ref proves it. A detached checkout of a tag -- what CI does
+# for a release event -- has no upstream, and the commit check above is stronger
+# evidence anyway: GitHub itself confirmed the SHA is in the repository.
+if upstream="$(git -C "$ROOT" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)"; then
+    [[ "$HEAD_SHA" == "$(git -C "$ROOT" rev-parse "$upstream")" ]] \
+        || die "HEAD is not pushed to $upstream"
+elif git -C "$ROOT" symbolic-ref --quiet HEAD >/dev/null 2>&1; then
+    die "current branch has no upstream"
+fi
 
 if [[ "$CHANNEL" == "stable" ]]; then
     tag="v${SHORT_VERSION}"

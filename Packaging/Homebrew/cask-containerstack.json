@@ -1,0 +1,21 @@
+{
+  "token": "containerstack",
+  "name": "ContainerStack",
+  "desc": "Native macOS container stack on Apple Container with a Docker-compatible socket",
+  "homepage": "https://containerstack.bshk.app",
+  "autoUpdates": true,
+  "appBundle": "ContainerStack.app",
+  "dependsOnMacOS": true,
+  "dependsOnFormulae": ["bshk-app/tap/container@1.2.2"],
+  "livecheck": true,
+  "livecheckUrl": "https://bshk-app.github.io/ContainerStack/appcast/stable.xml",
+  "livecheckStrategy": "sparkle",
+  "uninstall": { "quit": "app.bshk.containerstack" },
+  "zapTrash": [
+    "~/Library/Application Support/ContainerStack",
+    "~/Library/Logs/ContainerStack",
+    "~/Library/Preferences/app.bshk.containerstack.plist",
+    "~/Library/LaunchAgents/com.containerstack.runtime.plist",
+    "~/.socktainer"
+  ]
+}

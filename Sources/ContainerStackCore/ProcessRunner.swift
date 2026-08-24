@@ -35,6 +35,30 @@ public enum ProcessRunner {
     /// a measured restart takes ~6.4s and a stop waits out the container's grace period first.
     public static let lifecycleTimeout: Duration = .seconds(120)
 
+    /// The children currently being waited on with a deadline.
+    ///
+    /// A deadline protects the *wait*, not the child: when the waiting process
+    /// exits first, the child is reparented to launchd and keeps running. Eight
+    /// `container system stop` processes were found that way on one machine, aged
+    /// up to four days, each wedged against a runtime that never answered.
+    ///
+    /// The deliberately unbounded child - `timeout: nil`, the Docker bridge - is
+    /// excluded on purpose: it exists to outlive the app that started it.
+    private static let boundedChildren = BoundedChildren()
+
+    public static var outstandingBoundedChildren: Int { boundedChildren.count }
+
+    /// Kills every child still under a deadline. For a process about to exit:
+    /// its waits die with it, its children do not.
+    @discardableResult
+    public static func terminateBoundedChildren() -> Int {
+        let pids = boundedChildren.drain()
+        for pid in pids {
+            kill(pid, SIGKILL)
+        }
+        return pids.count
+    }
+
     public enum OutputMode: Equatable, Sendable {
         /// `/dev/null`. The caller wants the exit status only.
         case discard
@@ -149,6 +173,11 @@ public enum ProcessRunner {
         }
 
         if let timeout {
+            // Registered only while this call is waiting on it, so a process that
+            // exits mid-wait can take the child with it instead of orphaning it.
+            boundedChildren.insert(process.processIdentifier)
+            defer { boundedChildren.remove(process.processIdentifier) }
+
             if exited.wait(timeout: .now() + seconds(timeout)) == .timedOut {
                 process.terminate()
                 if exited.wait(timeout: .now() + seconds(gracePeriod)) == .timedOut {
@@ -194,5 +223,39 @@ private final class OutputBuffer: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return storage
+    }
+}
+
+/// Registered from whichever thread called `run`, drained from the one that is
+/// shutting down, so the set needs a lock to cross between them.
+private final class BoundedChildren: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pids: Set<pid_t> = []
+
+    func insert(_ pid: pid_t) {
+        lock.lock()
+        pids.insert(pid)
+        lock.unlock()
+    }
+
+    func remove(_ pid: pid_t) {
+        lock.lock()
+        pids.remove(pid)
+        lock.unlock()
+    }
+
+    func drain() -> [pid_t] {
+        lock.lock()
+        defer {
+            pids.removeAll()
+            lock.unlock()
+        }
+        return Array(pids)
+    }
+
+    var count: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return pids.count
     }
 }

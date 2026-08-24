@@ -7,7 +7,9 @@ import Testing
 /// `process.waitUntilExit()`. Two properties matter and neither held before: a child that never
 /// exits must not block its caller forever, and a child that writes more than the pipe buffer
 /// must not deadlock against the read that is supposed to collect it.
-@Suite("Child processes are bounded and fully drained")
+/// Serialized because one of these tests exercises the shutdown path, which kills
+/// every child currently under a deadline - including a sibling test's.
+@Suite("Child processes are bounded and fully drained", .serialized)
 struct ProcessRunnerTests {
 
     @Test("captures stdout and reports a zero status")
@@ -133,5 +135,34 @@ struct ProcessRunnerTests {
 
         #expect(result.output == "done")
         #expect(started.duration(to: .now) < .seconds(5))
+    }
+
+    /// The wedged children found in the field were all reparented to launchd:
+    /// their spawner exited while its bounded wait was still in flight, and
+    /// nothing killed them. A process about to exit has to take them with it.
+    @Test("children under a deadline can be killed when their waiter gives up")
+    func boundedChildrenAreTerminated() throws {
+        let finished = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = try? ProcessRunner.run(
+                executablePath: "/bin/sleep",
+                arguments: ["30"],
+                timeout: .seconds(30)
+            )
+            finished.signal()
+        }
+
+        var attempts = 0
+        while ProcessRunner.outstandingBoundedChildren == 0, attempts < 500 {
+            usleep(10_000)
+            attempts += 1
+        }
+        #expect(ProcessRunner.outstandingBoundedChildren > 0)
+
+        #expect(ProcessRunner.terminateBoundedChildren() > 0)
+
+        // A 30-second sleep that returns in seconds only does so because it was
+        // killed; the child outliving the call is exactly the reported bug.
+        #expect(finished.wait(timeout: .now() + 5) == .success)
     }
 }

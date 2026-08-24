@@ -241,7 +241,12 @@ extension RuntimeViewModel {
             imageDetails[image.id] = .some(nil)  // untagged: inspect cannot resolve it
             return
         }
-        imageDetails[image.id] = try? await client.inspectImage(reference: reference)
+        do {
+            imageDetails[image.id] = .some(try await client.inspectImage(reference: reference))
+        } catch {
+            // A socket/runtime failure is transient. Leaving the key absent makes
+            // the next selection retry instead of caching `—` for the session.
+        }
     }
 
     func imageDetail(for image: DockerImageSummary) -> DockerImageDetail? {

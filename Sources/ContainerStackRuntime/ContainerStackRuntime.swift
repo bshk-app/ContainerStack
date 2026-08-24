@@ -52,8 +52,6 @@ struct ContainerStackRuntime {
         print("--- ContainerStackRuntime started \(Date().formatted(.iso8601)) ---")
     }
 
-
-
     private static func socktainerPath() -> String {
         if let override = ProcessInfo.processInfo.environment["CONTAINERSTACK_SOCKTAINER_PATH"] {
             return override

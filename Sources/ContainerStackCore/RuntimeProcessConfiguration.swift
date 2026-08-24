@@ -28,18 +28,6 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         "/usr/bin/container"
     ]
 
-    /// Prefers the copy shipped inside the app bundle over anything installed
-    /// system-wide.
-    ///
-    /// Homebrew cannot pin a dependency's version: declaring a dependency gets
-    /// the user whatever the tap holds that day, so an unrelated `brew upgrade`
-    /// can move Apple Container's API out from under a machine we never
-    /// touched — silently, because neither side checks. Vendoring is what makes
-    /// the pinned version actually reach a user, and `container system start`
-    /// takes `--install-root` precisely so a copy can live elsewhere.
-    ///
-    /// A system install is still honoured when nothing is vendored, which keeps
-    /// a development checkout working without a staged bundle.
     /// The vendored runtime inside the app bundle, or nil outside a staged bundle.
     ///
     /// Works for both executables that need it: `Contents/MacOS/ContainerStack` and
@@ -59,10 +47,17 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
 
     /// The single owner of runtime resolution.
     ///
-    /// The binary and its install root are decided together, and the
-    /// `CONTAINERSTACK_CONTAINER_PATH` override is read here rather than at each caller.
-    /// Deriving them separately is how they drift apart — which is exactly what the helper's
-    /// own comment warns about, and what every other caller was doing.
+    /// The environment override wins. Otherwise the copy shipped inside the app
+    /// bundle is preferred over anything installed system-wide, and a system copy
+    /// remains the development fallback.
+    ///
+    /// Homebrew cannot pin a dependency's version: an unrelated `brew upgrade`
+    /// can move Apple Container's API out from under a machine we never touched.
+    /// Vendoring is what makes the pin reach a user, and `container system start`
+    /// takes `--install-root` precisely so a copy can live elsewhere.
+    ///
+    /// The binary and its install root are decided together. Deriving them
+    /// separately is how they drift apart.
     public static func make(
         socktainerPath: String,
         socketPath: String = RuntimeProcessConfiguration.defaultSocketPath,
@@ -96,19 +91,6 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
             socketPath: socketPath,
             containerInstallRoot: nil
         )
-    }
-
-    public static func resolvedContainerPath(
-        bundledInstallRoot: String? = nil,
-        exists: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
-    ) -> String {
-        if let bundledInstallRoot {
-            let vendored = "\(bundledInstallRoot)/bin/container"
-            if exists(vendored) {
-                return vendored
-            }
-        }
-        return containerSearchPaths.first(where: exists) ?? containerSearchPaths[0]
     }
 
     public let containerPath: String

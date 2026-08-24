@@ -189,7 +189,8 @@ struct DockerResourceClientTests {
             "State":{"Status":"exited","Running":false,"ExitCode":3,
             "StartedAt":"2026-08-12T17:37:17Z","FinishedAt":"2026-08-12T17:37:18Z"},
             "Config":{"Image":"alpine:3.20","Cmd":["-c","echo probe"],
-            "Labels":{"com.docker.compose.project":"demo"}}}
+            "Labels":{"com.docker.compose.project":"demo"}},
+            "HostConfig":{"Memory":6442450944}}
             """)
         ])
         let client = DockerAPIClient(transport: transport)
@@ -202,6 +203,7 @@ struct DockerResourceClientTests {
         #expect(detail.exitCode == 3)
         #expect(detail.command == "-c echo probe")
         #expect(detail.composeProject == "demo")
+        #expect(detail.memoryLimitBytes == 6_442_450_944)
         #expect(await transport.paths == ["/containers/c1/json"])
     }
 
@@ -261,6 +263,24 @@ struct DockerResourceClientTests {
         #expect(await transport.paths == [
             "/images/create?fromImage=ghcr.io%2Fapple%2Fcontainerization%2Fvminit&tag=latest",
             "/images/create?fromImage=alpine&tag=sha256%3Aabc"
+        ])
+    }
+
+    @Test
+    func inspectsImagePlatformByEncodedRepositoryTag() async throws {
+        let transport = StubDockerTransport(responses: [
+            jsonResponse(#"{"Architecture":"arm64","Os":"linux"}"#)
+        ])
+        let client = DockerAPIClient(transport: transport)
+
+        let detail = try await client.inspectImage(
+            reference: "ghcr.io/apple/containerization/vminit:0.12.1"
+        )
+
+        #expect(detail.architecture == "arm64")
+        #expect(detail.operatingSystem == "linux")
+        #expect(await transport.paths == [
+            "/images/ghcr.io%2Fapple%2Fcontainerization%2Fvminit%3A0.12.1/json"
         ])
     }
 

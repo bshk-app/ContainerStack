@@ -54,6 +54,7 @@ fi
 mkdir -p \
     "$output_bundle/Contents/MacOS" \
     "$output_bundle/Contents/Helpers" \
+    "$output_bundle/Contents/Frameworks" \
     "$output_bundle/Contents/Library/LaunchAgents" \
     "$output_bundle/Contents/Resources"
 
@@ -86,6 +87,30 @@ else
     echo "error: missing ContainerStack_ContainerStackApp.bundle next to $bin_path/ContainerStack" >&2
     exit 1
 fi
+
+# Sparkle is linked from SwiftPM's artifact cache, which exists only on a build
+# machine. The app binary is linked with an @executable_path/../Frameworks rpath
+# (see Package.swift), so the framework has to arrive here or every update check
+# dies at launch with a missing dylib.
+#
+# `ditto` keeps the framework's version symlinks intact; cp -R would flatten
+# Versions/Current and codesign refuses to seal the result.
+sparkle_framework="$(
+    find "$(dirname "$(dirname "$bin_path")")/artifacts" \
+        -type d -name 'Sparkle.framework' -path '*macos*' -print -quit 2>/dev/null
+)"
+[[ -n "$sparkle_framework" ]] || {
+    printf 'error: Sparkle.framework not found; run swift build first\n' >&2
+    exit 1
+}
+rm -rf "$output_bundle/Contents/Frameworks/Sparkle.framework"
+ditto "$sparkle_framework" "$output_bundle/Contents/Frameworks/Sparkle.framework"
+
+# The rpath is what makes the embedded copy reachable. Assert it rather than
+# trusting Package.swift, since a linker-setting edit is invisible until launch.
+otool -l "$output_bundle/Contents/MacOS/ContainerStack" \
+    | grep -q '@executable_path/../Frameworks' \
+    || { printf 'error: app binary has no Frameworks rpath\n' >&2; exit 1; }
 
 
 # Resources, not Helpers, and the distinction is load-bearing. Under Helpers,
@@ -194,6 +219,24 @@ if [[ -n "$SIGNING_IDENTITY" ]]; then
         )
         printf '   re-signed %d Mach-O files\n' "$signed_count"
     fi
+
+    # Sparkle arrives from a release zip with no team identifier, and it carries
+    # four pieces of nested code that each launch as their own process. Order is
+    # the same rule as the runtime above - deepest first - and the framework is
+    # sealed only after everything inside it. Autoupdate keeps no entitlements:
+    # the shipped copy claims org.sparkle-project's application-identifier,
+    # which is not ours to assert.
+    sparkle_bundle="$output_bundle/Contents/Frameworks/Sparkle.framework"
+    for nested in \
+        "Versions/B/XPCServices/Downloader.xpc" \
+        "Versions/B/XPCServices/Installer.xpc" \
+        "Versions/B/Updater.app" \
+        "Versions/B/Autoupdate"; do
+        codesign --force --options runtime --timestamp \
+            --sign "$SIGNING_IDENTITY" "$sparkle_bundle/$nested"
+    done
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGNING_IDENTITY" "$sparkle_bundle"
 
     codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" \
         "$output_bundle/Contents/Helpers/socktainer"

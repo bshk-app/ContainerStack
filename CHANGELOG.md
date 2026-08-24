@@ -14,34 +14,51 @@ releases belong in that section — move them there while reviewing.
 
 ## [0.3.0](https://github.com/bshk-app/ContainerStack/compare/v0.2.0...v0.3.0) (2026-08-24)
 
+This release makes runtime control harder to wedge, destructive actions harder
+to trigger by accident, and diagnostics more honest.
 
 ### Added
 
-* **a11y:** label the icon-only row action buttons ([fede7a7](https://github.com/bshk-app/ContainerStack/commit/fede7a7034b1df7e84000f21a44e28c4fa662a93))
-* **doctor:** report the host memory running containers have claimed ([0433e22](https://github.com/bshk-app/ContainerStack/commit/0433e2249fabcf02b612dca29ec101191751c5a3))
-* **sidebar:** let users hide resource sections they do not use ([57616b7](https://github.com/bshk-app/ContainerStack/commit/57616b7fdac4a2aa1798018ecafad036604c1c26))
-
+- Docker sections can be hidden from the sidebar through its context menu. Even
+  with every Docker item hidden, the same menu remains available to restore them.
+- `cstack doctor` reports the configured memory limits of running containers
+  against host memory. Unlimited containers and failed inspections are named
+  separately instead of being counted as zero.
+- Every icon-only action has a descriptive, resource-specific VoiceOver name.
 
 ### Fixed
 
-* **a11y:** give every icon action a contextual name ([b151eb9](https://github.com/bshk-app/ContainerStack/commit/b151eb94adcfec719ad175bb362762b1575ad102))
-* **cstack:** stop claiming a restart that did not happen ([5c8608c](https://github.com/bshk-app/ContainerStack/commit/5c8608c90e1a1bfed34c2e44d8dde3d17da2ad2a))
-* **http:** reject malformed chunk sizes instead of trapping ([9ebc39e](https://github.com/bshk-app/ContainerStack/commit/9ebc39e67a2a95d7f9b48f29b9d3555ccfb1789b))
-* **images:** read Arch and OS from image inspect ([fb7f84d](https://github.com/bshk-app/ContainerStack/commit/fb7f84d4b132b938063bf1401581548808206248))
-* **images:** show unknown instead of 1970 when Created is absent ([2b7540b](https://github.com/bshk-app/ContainerStack/commit/2b7540bea3f8b7228393fd23085a64929e034327))
-* **memory:** report configured limits without overstating RSS ([038ec29](https://github.com/bshk-app/ContainerStack/commit/038ec29482a133332f4ea795d9b8b16e0cc0f327))
-* **process:** bound drains held open by descendants ([808da22](https://github.com/bshk-app/ContainerStack/commit/808da225e28b934414aab4781c7f545d1adb3c02))
-* **runtime:** give every subprocess wait a deadline ([39e4f77](https://github.com/bshk-app/ContainerStack/commit/39e4f77a1485e52606ff8a86e424a89919db0f7c))
-* **runtime:** give runtime resolution a single owner ([00a3461](https://github.com/bshk-app/ContainerStack/commit/00a3461d0e21fc63fe8d21275dda6afd1f80892e))
-* **runtime:** stop the bridge from filling runtime.log with request lines ([5356691](https://github.com/bshk-app/ContainerStack/commit/5356691ebc904b7139e3bc5b905e7e55c40a497d))
-* **tests:** make service-message expiry deterministic ([deb1f14](https://github.com/bshk-app/ContainerStack/commit/deb1f148a86fe5d1036bebc93dc1ebf4c8d47d35))
-* **ui:** confirm single-item deletes before destroying ([5ce79d4](https://github.com/bshk-app/ContainerStack/commit/5ce79d435cf15c628a12fe805fadc1b9b718315e))
-
+- Every subprocess wait now has an explicit deadline, except the deliberately
+  supervised socktainer process. A child that hangs — or exits while a descendant
+  keeps its output pipe open — can no longer wedge monitoring and runtime controls
+  forever.
+- `cstack runtime restart` continues best-effort recovery after a failed step,
+  names each failure, and exits non-zero instead of claiming success.
+- GUI, helper, `cstack runtime`, and `cstack doctor` resolve the Apple Container
+  binary and its install root through one owner. Environment overrides and the
+  vendored runtime no longer apply to only part of the system.
+- The bridge no longer writes an INFO request line for every 3-second poll into
+  `runtime.log`; warnings, errors, startup and DNS fallback messages remain.
+- Deleting a container, image, volume, or network now requires confirmation.
+  In-use volumes are not force-deleted.
+- Malformed chunked HTTP sizes return a parse error instead of trapping on
+  integer overflow or a reversed range.
+- Image creation time reports unknown when the runtime returns zero, rather than
+  “56 years ago”. Architecture and OS now come from image inspect, the endpoint
+  that actually provides them.
 
 ### Changed
 
-* **runtime:** remove the bypass around resolution ownership ([f965f38](https://github.com/bshk-app/ContainerStack/commit/f965f38040b738b035848c436694984274be42d9))
-* **runtime:** stop spawning the container CLI on every monitor tick ([8c6377d](https://github.com/bshk-app/ContainerStack/commit/8c6377d2d8966cdadaf6a3acdb07afba37eae105))
+- The expensive missing-app-root diagnostic runs at most every 30 seconds
+  instead of spawning the `container` CLI on every 3-second monitor tick. Manual
+  refresh still probes immediately.
+
+### Known limitations
+
+Published ports still require a runtime restart if a bridge-created network's
+vmnet helper dies; restarting only the containers does not repair the host route.
+The per-container micro-VM architecture also remains slower than OrbStack on the
+measured M1 system (4.6x container round trip, 3.6x bind-mount writes).
 
 ## [0.2.0](https://github.com/bshk-app/ContainerStack/compare/v0.1.0...v0.2.0) (2026-08-23)
 

@@ -22,6 +22,10 @@ final class RuntimeViewModel {
     /// its last answer between checks instead of asking on every 3s tick.
     private var appRootCadence = DiagnosticCadence(interval: .seconds(30))
     private var lastMissingAppRoot: String?
+    /// Same cadence and the same reason: answering "who holds the socket" costs
+    /// an `lsof` and a `ps`, which is too much for a 3-second poll.
+    private var bridgeOwnerCadence = DiagnosticCadence(interval: .seconds(30))
+    private var lastForeignBridge: String?
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
     let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
@@ -45,7 +49,10 @@ final class RuntimeViewModel {
     private(set) var isLoading = false
     private(set) var isStarting = false
     internal(set) var isRunningContainer = false
-    internal(set) var busyContainerID: String?
+    /// Every container acting at this moment, not "something is acting". Docker
+    /// serializes nothing across containers, and a stop can occupy the full
+    /// lifecycle timeout, so one slow container must not freeze the others.
+    internal(set) var busyContainerIDs: Set<String> = []
     var selectedContainerID: String?
 
     private(set) var errorMessage: String?
@@ -119,6 +126,13 @@ final class RuntimeViewModel {
 
     var isHealthy: Bool {
         runtimeState.isHealthy
+    }
+
+    /// Whether an action is worth attempting, which is not the same as whether the
+    /// API answers: against a bridge from another build every read succeeded while
+    /// start and stop hung past 150s.
+    var canMutate: Bool {
+        runtimeState.allowsMutations
     }
 
     var statusTitle: String {
@@ -306,7 +320,8 @@ final class RuntimeViewModel {
             applyState(
                 socketResponds: true,
                 unroutableNetworks: await unroutablePublishingNetworks(),
-                missingAppRoot: await throttledMissingAppRoot()
+                missingAppRoot: await throttledMissingAppRoot(),
+                foreignBridge: throttledForeignBridge()
             )
         } else {
             applyState(socketResponds: false)
@@ -325,6 +340,25 @@ final class RuntimeViewModel {
             lastMissingAppRoot = await missingAppRoot()
         }
         return lastMissingAppRoot
+    }
+
+    /// The socket path when a bridge that is not ours holds it, otherwise nil.
+    /// Re-asked on the cadence so the banner clears by itself once the other
+    /// bridge is gone - the reported case sat there for hours with nothing to see.
+    private func throttledForeignBridge() -> String? {
+        if bridgeOwnerCadence.shouldRun() {
+            lastForeignBridge = servesOurBridge() ? nil : socketPath
+        }
+        return lastForeignBridge
+    }
+
+    /// Probes now and feeds the same cache, for the same reason `freshMissingAppRoot`
+    /// does: a refresh that answered from nothing would clear the banner the poll
+    /// had just raised.
+    private func freshForeignBridge() -> String? {
+        lastForeignBridge = servesOurBridge() ? nil : socketPath
+        bridgeOwnerCadence.recordRun()
+        return lastForeignBridge
     }
 
     /// Probes now and feeds the cache, so the next poll does not revert to a stale answer.
@@ -386,7 +420,8 @@ final class RuntimeViewModel {
     func applyState(
         socketResponds: Bool,
         unroutableNetworks: [UnroutableNetwork] = [],
-        missingAppRoot: String? = nil
+        missingAppRoot: String? = nil,
+        foreignBridge: String? = nil
     ) {
         runtimeState = RuntimeState.resolve(
             socketResponds: socketResponds,
@@ -394,7 +429,8 @@ final class RuntimeViewModel {
             isStarting: isStarting,
             failure: runtimeFailure,
             unroutableNetworks: unroutableNetworks,
-            missingAppRoot: socketResponds ? missingAppRoot : nil
+            missingAppRoot: socketResponds ? missingAppRoot : nil,
+            foreignBridge: socketResponds ? foreignBridge : nil
         )
 
         if socketResponds {
@@ -423,7 +459,11 @@ final class RuntimeViewModel {
             runtimeFailure = nil
             // Supplied here as well as in the poll: a full refresh that left it out would clear the
             // banner it had just raised and put it back on the next tick.
-            applyState(socketResponds: true, missingAppRoot: await freshMissingAppRoot())
+            applyState(
+                socketResponds: true,
+                missingAppRoot: await freshMissingAppRoot(),
+                foreignBridge: freshForeignBridge()
+            )
             await refreshImages()
             await refreshContainers()
             await refreshVolumes()

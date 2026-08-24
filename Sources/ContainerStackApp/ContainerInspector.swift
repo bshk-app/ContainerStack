@@ -87,7 +87,7 @@ struct ContainerInspector: View {
                 }
             }
             .padding(.top, 12)
-            .disabled(model.busyContainerID != nil || !model.isHealthy)
+            .disabled(model.isBusy(container) || !model.canMutate)
             .confirmDestructive(
                 $isConfirmingDelete,
                 title: "Delete container \(container.name)?",

@@ -93,7 +93,7 @@ extension RuntimeState {
         case .unknown: .circleQuestion
         case .starting: .loader
         case .running: .circleCheck
-        case .degraded, .offline: .triangleAlert
+        case .degraded, .offline, .foreignBridge: .triangleAlert
         case .detached: .hardDrive
         }
     }

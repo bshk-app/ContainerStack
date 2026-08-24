@@ -190,7 +190,7 @@ private struct StackRow: View {
                     Task { await model.downStack(stack, removeVolumes: false) }
                 }
             }
-            .disabled(isBusy || !model.isHealthy)
+            .disabled(isBusy || !model.canMutate)
         }
     }
 }

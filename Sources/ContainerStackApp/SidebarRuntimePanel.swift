@@ -153,7 +153,7 @@ struct SidebarRuntimePanel: View {
                 .frame(width: 10, height: 10)
         case .running:
             Circle().fill(.green).frame(width: 8, height: 8)
-        case .degraded, .detached:
+        case .degraded, .detached, .foreignBridge:
             Circle().fill(.yellow).frame(width: 8, height: 8)
         case .offline:
             Circle().fill(.orange).frame(width: 8, height: 8)

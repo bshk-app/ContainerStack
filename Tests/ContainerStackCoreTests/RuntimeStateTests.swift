@@ -110,30 +110,102 @@ struct RuntimeStateTests {
 
         #expect(state == .offline("Docker socket is not responding."))
     }
+
+    /// Reads work through a foreign bridge, so this stays "healthy" like the other
+    /// answering-but-wrong states - and degraded, so the banner keeps saying it
+    /// for as long as it is true.
+    @Test
+    func reportsAForeignBridgeWhileTheSocketAnswers() {
+        let state = RuntimeState.resolve(
+            socketResponds: true,
+            helperRunning: true,
+            isStarting: false,
+            failure: nil,
+            foreignBridge: "/Users/someone/.socktainer/container.sock"
+        )
+
+        #expect(state == .foreignBridge(socketPath: "/Users/someone/.socktainer/container.sock"))
+        #expect(state.isHealthy)
+        #expect(state.isDegraded)
+        #expect(state.detail?.contains("can hang") == true)
+    }
+
+    /// A foreign bridge outranks missing storage: it makes every mutation hang, and
+    /// the app-root probe describes the local runtime rather than who serves this
+    /// socket, so leading with storage would print the wrong remedy.
+    @Test
+    func aForeignBridgeOutranksMissingStorage() {
+        let state = RuntimeState.resolve(
+            socketResponds: true,
+            helperRunning: true,
+            isStarting: false,
+            failure: nil,
+            missingAppRoot: "/tmp/gone",
+            foreignBridge: "/tmp/socket"
+        )
+
+        #expect(state == .foreignBridge(socketPath: "/tmp/socket"))
+        #expect(state.allowsMutations == false)
+    }
+
+    @Test
+    func aSilentSocketIsOfflineRatherThanForeign() {
+        let state = RuntimeState.resolve(
+            socketResponds: false,
+            helperRunning: false,
+            isStarting: false,
+            failure: nil,
+            foreignBridge: "/tmp/socket"
+        )
+
+        #expect(state == .offline("Docker socket is not responding."))
+    }
 }
 
 struct RuntimeStartupPlannerTests {
     @Test
-    func adoptsRunningBridge() {
+    func adoptsOurOwnRunningBridge() {
         #expect(
-            RuntimeStartupPlanner.decide(socketFileExists: true, bridgeResponds: true)
-                == .bridgeAlreadyRunning
+            RuntimeStartupPlanner.decide(
+                socketFileExists: true,
+                bridgeResponds: true,
+                bridgeIsOurs: true
+            ) == .bridgeAlreadyRunning
+        )
+    }
+
+    /// The reported failure: a socktainer from somewhere else answered every
+    /// request while `start` never returned, and adopting it hid that entirely.
+    @Test
+    func refusesABridgeItDoesNotOwn() {
+        #expect(
+            RuntimeStartupPlanner.decide(
+                socketFileExists: true,
+                bridgeResponds: true,
+                bridgeIsOurs: false
+            ) == .foreignBridge
         )
     }
 
     @Test
     func clearsStaleSocketBeforeStarting() {
         #expect(
-            RuntimeStartupPlanner.decide(socketFileExists: true, bridgeResponds: false)
-                == .removeStaleSocket
+            RuntimeStartupPlanner.decide(
+                socketFileExists: true,
+                bridgeResponds: false,
+                bridgeIsOurs: false
+            ) == .removeStaleSocket
         )
     }
 
     @Test
     func startsBridgeOnCleanHost() {
         #expect(
-            RuntimeStartupPlanner.decide(socketFileExists: false, bridgeResponds: false)
-                == .startBridge
+            RuntimeStartupPlanner.decide(
+                socketFileExists: false,
+                bridgeResponds: false,
+                bridgeIsOurs: false
+            ) == .startBridge
         )
     }
 }

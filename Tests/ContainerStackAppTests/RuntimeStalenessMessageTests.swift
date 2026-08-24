@@ -42,6 +42,55 @@ struct RuntimeStalenessMessageTests {
         #expect(recordedIdentity == false)
     }
 
+    /// A restart stops only the bridge this build ships. When someone else's
+    /// socktainer keeps the socket, the restart "succeeds" and nothing has
+    /// changed - recording the shipped identity there would mark the mismatch
+    /// resolved forever, which is how a wedged foreign bridge survived every
+    /// later launch.
+    @Test("A foreign bridge still holding the socket is named, not recorded as ours")
+    func foreignBridgeIsNotRecorded() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        var recordedIdentity = false
+
+        await model.adoptBridgeIfStale(
+            recorded: older,
+            current: shipped,
+            restart: { true },
+            recordIdentity: { recordedIdentity = true },
+            servesOurBridge: { false }
+        )
+
+        #expect(recordedIdentity == false)
+        #expect(model.serviceMessage?.contains("Another Docker bridge holds") == true)
+    }
+
+    /// The reported scenario, and the one the staleness gate could never see: the
+    /// build has not changed, so the recorded identity matches, and only asking
+    /// who is serving reveals that it is not us.
+    @Test("A foreign bridge on an unchanged build is still reported")
+    func foreignBridgeOnCurrentBuildIsReported() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        var restarted = false
+        var recordedIdentity = false
+
+        await model.adoptBridgeIfStale(
+            recorded: shipped,
+            current: shipped,
+            restart: {
+                restarted = true
+                return true
+            },
+            recordIdentity: { recordedIdentity = true },
+            servesOurBridge: { false }
+        )
+
+        #expect(restarted == false)
+        #expect(recordedIdentity == false)
+        #expect(model.serviceMessage == model.foreignBridgeMessage)
+    }
+
     @Test("A message produced while restarting is not erased")
     func concurrentServiceMessageSurvivesRestart() async {
         let model = makeModel()

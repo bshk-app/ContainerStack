@@ -15,7 +15,7 @@ struct VolumesView: View {
                 actionTitle: "Create",
                 icon: .plus,
                 isBusy: model.busyResource != nil,
-                isEnabled: model.isHealthy
+                isEnabled: model.canMutate
             ) { name in
                 Task { await model.createVolume(named: name) }
             }
@@ -62,7 +62,7 @@ struct VolumesView: View {
                 } label: {
                     LucideLabel(title: "Remove Unused", icon: .trash)
                 }
-                .disabled(!model.isHealthy || model.busyResource != nil || model.volumes.isEmpty)
+                .disabled(!model.canMutate || model.busyResource != nil || model.volumes.isEmpty)
             }
         }
         .confirmationDialog(
@@ -104,7 +104,7 @@ struct NetworksView: View {
                 actionTitle: "Create",
                 icon: .plus,
                 isBusy: model.busyResource != nil,
-                isEnabled: model.isHealthy
+                isEnabled: model.canMutate
             ) { name in
                 Task { await model.createNetwork(named: name) }
             }
@@ -199,7 +199,7 @@ private struct VolumeRow: View {
             ) {
                 isConfirmingDelete = true
             }
-            .disabled(model.busyResource != nil || !model.isHealthy)
+            .disabled(model.busyResource != nil || !model.canMutate)
             .confirmDestructive(
                 $isConfirmingDelete,
                 title: "Delete volume \(volume.name)?",
@@ -256,7 +256,7 @@ private struct NetworkRow: View {
             ) {
                 isConfirmingDelete = true
             }
-            .disabled(model.busyResource != nil || !model.isHealthy)
+            .disabled(model.busyResource != nil || !model.canMutate)
             .confirmDestructive(
                 $isConfirmingDelete,
                 title: "Delete network \(network.name)?",
@@ -285,7 +285,7 @@ private struct VolumeInspector: View {
                         isConfirmingDelete = true
                     }
                 }
-                .disabled(model.busyResource != nil || !model.isHealthy)
+                .disabled(model.busyResource != nil || !model.canMutate)
                 .confirmDestructive(
                     $isConfirmingDelete,
                     title: "Delete volume \(volume.name)?",
@@ -328,7 +328,7 @@ private struct NetworkInspector: View {
                         isConfirmingDelete = true
                     }
                 }
-                .disabled(model.busyResource != nil || !model.isHealthy)
+                .disabled(model.busyResource != nil || !model.canMutate)
                 .confirmDestructive(
                     $isConfirmingDelete,
                     title: "Delete network \(network.name)?",

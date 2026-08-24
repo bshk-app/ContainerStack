@@ -1,4 +1,5 @@
 import AppKit
+import ContainerStackCore
 import SwiftUI
 
 @main
@@ -98,6 +99,15 @@ private final class ContainerStackAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// A deadline protects this process's wait, not the child it is waiting on:
+    /// quitting mid-wait reparents the child to launchd, where it keeps running
+    /// with nobody left to notice. Eight `container system stop` processes were
+    /// found that way on one machine, the oldest four days old. The supervised
+    /// bridge is not among them - it is meant to outlive the app.
+    func applicationWillTerminate(_ notification: Notification) {
+        ProcessRunner.terminateBoundedChildren()
     }
 
     func applicationShouldHandleReopen(

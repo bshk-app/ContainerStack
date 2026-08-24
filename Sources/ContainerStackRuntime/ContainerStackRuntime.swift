@@ -103,12 +103,27 @@ struct ContainerStackRuntime {
 
         let decision = RuntimeStartupPlanner.decide(
             socketFileExists: FileManager.default.fileExists(atPath: configuration.socketPath),
-            bridgeResponds: await bridgeResponds(socketPath: configuration.socketPath)
+            bridgeResponds: await bridgeResponds(socketPath: configuration.socketPath),
+            bridgeIsOurs: ourBridgeHoldsSocket(
+                executablePath: configuration.socktainerPath,
+                socketPath: configuration.socketPath
+            )
         )
 
         switch decision {
         case .bridgeAlreadyRunning:
             print("Docker bridge already listening on \(configuration.socketPath); adopting it.")
+        case .foreignBridge:
+            // Refuse rather than adopt, and refuse rather than kill: a socktainer
+            // someone runs on purpose is theirs. Naming the remedy is the part
+            // that was missing - the socket answers, so nothing else reports it.
+            print(
+                """
+                Docker bridge on \(configuration.socketPath) is not the one this build ships \
+                (\(configuration.socktainerPath) is not running). Lifecycle calls may hang. \
+                Stop the other bridge, then start the runtime again.
+                """
+            )
         case .removeStaleSocket:
             try? FileManager.default.removeItem(atPath: configuration.socketPath)
             print("Removed stale socket \(configuration.socketPath).")
@@ -127,6 +142,35 @@ struct ContainerStackRuntime {
                 timeout: nil
             )
         }
+    }
+
+    /// Whether the bridge this build ships is the process holding the socket.
+    /// Asked of `lsof` and the process table rather than over the socket: the API
+    /// is Docker's, so every socktainer answers it identically and no reply
+    /// distinguishes builds.
+    private static func ourBridgeHoldsSocket(
+        executablePath: String,
+        socketPath: String
+    ) -> Bool {
+        BridgeOwnership.isOurs(
+            holder: BridgeOwnership.holder(
+                lsofOutput: capture("/usr/sbin/lsof", ["-Fpcn", "--", socketPath])
+            ),
+            ourPIDs: ProcessTable.pids(
+                forExecutable: executablePath,
+                in: capture("/bin/ps", ["-A", "-o", "pid=,command="])
+            )
+        )
+    }
+
+    private static func capture(_ executablePath: String, _ arguments: [String]) -> String {
+        let result = try? ProcessRunner.run(
+            executablePath: executablePath,
+            arguments: arguments,
+            output: .capture(includingStandardError: false),
+            timeout: ProcessRunner.diagnosticTimeout
+        )
+        return result?.output ?? ""
     }
 
     private static func bridgeResponds(socketPath: String) async -> Bool {

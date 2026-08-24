@@ -72,12 +72,12 @@ struct DashboardView: View {
                             selection = .images
                             focusImagePull = true
                         }
-                        .disabled(!model.isHealthy)
+                        .disabled(!model.canMutate)
                     }
                     ToolbarItem {
                         Menu {
                             Button("Reclaim Space") { isConfirmingPrune = true }
-                                .disabled(!model.isHealthy || model.busyResource != nil)
+                                .disabled(!model.canMutate || model.busyResource != nil)
                             Button("Refresh") {
                                 Task { await model.refresh() }
                             }
@@ -214,7 +214,7 @@ private struct RuntimeHero: View {
         switch model.runtimeState {
         case .running: .green
         case .degraded: .yellow
-        case .detached: .yellow
+        case .detached, .foreignBridge: .yellow
         case .starting: .blue
         case .offline: .orange
         case .unknown: .secondary

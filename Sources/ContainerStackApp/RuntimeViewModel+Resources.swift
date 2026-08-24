@@ -188,25 +188,28 @@ extension RuntimeViewModel {
         }
     }
 
-    private func withContainer(
+    /// The single owner of per-container busy state. Callers describe the action
+    /// and, when the container survives it, what to say afterwards.
+    func withContainer(
         _ container: DockerContainerSummary,
         action: String,
+        completion: String? = nil,
         refreshList: Bool = true,
         _ body: @escaping () async throws -> Void
     ) async {
-        guard isHealthy, busyContainerID == nil else { return }
+        guard canMutate, !busyContainerIDs.contains(container.id) else { return }
 
-        busyContainerID = container.id
+        busyContainerIDs.insert(container.id)
         containerMessage = "\(action) \(container.name)…"
-        defer { busyContainerID = nil }
+        defer { busyContainerIDs.remove(container.id) }
 
         do {
             try await body()
             if refreshList {
-                containerMessage = "\(container.name) is ready."
+                containerMessage = completion ?? "\(container.name) is ready."
                 await refreshContainers()
             } else {
-                containerMessage = nil
+                containerMessage = completion
             }
         } catch {
             containerMessage = "Container action failed: \(error)"
@@ -218,7 +221,7 @@ extension RuntimeViewModel {
         message: String,
         _ body: @escaping () async throws -> Void
     ) async {
-        guard isHealthy, busyResource == nil else { return }
+        guard canMutate, busyResource == nil else { return }
 
         busyResource = id
         resourceMessage = message

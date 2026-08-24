@@ -3,13 +3,13 @@
 # release-please keeps one open PR that bumps VERSION and drafts a CHANGELOG
 # section from conventional commits. Edit that section in the PR -- the generated
 # lines are commit subjects, which are precise for a reviewer and useless in a
-# Sparkle "What's new" panel. Merging the PR tags the commit and publishes the
-# Release, which is what the build job below reacts to.
+# Sparkle "What's new" panel. Merging the PR tags the commit and creates a draft
+# Release. The build uploads the signed DMG, then publishes the complete release;
+# publishing first would make it immutable before an asset exists.
 #
 # The build is chained rather than triggered: a Release created with GITHUB_TOKEN
-# does not start another workflow, so `on: release` in release.yml would never
-# fire for a release-please release. Calling the workflow directly avoids
-# handing this repo a long-lived PAT purely to work around that.
+# does not start another workflow. Calling the workflow directly also avoids a
+# long-lived PAT purely to work around that.
 name: Release Please
 
 on:

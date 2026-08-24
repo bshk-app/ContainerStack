@@ -4,26 +4,31 @@
 # This file only assembles the environment that script expects, because
 # duplicating the pipeline in YAML is how the two copies drift apart.
 #
-# Publishing needs a new commit: the Sparkle build number is
-# BUILD_NUMBER_BASE + commit count, and a Sparkle build number is monotonic and
-# unrecallable. Tag the commit you want, publish the release, and this runs.
+# The Sparkle build number is BUILD_NUMBER_BASE + commit count: monotonic and
+# unrecallable, so every release needs a new commit.
 #
-# Two entry points, one body: `release: published` for a release created by
-# hand, and `workflow_call` for release-please, whose GITHUB_TOKEN-created
-# release cannot start a workflow of its own.
+# One entry point from automation and one for repair: release-please creates a
+# draft and calls this workflow; a human can create a draft and dispatch it.
+# Publishing first is invalid with GitHub Immutable Releases — an immutable
+# release cannot accept the DMG the build produces.
 name: Release
 
 on:
-  release:
-    # `published`, not `created`: GitHub does not fire created/edited/deleted for
-    # draft releases, and the UI saves a new release as a draft, so the obvious
-    # way to write a body by hand would never start this. `published` covers a
-    # direct publish and a draft being published, stable and prerelease alike.
-    types: [published]
   workflow_call:
     inputs:
       tag:
-        description: Tag of an existing, published release
+        description: Tag of an existing draft release
+        required: true
+        type: string
+      prerelease:
+        description: Ship to the beta channel
+        required: false
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of an existing draft release
         required: true
         type: string
       prerelease:
@@ -33,7 +38,7 @@ on:
         type: boolean
 
 concurrency:
-  group: release-${{ inputs.tag || github.event.release.tag_name }}
+  group: release-${{ inputs.tag }}
   cancel-in-progress: false
 
 permissions:
@@ -43,8 +48,8 @@ jobs:
   release:
     runs-on: macos-26
     env:
-      TAG: ${{ inputs.tag || github.event.release.tag_name }}
-      RELEASE_CHANNEL: ${{ (inputs.prerelease || github.event.release.prerelease) && 'beta' || 'stable' }}
+      TAG: ${{ inputs.tag }}
+      RELEASE_CHANNEL: ${{ inputs.prerelease && 'beta' || 'stable' }}
       SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
       # Optional: the tap is another repository, so github.token cannot write
       # it. Unset means the release still ships; only the cask lags.
@@ -61,7 +66,7 @@ jobs:
       # which Sparkle would treat as a downgrade.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag || github.event.release.tag_name }}
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
 
       # Outside the workspace on purpose: release.sh refuses a dirty tree, and an
@@ -169,8 +174,8 @@ jobs:
           chmod 600 "$RUNNER_TEMP/notary.p8"
           echo "NOTARY_KEY_PATH=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
 
-      # Same script a human runs: stage, codesign, notarize, staple, DMG,
-      # publish to Zamok, upload the GitHub asset, then externalize the enclosure.
+      # Same script a human runs: stage, codesign, notarize, staple, package the
+      # DMG, attach it to the draft, sign the feed, update the cask, then publish.
       - name: Release
         env:
           PUBLISH: "1"

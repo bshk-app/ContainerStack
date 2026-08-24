@@ -3,7 +3,8 @@
   "release-type": "simple",
   "version-file": "VERSION",
   "include-v-in-tag": true,
-  "draft": false,
+  "draft": true,
+  "force-tag-creation": true,
   "packages": {
     ".": {}
   },

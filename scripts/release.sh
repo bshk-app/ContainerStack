@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ship a ContainerStack release through Zamok, then mirror the same artifact and
-# notes to GitHub:
+# Ship ContainerStack without a release server:
 #
 #   unsigned stage -> zamokctl codesign -> notarize -> staple -> DMG
-#                  -> Zamok publish/appcast -> GitHub Release
+#                  -> GitHub Release -> signed appcast -> Homebrew cask
 #
 # Run it through the Taskfile, which wraps this in `av env` so the `av://`
 # references in .env resolve without ever touching disk:
@@ -152,8 +151,8 @@ BUILD_NUMBER="$BUILD_NUMBER" \
 
 [[ -d "$APP_PATH" ]] || die "staging produced no bundle at $APP_PATH"
 
-# Read the versions back out of the bundle rather than reusing the variables, so
-# what is registered with Zamok is what is actually baked into the signed app.
+# Read the versions back out of the staged bundle so every downstream artifact
+# describes what is actually baked into the app.
 staged_short="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
 staged_build="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP_PATH/Contents/Info.plist")"
 

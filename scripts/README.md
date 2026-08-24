@@ -9,7 +9,7 @@ Driven by `Taskfile.yml` — see `task --list`.
 | `build-number.sh` | `BUILD_NUMBER_BASE` + commit count, the Sparkle build number |
 | `check-socktainer.sh` | reports which socktainer binary would be staged |
 | `stage-containerstack-app.sh` | assembles the unsigned `.app`; the release path's only stager |
-| `stage-signed.sh` | standalone Developer ID `.app`, outside the Zamok pipeline |
+| `stage-signed.sh` | standalone Developer ID `.app`, outside the release pipeline |
 | `extract-release-notes.sh` | the `CHANGELOG.md` section for a version |
 | `write-release-manifest.sh` | records what was released, for GitHub to verify against |
 | `release.sh` | the whole release: package, GitHub asset, signed feed, cask |

@@ -177,6 +177,7 @@ struct InspectorAction: View {
 struct RowActionButton: View {
     let icon: Lucide
     let help: String
+    let accessibilityLabel: String
     var destructive: Bool = false
     var isSelected: Bool = false
     let action: () -> Void
@@ -192,6 +193,7 @@ struct RowActionButton: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var color: Color {

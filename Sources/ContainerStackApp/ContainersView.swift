@@ -111,6 +111,7 @@ private struct ContainerGroupHeader: View {
             }
             .buttonStyle(.plain)
             .help(isCollapsed ? "Expand group" : "Collapse group")
+            .accessibilityLabel(isCollapsed ? "Expand group \(title)" : "Collapse group \(title)")
 
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
@@ -136,6 +137,7 @@ private struct ContainerGroupHeader: View {
                 }
                 .buttonStyle(.plain)
                 .help(runningCount > 0 ? "Stop the stack" : "Start the stack")
+                .accessibilityLabel(runningCount > 0 ? "Stop stack \(title)" : "Start stack \(title)")
                 .disabled(model.busyResource != nil || !model.isHealthy)
             }
         }
@@ -200,14 +202,24 @@ struct ContainerRow: View {
             HStack(spacing: 2) {
                 rowButton(
                     icon: container.isRunning ? .square : .play,
-                    help: container.isRunning ? "Stop" : "Start"
+                    help: container.isRunning ? "Stop" : "Start",
+                    accessibilityLabel: "\(container.isRunning ? "Stop" : "Start") \(container.name)"
                 ) {
                     Task { await model.toggle(container: container) }
                 }
-                rowButton(icon: .scrollText, help: "Logs") {
+                rowButton(
+                    icon: .scrollText,
+                    help: "Logs",
+                    accessibilityLabel: "Show logs for \(container.name)"
+                ) {
                     onShowLogs()
                 }
-                rowButton(icon: .trash, help: "Delete", destructive: true) {
+                rowButton(
+                    icon: .trash,
+                    help: "Delete",
+                    accessibilityLabel: "Delete \(container.name)",
+                    destructive: true
+                ) {
                     Task { await model.remove(container: container) }
                 }
             }
@@ -274,6 +286,7 @@ struct ContainerRow: View {
     private func rowButton(
         icon: Lucide,
         help: String,
+        accessibilityLabel: String,
         destructive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
@@ -286,6 +299,7 @@ struct ContainerRow: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private func glyphColor(destructive: Bool) -> Color {

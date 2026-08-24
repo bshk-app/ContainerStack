@@ -192,6 +192,7 @@ private struct VolumeRow: View {
             RowActionButton(
                 icon: .trash,
                 help: "Delete",
+                accessibilityLabel: "Delete volume \(volume.name)",
                 destructive: true,
                 isSelected: isSelected
             ) {
@@ -239,6 +240,7 @@ private struct NetworkRow: View {
             RowActionButton(
                 icon: .trash,
                 help: "Delete",
+                accessibilityLabel: "Delete network \(network.name)",
                 destructive: true,
                 isSelected: isSelected
             ) {

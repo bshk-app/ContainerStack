@@ -4,7 +4,10 @@ import Testing
 
 @Suite("An updater only starts for a bundle that can actually be updated")
 struct UpdateFeedTests {
-    private static let key = "I7h5RqilQwk2PZglJOAM3nBLNs5jbHXTU7WgUKmVQ0k="
+    /// Shaped like an Ed25519 key and deliberately not one: the rule under test
+    /// is "anything but absent, empty or the staging placeholder", so pasting the
+    /// production key here would only invite someone to trust this copy of it.
+    private static let key = "dGVzdC1vbmx5LXB1YmxpYy1rZXktbm90LXJlYWw="
     private static let feed = "https://bshk-app.github.io/ContainerStack/appcast/stable.xml"
 
     @Test("a published bundle resolves its feed")

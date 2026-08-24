@@ -10,11 +10,11 @@ struct ContainerStackRuntime {
         // Resolved once: the same root decides both which binary runs and
         // whether the daemon is told where its plugins live. Deriving them
         // separately is how they drift apart.
-        let installRoot = bundledContainerInstallRoot()
-        let configuration = RuntimeProcessConfiguration(
-            containerPath: containerPath(),
+        let configuration = RuntimeProcessConfiguration.make(
             socktainerPath: socktainerPath(),
-            containerInstallRoot: installRoot
+            bundledInstallRoot: RuntimeProcessConfiguration.bundledInstallRoot(
+                forExecutableAt: Bundle.main.executableURL
+            )
         )
 
         do {
@@ -50,36 +50,6 @@ struct ContainerStackRuntime {
         dup2(descriptor, STDERR_FILENO)
         setvbuf(stdout, nil, _IOLBF, 0)
         print("--- ContainerStackRuntime started \(Date().formatted(.iso8601)) ---")
-    }
-
-    /// The vendored Apple Container install root, staged beside this helper at
-    /// `Contents/Resources/container`. Resolved from the executable exactly the
-    /// way `socktainerPath()` resolves its sidecar, so the bundle stays
-    /// relocatable.
-    ///
-    /// nil in a development checkout, where the helper runs out of `.build`
-    /// with no bundle around it; the caller then falls back to a system install.
-    private static func bundledContainerInstallRoot() -> String? {
-        guard let executable = Bundle.main.executableURL?.resolvingSymlinksInPath() else {
-            return nil
-        }
-        // …/Contents/Helpers/ContainerStackRuntime → …/Contents/Resources/container
-        let root = executable
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: "Resources/container")
-        let cli = root.appending(path: "bin/container").path
-        return FileManager.default.isExecutableFile(atPath: cli) ? root.path : nil
-    }
-
-    private static func containerPath() -> String {
-        if let override = ProcessInfo.processInfo.environment["CONTAINERSTACK_CONTAINER_PATH"] {
-            return override
-        }
-
-        return RuntimeProcessConfiguration.resolvedContainerPath(
-            bundledInstallRoot: bundledContainerInstallRoot()
-        )
     }
 
     private static func socktainerPath() -> String {

@@ -157,10 +157,12 @@ extension CStackCLI {
     }
 
     private static func runtimeConfiguration(socketPath: String?) -> RuntimeProcessConfiguration {
-        RuntimeProcessConfiguration(
-            containerPath: RuntimeProcessConfiguration.resolvedContainerPath(),
+        RuntimeProcessConfiguration.make(
             socktainerPath: bundledSocktainerPath(),
-            socketPath: socketPath ?? RuntimeProcessConfiguration.defaultSocketPath
+            socketPath: socketPath ?? RuntimeProcessConfiguration.defaultSocketPath,
+            bundledInstallRoot: RuntimeProcessConfiguration.bundledInstallRoot(
+                forExecutableAt: Bundle.main.executableURL
+            )
         )
     }
 

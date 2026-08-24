@@ -328,10 +328,12 @@ final class RuntimeViewModel {
 
     func runtimeConfiguration() -> RuntimeProcessConfiguration {
         let helpers = Bundle.main.bundleURL.appending(path: "Contents/Helpers")
-        return RuntimeProcessConfiguration(
-            containerPath: RuntimeProcessConfiguration.resolvedContainerPath(),
+        return RuntimeProcessConfiguration.make(
             socktainerPath: helpers.appending(path: "socktainer").path,
-            socketPath: socketPath
+            socketPath: socketPath,
+            bundledInstallRoot: RuntimeProcessConfiguration.bundledInstallRoot(
+                forExecutableAt: Bundle.main.executableURL
+            )
         )
     }
 

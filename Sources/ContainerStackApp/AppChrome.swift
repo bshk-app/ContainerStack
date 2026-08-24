@@ -104,7 +104,7 @@ struct DashboardSidebar: View {
     let model: RuntimeViewModel
     @Environment(\.appTheme) private var theme
     @State private var hovered: DashboardDestination?
-    // ponytail: comma-joined raw values; a Set<String> in defaults would need a Codable box for no gain
+    // Comma-separated raw values keep the preference inspectable and need no Codable wrapper.
     @AppStorage("sidebarHiddenItems") private var hiddenRaw = ""
 
     private var hidden: Set<DashboardDestination> {

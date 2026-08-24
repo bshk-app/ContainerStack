@@ -32,5 +32,12 @@
     <string>https://bshk-app.github.io/ContainerStack/appcast/stable.xml</string>
     <key>SUPublicEDKey</key>
     <string>__SPARKLE_PUBLIC_ED_KEY__</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <!-- Checking is unattended; installing is not. Replacing the app under
+         someone who is mid-session with containers running is a decision only
+         they can make, so Sparkle offers the update and waits. -->
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
 </dict>
 </plist>

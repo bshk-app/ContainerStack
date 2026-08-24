@@ -25,12 +25,25 @@ let package = Package(
             targets: ["ContainerStackRuntime"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.6")
+    ],
     targets: [
         .target(name: "ContainerStackCore"),
         .executableTarget(
             name: "ContainerStackApp",
-            dependencies: ["ContainerStackCore"],
-            resources: [.copy("Resources/Lucide")]
+            dependencies: [
+                "ContainerStackCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
+            resources: [.copy("Resources/Lucide")],
+            linkerSettings: [
+                // SwiftPM links the XCFramework from its build cache, which does
+                // not exist on a user's machine. The staged bundle carries the
+                // framework in Contents/Frameworks, so the shipped binary has to
+                // look there; stage-containerstack-app.sh asserts it arrived.
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
+            ]
         ),
         .executableTarget(
             name: "CStackCLI",

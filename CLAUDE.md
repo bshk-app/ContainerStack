@@ -93,11 +93,3 @@ locally if you need them; they are not shipped.
 | Appcast | `https://bshk-app.github.io/ContainerStack/appcast/stable.xml` (gh-pages) |
 | Landing | `https://containerstack.bshk.app` |
 | Source | MIT. The product has no license check; GitHub hosts every artifact. |
-
-## Not yet wired
-
-In-app updates (#36). The feed URL and `SUPublicEDKey` are already in the
-`Info.plist` template and the staging script refuses to sign a bundle with an
-empty key, but the Sparkle framework itself is not embedded and there is no
-updater UI. That is deliberate sequencing: it depends on a signed release and a
-populated channel existing first.

@@ -5,14 +5,23 @@ import SwiftUI
 struct ContainerStackApp: App {
     @NSApplicationDelegateAdaptor(ContainerStackAppDelegate.self) private var appDelegate
     @State private var model = RuntimeViewModel()
+    @State private var updates = AppUpdates()
 
     var body: some Scene {
         Window("ContainerStack", id: "dashboard") {
             DashboardView(model: model)
         }
+        .commands {
+            // The app menu is where macOS users look for this, and the menu bar
+            // extra is the only surface visible when no window is open.
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { updates.checkForUpdates() }
+                    .disabled(!updates.canCheckForUpdates)
+            }
+        }
 
         MenuBarExtra {
-            MenuBarView(model: model)
+            MenuBarView(model: model, updates: updates)
         } label: {
             ContainerStackMenuBarIcon()
                 .accessibilityLabel("ContainerStack, \(model.statusTitle)")
@@ -107,6 +116,7 @@ private final class ContainerStackAppDelegate: NSObject, NSApplicationDelegate {
 
 private struct MenuBarView: View {
     let model: RuntimeViewModel
+    let updates: AppUpdates
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -129,6 +139,11 @@ private struct MenuBarView: View {
                 Task { await model.refresh() }
             }
             .disabled(model.isLoading)
+
+            Button("Check for Updates…") {
+                updates.checkForUpdates()
+            }
+            .disabled(!updates.canCheckForUpdates)
 
             Divider()
 

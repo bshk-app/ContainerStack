@@ -109,20 +109,42 @@ public enum ProcessRunner {
         let collected = OutputBuffer()
         let drained = DispatchSemaphore(value: 0)
         if let pipe {
+            let reader = pipe.fileHandleForReading
             DispatchQueue.global(qos: .userInitiated).async {
-                collected.store(pipe.fileHandleForReading.readDataToEndOfFile())
-                drained.signal()
+                defer { drained.signal() }
+                while true {
+                    do {
+                        guard
+                            let data = try reader.read(upToCount: 64 * 1024),
+                            !data.isEmpty
+                        else { return }
+                        collected.append(data)
+                    } catch {
+                        // The direct child can exit while a descendant keeps its
+                        // inherited stdout open. The caller closes the reader after a
+                        // bounded drain grace; that close lands here.
+                        return
+                    }
+                }
+            }
+        }
+
+        func finishDrain() {
+            guard let pipe else { return }
+            if drained.wait(timeout: .now() + seconds(gracePeriod)) == .timedOut {
+                try? pipe.fileHandleForReading.close()
+                _ = drained.wait(timeout: .now() + seconds(gracePeriod))
             }
         }
 
         do {
             try process.run()
+            // The parent never writes. Keeping its copy open hides EOF after the
+            // child exits, so close it as soon as the child has inherited the fd.
+            try? pipe?.fileHandleForWriting.close()
         } catch {
-            if let pipe {
-                // Nothing will ever write, so release the drain before propagating.
-                try? pipe.fileHandleForWriting.close()
-                drained.wait()
-            }
+            try? pipe?.fileHandleForWriting.close()
+            finishDrain()
             throw error
         }
 
@@ -133,9 +155,7 @@ public enum ProcessRunner {
                     kill(process.processIdentifier, SIGKILL)
                     exited.wait()
                 }
-                if pipe != nil {
-                    drained.wait()
-                }
+                finishDrain()
                 throw ProcessRunnerError.timedOut(
                     executablePath: executablePath,
                     seconds: seconds(timeout)
@@ -145,10 +165,7 @@ public enum ProcessRunner {
             exited.wait()
         }
 
-        if pipe != nil {
-            // The child is gone, so the write end is closed and EOF is already in flight.
-            drained.wait()
-        }
+        finishDrain()
 
         return Result(
             status: process.terminationStatus,
@@ -167,9 +184,9 @@ private final class OutputBuffer: @unchecked Sendable {
     private let lock = NSLock()
     private var storage = Data()
 
-    func store(_ data: Data) {
+    func append(_ data: Data) {
         lock.lock()
-        storage = data
+        storage.append(data)
         lock.unlock()
     }
 

@@ -119,4 +119,19 @@ struct ProcessRunnerTests {
             )
         }
     }
+
+    @Test("a descendant that inherits stdout cannot outlive the deadline")
+    func descendantHoldingPipeIsBounded() throws {
+        let started = ContinuousClock.now
+
+        let result = try ProcessRunner.run(
+            executablePath: "/bin/sh",
+            arguments: ["-c", "sleep 30 & printf done"],
+            output: .capture(includingStandardError: true),
+            timeout: .milliseconds(300)
+        )
+
+        #expect(result.output == "done")
+        #expect(started.duration(to: .now) < .seconds(5))
+    }
 }

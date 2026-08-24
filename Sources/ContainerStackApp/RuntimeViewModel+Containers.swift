@@ -24,39 +24,32 @@ extension RuntimeViewModel {
         }
     }
 
+    /// Whether this container - not any container - is mid-action. Both the row
+    /// and the inspector ask, so neither can drift back to a global flag.
+    func isBusy(_ container: DockerContainerSummary) -> Bool {
+        busyContainerIDs.contains(container.id)
+    }
+
     func toggle(container: DockerContainerSummary) async {
-        guard isHealthy, busyContainerID == nil else { return }
-
-        busyContainerID = container.id
-        let action = container.isRunning ? "Stopping" : "Starting"
-        containerMessage = "\(action) \(container.name)…"
-        defer { busyContainerID = nil }
-
-        do {
+        await withContainer(
+            container,
+            action: container.isRunning ? "Stopping" : "Starting"
+        ) { [client] in
             if container.isRunning {
                 try await client.stopContainer(id: container.id)
             } else {
                 try await client.startContainer(id: container.id)
             }
-            containerMessage = "\(container.name) is ready."
-            await refreshContainers()
-        } catch {
-            containerMessage = "Container action failed: \(error)"
         }
     }
 
     func remove(container: DockerContainerSummary) async {
-        guard isHealthy, busyContainerID == nil else { return }
-
-        busyContainerID = container.id
-        defer { busyContainerID = nil }
-
-        do {
+        await withContainer(
+            container,
+            action: "Removing",
+            completion: "Removed \(container.name)."
+        ) { [client] in
             try await client.removeContainer(id: container.id, force: true)
-            containerMessage = "Removed \(container.name)."
-            await refreshContainers()
-        } catch {
-            containerMessage = "Container removal failed: \(error)"
         }
     }
 

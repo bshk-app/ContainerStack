@@ -160,7 +160,7 @@ struct ContainerRow: View {
     @State private var isHovered = false
 
     private var isBusy: Bool {
-        model.busyContainerID != nil
+        model.isBusy(container)
     }
 
     private var isSelected: Bool {

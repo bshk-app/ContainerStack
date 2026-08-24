@@ -45,7 +45,10 @@ final class RuntimeViewModel {
     private(set) var isLoading = false
     private(set) var isStarting = false
     internal(set) var isRunningContainer = false
-    internal(set) var busyContainerID: String?
+    /// Every container acting at this moment, not "something is acting". Docker
+    /// serializes nothing across containers, and a stop can occupy the full
+    /// lifecycle timeout, so one slow container must not freeze the others.
+    internal(set) var busyContainerIDs: Set<String> = []
     var selectedContainerID: String?
 
     private(set) var errorMessage: String?

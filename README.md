@@ -46,15 +46,19 @@ docker info
 ## Release
 
 `zamokctl` owns the release signature: codesign, notarization, stapling, and DMG
-packaging all happen inside the CLI. GitHub Releases is the durable artifact
-store. Zamok signs and serves the small Sparkle appcast; after GitHub upload it
-verifies the external asset byte-for-byte and deletes its temporary DMG copy.
+packaging all happen inside the CLI. GitHub Releases stores the DMG and GitHub
+Pages serves the EdDSA-signed Sparkle feed, so no server sits between a release
+and its users.
+
+Releases run themselves: release-please keeps one open PR that bumps `VERSION`
+and drafts a `CHANGELOG.md` section from conventional commits. Rewrite that
+section into prose a user would want in an update panel, merge, and CI tags the
+commit, publishes the asset, signs the feed and updates the cask.
 
 ```sh
-task signing:notary-profile       # once per Mac, through AgentVault
-task release:zamok PUBLISH=0      # matching Zamok + GitHub drafts
-task release:zamok                # publish GitHub asset + signed Sparkle appcast
-task release:externalize BUILD=70 # retry only the storage handoff
+task signing:notary-profile   # once per Mac, through AgentVault
+task release PUBLISH=0        # local dry run: no feed, no cask
+task release                  # local release, if you need one without the PR
 ```
 
 Copy `agentvault.yaml.example` to the gitignored `agentvault.yaml` and point its

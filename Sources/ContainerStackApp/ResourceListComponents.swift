@@ -177,6 +177,7 @@ struct InspectorAction: View {
 struct RowActionButton: View {
     let icon: Lucide
     let help: String
+    let accessibilityLabel: String
     var destructive: Bool = false
     var isSelected: Bool = false
     let action: () -> Void
@@ -192,6 +193,7 @@ struct RowActionButton: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var color: Color {
@@ -254,5 +256,24 @@ enum ResourceUsage {
         from containers: [DockerContainerSummary]
     ) -> [DockerContainerSummary] {
         containers.filter { $0.networkNames.contains(name) }
+    }
+}
+
+extension View {
+    /// Single-item deletes are irreversible and used to fire on one click. The bulk prune
+    /// actions already gate on `confirmationDialog`; this applies the same gate per item.
+    func confirmDestructive(
+        _ isPresented: Binding<Bool>,
+        title: String,
+        confirmTitle: String,
+        message: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        confirmationDialog(title, isPresented: isPresented, titleVisibility: .visible) {
+            Button(confirmTitle, role: .destructive, action: action)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(message)
+        }
     }
 }

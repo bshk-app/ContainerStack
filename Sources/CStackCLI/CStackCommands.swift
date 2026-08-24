@@ -11,7 +11,12 @@ extension CStackCLI {
         // disposable runtime, `cstack doctor` printed "Failed to generate system information" and
         // stopped, which names neither the cause nor the way out.
         let systemStatus = CommandShell.output(
-            executablePath: RuntimeProcessConfiguration.resolvedContainerPath(),
+            executablePath: RuntimeProcessConfiguration.make(
+                socktainerPath: "",
+                bundledInstallRoot: RuntimeProcessConfiguration.bundledInstallRoot(
+                    forExecutableAt: Bundle.main.executableURL
+                )
+            ).containerPath,
             arguments: ["system", "status"]
         )
         if let missing = RuntimeStatusParser.missingAppRoot(systemStatus) {

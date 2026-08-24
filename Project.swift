@@ -1,10 +1,12 @@
 import ProjectDescription
 
-let teamID = "Q8H6GWJ658"
+// A convenience Xcode project for development; the release path never runs
+// Tuist. Automatic signing uses whichever account Xcode is signed in to, so no
+// team is named here - scripts/smoke-test.sh passes one to xcodebuild when a
+// specific team is required.
 let commonSettings: SettingsDictionary = [
     "CODE_SIGN_STYLE": "Automatic",
     "CODE_SIGN_IDENTITY": "Apple Development",
-    "DEVELOPMENT_TEAM": .string(teamID),
     "MACOSX_DEPLOYMENT_TARGET": "26.0",
     "SWIFT_VERSION": "6.0",
 ]

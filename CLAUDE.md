@@ -88,8 +88,7 @@ locally if you need them; they are not shipped.
 | | |
 |---|---|
 | Bundle id | `app.bshk.containerstack` |
-| Team | `Q8H6GWJ658` |
-| Signing identity | Developer ID Application (SHA1 `2A2950821B52BF1AC289AC2ED60F8740732FCCC6`) |
+| Signing | Developer ID Application; the team and identity live in `CLAUDE.local.md` |
 | Appcast | `https://bshk-app.github.io/ContainerStack/appcast/stable.xml` (gh-pages) |
 | Landing | `https://containerstack.bshk.app` |
 | Source | MIT. The product has no license check; GitHub hosts every artifact. |

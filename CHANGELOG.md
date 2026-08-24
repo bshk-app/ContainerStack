@@ -12,27 +12,20 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
-## [0.4.0](https://github.com/bshk-app/ContainerStack/compare/v0.3.0...v0.4.0) (2026-08-24)
+## [0.4.0](https://github.com/bshk-app/ContainerStack/compare/v0.2.0...v0.4.0) (2026-08-24)
 
-
-### Added
-
-* **updates:** ship the updater the bundle already advertised ([b2f0d61](https://github.com/bshk-app/ContainerStack/commit/b2f0d612f97d48c76057cb23771c8bbe2f13ffea))
-* **updates:** ship the updater the bundle already advertised ([c02f491](https://github.com/bshk-app/ContainerStack/commit/c02f49116e014d8913f1902e3cea8e23e25355c7))
-
-
-### Fixed
-
-* **release:** build the DMG before publishing the release ([8009109](https://github.com/bshk-app/ContainerStack/commit/80091093d13c0d3c6aa8d235886b19afd6f339d8))
-* **release:** build the DMG before publishing the release ([a8d3414](https://github.com/bshk-app/ContainerStack/commit/a8d341469c1ee0841b77bbe5892d555546ba64af))
-
-## [0.3.0](https://github.com/bshk-app/ContainerStack/compare/v0.2.0...v0.3.0) (2026-08-24)
-
-This release makes runtime control harder to wedge, destructive actions harder
-to trigger by accident, and diagnostics more honest.
+The app can finally update itself. Beyond that: runtime control is harder to
+wedge, destructive actions are harder to trigger by accident, and diagnostics
+are more honest.
 
 ### Added
 
+- In-app updates. Every build since 0.1.0 advertised an update feed and the
+  signed feed has been live the whole time, but nothing read it: there was no
+  Sparkle, no menu item, and no way to learn a new version existed. "Check for
+  Updates…" now sits in the app menu and the menu bar. Checking happens on its
+  own; installing waits for you, because replacing the app while containers run
+  is not a decision to make on your behalf.
 - Docker sections can be hidden from the sidebar through its context menu. Even
   with every Docker item hidden, the same menu remains available to restore them.
 - `cstack doctor` reports the configured memory limits of running containers
@@ -42,6 +35,10 @@ to trigger by accident, and diagnostics more honest.
 
 ### Fixed
 
+- Releases carry their download again. 0.3.0 was published before its DMG was
+  built, and GitHub freezes a release's files the moment it is published, so
+  that version shipped empty and could not be repaired. The installer is now
+  attached while the release is still a draft, and publishing is the last step.
 - Every subprocess wait now has an explicit deadline, except the deliberately
   supervised socktainer process. A child that hangs — or exits while a descendant
   keeps its output pipe open — can no longer wedge monitoring and runtime controls
@@ -73,6 +70,11 @@ Published ports still require a runtime restart if a bridge-created network's
 vmnet helper dies; restarting only the containers does not repair the host route.
 The per-container micro-VM architecture also remains slower than OrbStack on the
 measured M1 system (4.6x container round trip, 3.6x bind-mount writes).
+
+## 0.3.0
+
+Never released: it was published without its installer and cannot be rebuilt
+under that tag. Everything intended for it ships in 0.4.0 above.
 
 ## [0.2.0](https://github.com/bshk-app/ContainerStack/compare/v0.1.0...v0.2.0) (2026-08-23)
 

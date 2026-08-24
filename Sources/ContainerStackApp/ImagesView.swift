@@ -141,6 +141,7 @@ struct ImageRow: View {
                 RowActionButton(
                     icon: .play,
                     help: "Run",
+                    accessibilityLabel: "Run \(imageName)",
                     isSelected: isSelected
                 ) {
                     Task { await model.run(image: imageName) }
@@ -148,6 +149,7 @@ struct ImageRow: View {
                 RowActionButton(
                     icon: .trash,
                     help: "Delete",
+                    accessibilityLabel: "Delete \(imageName)",
                     destructive: true,
                     isSelected: isSelected
                 ) {

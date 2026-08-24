@@ -265,6 +265,24 @@ struct DockerResourceClientTests {
     }
 
     @Test
+    func inspectsImagePlatformByEncodedRepositoryTag() async throws {
+        let transport = StubDockerTransport(responses: [
+            jsonResponse(#"{"Architecture":"arm64","Os":"linux"}"#)
+        ])
+        let client = DockerAPIClient(transport: transport)
+
+        let detail = try await client.inspectImage(
+            reference: "ghcr.io/apple/containerization/vminit:0.12.1"
+        )
+
+        #expect(detail.architecture == "arm64")
+        #expect(detail.operatingSystem == "linux")
+        #expect(await transport.paths == [
+            "/images/ghcr.io%2Fapple%2Fcontainerization%2Fvminit%3A0.12.1/json"
+        ])
+    }
+
+    @Test
     func removesImage() async throws {
         let transport = StubDockerTransport(responses: [
             jsonResponse(#"[{"Untagged":"alpine:3.20"},{"Deleted":"sha256:a"}]"#)

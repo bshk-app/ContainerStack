@@ -10,11 +10,11 @@ struct ContainerStackRuntime {
         // Resolved once: the same root decides both which binary runs and
         // whether the daemon is told where its plugins live. Deriving them
         // separately is how they drift apart.
-        let installRoot = bundledContainerInstallRoot()
-        let configuration = RuntimeProcessConfiguration(
-            containerPath: containerPath(),
+        let configuration = RuntimeProcessConfiguration.make(
             socktainerPath: socktainerPath(),
-            containerInstallRoot: installRoot
+            bundledInstallRoot: RuntimeProcessConfiguration.bundledInstallRoot(
+                forExecutableAt: Bundle.main.executableURL
+            )
         )
 
         do {
@@ -52,36 +52,6 @@ struct ContainerStackRuntime {
         print("--- ContainerStackRuntime started \(Date().formatted(.iso8601)) ---")
     }
 
-    /// The vendored Apple Container install root, staged beside this helper at
-    /// `Contents/Resources/container`. Resolved from the executable exactly the
-    /// way `socktainerPath()` resolves its sidecar, so the bundle stays
-    /// relocatable.
-    ///
-    /// nil in a development checkout, where the helper runs out of `.build`
-    /// with no bundle around it; the caller then falls back to a system install.
-    private static func bundledContainerInstallRoot() -> String? {
-        guard let executable = Bundle.main.executableURL?.resolvingSymlinksInPath() else {
-            return nil
-        }
-        // …/Contents/Helpers/ContainerStackRuntime → …/Contents/Resources/container
-        let root = executable
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appending(path: "Resources/container")
-        let cli = root.appending(path: "bin/container").path
-        return FileManager.default.isExecutableFile(atPath: cli) ? root.path : nil
-    }
-
-    private static func containerPath() -> String {
-        if let override = ProcessInfo.processInfo.environment["CONTAINERSTACK_CONTAINER_PATH"] {
-            return override
-        }
-
-        return RuntimeProcessConfiguration.resolvedContainerPath(
-            bundledInstallRoot: bundledContainerInstallRoot()
-        )
-    }
-
     private static func socktainerPath() -> String {
         if let override = ProcessInfo.processInfo.environment["CONTAINERSTACK_SOCKTAINER_PATH"] {
             return override
@@ -98,24 +68,26 @@ struct ContainerStackRuntime {
         )
     }
 
+    /// Bounded: this backs the `--version` pin and the `system status` poll inside
+    /// `waitForContainerSystem`. Unbounded, a wedged apiserver blocked here *before* that
+    /// 30-attempt loop could ever apply its own limit, and launchd's `SuccessfulExit=false`
+    /// does not restart a merely-hung process — so the helper stayed wedged for good.
     private static func output(executablePath: String, arguments: [String]) throws -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
+        let result = try ProcessRunner.run(
+            executablePath: executablePath,
+            arguments: arguments,
+            output: .capture(includingStandardError: true),
+            timeout: ProcessRunner.diagnosticTimeout
+        )
 
-        guard process.terminationStatus == 0 else {
+        guard result.status == 0 else {
             throw RuntimeProcessError.failed(
                 executablePath: executablePath,
-                status: process.terminationStatus
+                status: result.status
             )
         }
 
-        return String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return result.output
     }
 
     /// Apple Container may already be up and another ContainerStack instance may already own the
@@ -124,7 +96,8 @@ struct ContainerStackRuntime {
     private static func runRuntime(_ configuration: RuntimeProcessConfiguration) async throws {
         try run(
             executablePath: configuration.containerPath,
-            arguments: configuration.containerStartArguments
+            arguments: configuration.containerStartArguments,
+            timeout: ProcessRunner.lifecycleTimeout
         )
         try waitForContainerSystem(executablePath: configuration.containerPath)
 
@@ -139,16 +112,19 @@ struct ContainerStackRuntime {
         case .removeStaleSocket:
             try? FileManager.default.removeItem(atPath: configuration.socketPath)
             print("Removed stale socket \(configuration.socketPath).")
+            // Supervised, so deliberately unbounded — see `run(…timeout:)`.
             try run(
                 executablePath: configuration.socktainerPath,
                 arguments: configuration.socktainerArguments,
-                environment: RuntimeProcessConfiguration.socktainerEnvironment()
+                environment: RuntimeProcessConfiguration.socktainerEnvironment(),
+                timeout: nil
             )
         case .startBridge:
             try run(
                 executablePath: configuration.socktainerPath,
                 arguments: configuration.socktainerArguments,
-                environment: RuntimeProcessConfiguration.socktainerEnvironment()
+                environment: RuntimeProcessConfiguration.socktainerEnvironment(),
+                timeout: nil
             )
         }
     }
@@ -181,27 +157,28 @@ struct ContainerStackRuntime {
         )
     }
 
+    /// `timeout` is explicit at every call site because the two uses are opposites:
+    /// `container system start` must be bounded, while `socktainer` is the process this helper
+    /// exists to supervise — it is expected to run until the helper itself is told to stop, and
+    /// a deadline there would kill the Docker bridge on a timer.
     private static func run(
         executablePath: String,
         arguments: [String],
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        timeout: Duration?
     ) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
-        if let environment {
-            process.environment = environment
-        }
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.standardOutput
-        process.standardError = FileHandle.standardError
-        try process.run()
-        process.waitUntilExit()
+        let result = try ProcessRunner.run(
+            executablePath: executablePath,
+            arguments: arguments,
+            output: .inherit,
+            environment: environment,
+            timeout: timeout
+        )
 
-        guard process.terminationStatus == 0 else {
+        guard result.status == 0 else {
             throw RuntimeProcessError.failed(
                 executablePath: executablePath,
-                status: process.terminationStatus
+                status: result.status
             )
         }
     }

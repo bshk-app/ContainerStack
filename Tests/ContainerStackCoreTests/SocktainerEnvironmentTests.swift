@@ -28,8 +28,8 @@ struct SocktainerEnvironmentTests {
         #expect(environment["LOG_LEVEL"] == "info")
     }
 
-    /// An empty value is not a choice — it is what an unset variable looks like once it has
-    /// been through a shell, and Vapor would reject it rather than fall back.
+    /// An empty value is not a choice. Vapor cannot parse it as a level and falls
+    /// back to `.info`, which is the chatty default this launch path must avoid.
     @Test("an empty LOG_LEVEL is treated as unset")
     func treatsAnEmptyLogLevelAsUnset() {
         let environment = RuntimeProcessConfiguration.socktainerEnvironment(

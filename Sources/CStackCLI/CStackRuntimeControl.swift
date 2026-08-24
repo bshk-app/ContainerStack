@@ -141,6 +141,9 @@ extension CStackCLI {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: configuration.socktainerPath)
         process.arguments = configuration.socktainerArguments
+        // Same quieting as the supervisor applies, so which path started the bridge does not
+        // decide how much it writes to runtime.log.
+        process.environment = RuntimeProcessConfiguration.socktainerEnvironment()
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice

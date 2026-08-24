@@ -116,12 +116,14 @@ struct ContainerStackRuntime {
             try run(
                 executablePath: configuration.socktainerPath,
                 arguments: configuration.socktainerArguments,
+                environment: RuntimeProcessConfiguration.socktainerEnvironment(),
                 timeout: nil
             )
         case .startBridge:
             try run(
                 executablePath: configuration.socktainerPath,
                 arguments: configuration.socktainerArguments,
+                environment: RuntimeProcessConfiguration.socktainerEnvironment(),
                 timeout: nil
             )
         }
@@ -162,12 +164,14 @@ struct ContainerStackRuntime {
     private static func run(
         executablePath: String,
         arguments: [String],
+        environment: [String: String]? = nil,
         timeout: Duration?
     ) throws {
         let result = try ProcessRunner.run(
             executablePath: executablePath,
             arguments: arguments,
             output: .inherit,
+            environment: environment,
             timeout: timeout
         )
 

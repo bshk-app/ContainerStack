@@ -225,7 +225,9 @@ private struct StackInspector: View {
                         ? nil : "\(statuses.filter(\.isRunning).count)/\(statuses.count)"
                 ) {
                     let availability = StackActionAvailability(
-                        isHealthy: model.isHealthy,
+                        // Control is a mutation; editing the compose file stays
+                        // available offline through `canEdit`, which ignores this.
+                        isHealthy: model.canMutate,
                         isBusy: model.busyStackID != nil
                     )
                     InspectorAction(title: "Start", prominent: true) {

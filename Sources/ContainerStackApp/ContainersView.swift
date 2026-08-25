@@ -208,6 +208,9 @@ struct ContainerRow: View {
                 ) {
                     Task { await model.toggle(container: container) }
                 }
+                .disabled(isBusy || !model.canMutate)
+                // Reading, so it survives a bridge that cannot be changed through -
+                // which is when someone most wants to see why.
                 rowButton(
                     icon: .scrollText,
                     help: "Logs",
@@ -215,6 +218,7 @@ struct ContainerRow: View {
                 ) {
                     onShowLogs()
                 }
+                .disabled(isBusy || !model.isHealthy)
                 rowButton(
                     icon: .trash,
                     help: "Delete",
@@ -223,8 +227,8 @@ struct ContainerRow: View {
                 ) {
                     isConfirmingDelete = true
                 }
+                .disabled(isBusy || !model.canMutate)
             }
-            .disabled(isBusy || !model.canMutate)
             .confirmDestructive(
                 $isConfirmingDelete,
                 title: "Delete container \(container.name)?",

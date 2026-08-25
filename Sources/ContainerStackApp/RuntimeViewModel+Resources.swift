@@ -70,7 +70,14 @@ extension RuntimeViewModel {
     }
 
     func showLogs(for container: DockerContainerSummary) async {
-        await withContainer(container, action: "Reading logs from", refreshList: false) {
+        // Reading, not changing: logs are what someone wants most when the bridge
+        // is not ours and every lifecycle call would hang.
+        await withContainer(
+            container,
+            action: "Reading logs from",
+            refreshList: false,
+            mutates: false
+        ) {
             let output = try await self.client.containerLogs(id: container.id, tail: 500)
             self.logsContainerName = container.name
             self.logs = output.isEmpty ? "No log output." : output
@@ -190,14 +197,21 @@ extension RuntimeViewModel {
 
     /// The single owner of per-container busy state. Callers describe the action
     /// and, when the container survives it, what to say afterwards.
+    ///
+    /// `mutates` picks the gate. A read only needs the API to answer; a change is
+    /// refused while a foreign bridge holds the socket, where start and stop were
+    /// measured hanging past 150s.
     func withContainer(
         _ container: DockerContainerSummary,
         action: String,
         completion: String? = nil,
         refreshList: Bool = true,
+        mutates: Bool = true,
         _ body: @escaping () async throws -> Void
     ) async {
-        guard canMutate, !busyContainerIDs.contains(container.id) else { return }
+        guard mutates ? canMutate : isHealthy, !busyContainerIDs.contains(container.id) else {
+            return
+        }
 
         busyContainerIDs.insert(container.id)
         containerMessage = "\(action) \(container.name)…"

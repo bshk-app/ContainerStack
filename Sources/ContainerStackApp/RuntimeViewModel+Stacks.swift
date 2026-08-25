@@ -125,7 +125,8 @@ extension RuntimeViewModel {
     }
 
     func stackLogs(_ stack: ComposeStack, service: String?) async {
-        guard canMutate, busyStackID == nil else { return }
+        // Reading, so the API answering is enough - see `withContainer(mutates:)`.
+        guard isHealthy, busyStackID == nil else { return }
         busyStackID = stack.id
         defer { busyStackID = nil }
         do {

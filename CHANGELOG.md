@@ -14,17 +14,26 @@ releases belong in that section — move them there while reviewing.
 
 ## [0.4.1](https://github.com/bshk-app/ContainerStack/compare/v0.4.0...v0.4.1) (2026-08-25)
 
+Starting and stopping containers works again on a machine where another Docker
+bridge got there first, and one slow container no longer freezes the rest.
 
 ### Fixed
 
-* **app:** keep reads working while mutations are refused ([2358ed6](https://github.com/bshk-app/ContainerStack/commit/2358ed613ddd017509e0898f932c57c6ce56d953))
-* **app:** keep reads working while mutations are refused ([68025e1](https://github.com/bshk-app/ContainerStack/commit/68025e139dfe3e748ccba4a7bad993a0ad0979f5))
-* **containers:** track which container is busy, not that one is ([f0eae41](https://github.com/bshk-app/ContainerStack/commit/f0eae4145291ab7625ba6750b848b50f982a1511))
-* **runtime:** keep saying it while another bridge holds the socket ([ede9a6e](https://github.com/bshk-app/ContainerStack/commit/ede9a6eba9bb4c185ce5bacdc7271e7f97e732b3))
-* **runtime:** refuse to adopt a Docker bridge this build does not own ([db0a123](https://github.com/bshk-app/ContainerStack/commit/db0a123b004dd16cc115735049da94f44d5cb47c))
-* **runtime:** stop adopting foreign bridges, freezing the container list and orphaning children ([a06e73c](https://github.com/bshk-app/ContainerStack/commit/a06e73c48e5054beb559c4b7ddd70747f5c9ea53))
-* **runtime:** stop offering actions that hang against a foreign bridge ([f08af4b](https://github.com/bshk-app/ContainerStack/commit/f08af4b9d8ba38ee469d244920fc3d56e5790828))
-* **runtime:** take bounded children down with the process that waits on them ([9c2f283](https://github.com/bshk-app/ContainerStack/commit/9c2f283a7464a95f5a7aec4b505f169f3a0ad481))
+- Another program listening on the Docker socket is now named instead of adopted.
+  A bridge from a different build answers every status check while start and stop
+  hang - measured past 150 seconds against a container the bundled bridge started
+  in 2 - so the app reported a healthy engine while nothing could be controlled.
+  It now says which socket is held and what to do, keeps saying it while it is
+  true, and stops offering the actions that cannot succeed. Listing containers and
+  reading their logs keep working, since that is what you need at that point.
+- Acting on one container no longer disables every other one. Stopping can take
+  the full two-minute timeout, and for that whole time no other container could be
+  started, stopped, deleted or have its logs opened - and a click on a different
+  container did nothing at all, without a word.
+- Quitting no longer leaves runtime commands running. A command the app was
+  waiting on used to survive the app that started it: eight of them were found on
+  one machine, the oldest four days old, each wedged and invisible. The Docker
+  bridge is unaffected and still outlives the app on purpose.
 
 ## [0.4.0](https://github.com/bshk-app/ContainerStack/compare/v0.2.0...v0.4.0) (2026-08-24)
 

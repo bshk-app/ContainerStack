@@ -1,0 +1,13 @@
+{
+  "zamok": {
+    "product": "containerstack",
+    "signing": {
+      "nestedEntitlements": [
+        {
+          "match": "*/container-runtime-linux",
+          "entitlements": "Packaging/container-runtime.entitlements"
+        }
+      ]
+    }
+  }
+}

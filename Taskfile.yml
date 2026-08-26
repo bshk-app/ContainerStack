@@ -92,6 +92,16 @@ tasks:
     env:
       PUBLISH: '{{if hasKey . "PUBLISH"}}{{.PUBLISH}}{{else}}1{{end}}'
 
+  release:zamok:
+    desc: >-
+      DRAFT-FIRST Zamok release — stage the app, sign nested code, notarize,
+      staple, package, upload and mirror. Pass PUBLISH=0 for an unserved draft.
+    deps: [runtime:check]
+    cmds:
+      - av env -- ./scripts/release-zamok.sh
+    env:
+      PUBLISH: '{{if hasKey . "PUBLISH"}}{{.PUBLISH}}{{else}}1{{end}}'
+
   release:github:
     desc: Re-create or repair GitHub from the exact DMG/notes recorded by release
     cmds:

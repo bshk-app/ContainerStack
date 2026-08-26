@@ -12,6 +12,29 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.4.1](https://github.com/bshk-app/ContainerStack/compare/v0.4.0...v0.4.1) (2026-08-25)
+
+Starting and stopping containers works again on a machine where another Docker
+bridge got there first, and one slow container no longer freezes the rest.
+
+### Fixed
+
+- Another program listening on the Docker socket is now named instead of adopted.
+  A bridge from a different build answers every status check while start and stop
+  hang - measured past 150 seconds against a container the bundled bridge started
+  in 2 - so the app reported a healthy engine while nothing could be controlled.
+  It now says which socket is held and what to do, keeps saying it while it is
+  true, and stops offering the actions that cannot succeed. Listing containers and
+  reading their logs keep working, since that is what you need at that point.
+- Acting on one container no longer disables every other one. Stopping can take
+  the full two-minute timeout, and for that whole time no other container could be
+  started, stopped, deleted or have its logs opened - and a click on a different
+  container did nothing at all, without a word.
+- Quitting no longer leaves runtime commands running. A command the app was
+  waiting on used to survive the app that started it: eight of them were found on
+  one machine, the oldest four days old, each wedged and invisible. The Docker
+  bridge is unaffected and still outlives the app on purpose.
+
 ## [0.4.0](https://github.com/bshk-app/ContainerStack/compare/v0.2.0...v0.4.0) (2026-08-24)
 
 The app can finally update itself. Beyond that: runtime control is harder to

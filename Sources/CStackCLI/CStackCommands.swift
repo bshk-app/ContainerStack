@@ -254,7 +254,7 @@ extension CStackCLI {
 
     /// Points the Docker client at this runtime so plain `docker` and Compose need no flags.
     static func context(_ invocation: CStackInvocation) throws {
-        let socketPath = invocation.socketPath ?? defaultSocketPath()
+        let socketPath = invocation.socketPath ?? RuntimeProcessConfiguration.defaultSocketPath
 
         switch invocation.positional.first {
         case "install", "use", .none:
@@ -306,12 +306,6 @@ extension CStackCLI {
             exit(64)
         }
         return invocation.positional[index]
-    }
-
-    static func defaultSocketPath() -> String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: ".socktainer/container.sock")
-            .path
     }
 
     static func shortID(_ id: String) -> String {

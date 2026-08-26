@@ -6,7 +6,7 @@ import Foundation
 struct CStackCLI {
     static func main() async {
         let invocation = CStackInvocation(arguments: Array(CommandLine.arguments.dropFirst()))
-        let client = DockerAPIClient(socketPath: invocation.socketPath ?? defaultSocketPath())
+        let client = DockerAPIClient(socketPath: invocation.socketPath ?? RuntimeProcessConfiguration.defaultSocketPath)
 
         do {
             try await run(invocation, client: client)
@@ -33,7 +33,7 @@ struct CStackCLI {
     /// Compose speaks the Docker API, so it runs unchanged against the ContainerStack socket.
     private static func runCompose(_ invocation: CStackInvocation) -> Never {
         let plan = ComposeCommand.plan(
-            socketPath: invocation.socketPath ?? defaultSocketPath(),
+            socketPath: invocation.socketPath ?? RuntimeProcessConfiguration.defaultSocketPath,
             arguments: invocation.passthrough
         )
 

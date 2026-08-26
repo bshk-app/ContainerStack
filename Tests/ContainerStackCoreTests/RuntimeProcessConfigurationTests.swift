@@ -23,7 +23,10 @@ struct RuntimeProcessConfigurationTests {
 
         #expect(
             configuration.socktainerArguments
-            == ["--no-check-compatibility", "--no-docker-context", "--socket", "/tmp/custom.sock"]
+            == [
+                "--no-check-compatibility", "--no-docker-context", "--socket", "/tmp/custom.sock",
+                "--startup-housekeeping",
+            ]
         )
     }
 
@@ -39,7 +42,7 @@ struct RuntimeProcessConfigurationTests {
             configuration.socktainerArguments
             == [
                 "--no-check-compatibility", "--no-docker-context", "--socket",
-                RuntimeProcessConfiguration.defaultSocketPath,
+                RuntimeProcessConfiguration.defaultSocketPath, "--startup-housekeeping",
             ]
         )
         #expect(configuration.socktainerPath.hasSuffix("/Contents/Helpers/socktainer"))

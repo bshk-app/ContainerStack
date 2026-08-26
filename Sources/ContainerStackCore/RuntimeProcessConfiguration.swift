@@ -126,7 +126,10 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
     }
 
     public var socktainerArguments: [String] {
-        ["--no-check-compatibility", "--no-docker-context", "--socket", socketPath]
+        [
+            "--no-check-compatibility", "--no-docker-context", "--socket", socketPath,
+            "--startup-housekeeping",
+        ]
     }
 
     /// Environment for the bridge, quieting its request log.

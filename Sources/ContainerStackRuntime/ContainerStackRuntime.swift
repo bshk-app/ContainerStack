@@ -100,6 +100,7 @@ struct ContainerStackRuntime {
             timeout: ProcessRunner.lifecycleTimeout
         )
         try waitForContainerSystem(executablePath: configuration.containerPath)
+        try terminateLegacyBundledSocktainer(configuration: configuration)
 
         let decision = RuntimeStartupPlanner.decide(
             socketFileExists: FileManager.default.fileExists(atPath: configuration.socketPath),
@@ -142,6 +143,45 @@ struct ContainerStackRuntime {
                 timeout: nil
             )
         }
+    }
+
+    private static func terminateLegacyBundledSocktainer(
+        configuration: RuntimeProcessConfiguration
+    ) throws {
+        try LegacySocktainerRetirement.retire(
+            executablePath: configuration.socktainerPath,
+            maxChecks: 20,
+            processListing: processListing,
+            signal: signalTerm,
+            wait: { usleep(100_000) }
+        )
+    }
+
+    private static func processListing() throws -> String {
+        let result = try ProcessRunner.run(
+            executablePath: "/bin/ps",
+            arguments: ["-A", "-ww", "-o", "pid=,command="],
+            output: .capture(includingStandardError: true),
+            timeout: ProcessRunner.diagnosticTimeout
+        )
+
+        guard result.status == 0 else {
+            throw RuntimeProcessError.failed(executablePath: "/bin/ps", status: result.status)
+        }
+
+        return result.output
+    }
+
+    private static func signalTerm(pid: Int32) throws -> LegacySocktainerSignalResult {
+        if kill(pid, SIGTERM) == 0 {
+            return .delivered
+        }
+
+        let signalErrno = errno
+        if signalErrno == ESRCH {
+            return .alreadyExited
+        }
+        throw RuntimeProcessError.signalFailed(pid: pid, errno: signalErrno)
     }
 
     /// Whether the bridge this build ships is the process holding the socket.
@@ -230,12 +270,15 @@ struct ContainerStackRuntime {
 
 enum RuntimeProcessError: Error, CustomStringConvertible {
     case failed(executablePath: String, status: Int32)
+    case signalFailed(pid: Int32, errno: Int32)
     case notReady(executablePath: String, statusOutput: String)
 
     var description: String {
         switch self {
         case let .failed(executablePath, status):
             "\(executablePath) exited with status \(status)"
+        case let .signalFailed(pid, errno):
+            "failed to signal pid \(pid): errno \(errno)"
         case let .notReady(executablePath, statusOutput):
             "\(executablePath) did not report a running API server. Last status: \(statusOutput)"
         }

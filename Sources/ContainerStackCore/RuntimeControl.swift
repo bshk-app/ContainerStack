@@ -19,6 +19,94 @@ public enum ProcessTable {
                 return pid
             }
     }
+
+    public static func legacyBundledSocktainerPIDs(
+        forExecutable executablePath: String,
+        in listing: String
+    ) -> [Int32] {
+        guard executablePath.hasPrefix("/"),
+            executablePath.hasSuffix("/Contents/Helpers/socktainer")
+        else { return [] }
+
+        let legacyCommand = "\(executablePath) --no-check-compatibility --no-docker-context"
+        return listing
+            .split(whereSeparator: \.isNewline)
+            .compactMap { line -> Int32? in
+                let fields = line
+                    .trimmingCharacters(in: .whitespaces)
+                    .split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+                guard fields.count == 2, let pid = Int32(fields[0]) else { return nil }
+
+                let command = fields[1].trimmingCharacters(in: .whitespaces)
+                return command == legacyCommand ? pid : nil
+            }
+    }
+}
+
+public enum LegacySocktainerSignalResult: Equatable, Sendable {
+    case delivered
+    case alreadyExited
+}
+
+public enum LegacySocktainerRetirementError: Error, Equatable, CustomStringConvertible, Sendable {
+    case processEnumerationFailed
+    case signalFailed(pid: Int32)
+    case timedOut(pids: [Int32])
+
+    public var description: String {
+        switch self {
+        case .processEnumerationFailed:
+            "could not enumerate processes while retiring legacy bundled socktainer"
+        case .signalFailed(let pid):
+            "could not signal legacy bundled socktainer pid \(pid)"
+        case .timedOut(let pids):
+            "legacy bundled socktainer did not exit before timeout: \(pids)"
+        }
+    }
+}
+
+public enum LegacySocktainerRetirement {
+    public static func retire(
+        executablePath: String,
+        maxChecks: Int,
+        processListing: () throws -> String,
+        signal: (Int32) throws -> LegacySocktainerSignalResult,
+        wait: () -> Void
+    ) throws {
+        let initialPIDs = try legacyPIDs(executablePath: executablePath, processListing: processListing)
+        guard !initialPIDs.isEmpty else { return }
+
+        for pid in initialPIDs {
+            do {
+                _ = try signal(pid)
+            } catch {
+                throw LegacySocktainerRetirementError.signalFailed(pid: pid)
+            }
+        }
+
+        var remainingPIDs = initialPIDs
+        for _ in 0..<maxChecks {
+            remainingPIDs = try legacyPIDs(executablePath: executablePath, processListing: processListing)
+            if remainingPIDs.isEmpty { return }
+            wait()
+        }
+
+        throw LegacySocktainerRetirementError.timedOut(pids: remainingPIDs)
+    }
+
+    private static func legacyPIDs(
+        executablePath: String,
+        processListing: () throws -> String
+    ) throws -> [Int32] {
+        do {
+            return ProcessTable.legacyBundledSocktainerPIDs(
+                forExecutable: executablePath,
+                in: try processListing()
+            )
+        } catch {
+            throw LegacySocktainerRetirementError.processEnumerationFailed
+        }
+    }
 }
 
 public enum RuntimeControlStep: Equatable, Sendable {

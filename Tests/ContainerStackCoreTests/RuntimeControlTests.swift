@@ -33,6 +33,118 @@ struct ProcessTableTests {
     func returnsNothingWhenExecutableIsNotRunning() {
         #expect(ProcessTable.pids(forExecutable: "/nowhere/socktainer", in: listing).isEmpty)
     }
+
+    @Test
+    func selectsOnlyTheLegacyBundledSocktainerOwner() {
+        let bundled = "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
+        let listing = """
+              10001 \(bundled) --no-check-compatibility --no-docker-context
+              10002 \(bundled) --no-check-compatibility --no-docker-context --socket /Users/me/.containerstack/docker.sock --startup-housekeeping
+              10003 /Users/me/.local/bin/socktainer --no-check-compatibility --no-docker-context
+              10004 /tmp/socktainer --no-check-compatibility --no-docker-context
+              10005 \(bundled) --no-docker-context --no-check-compatibility
+            """
+
+        #expect(ProcessTable.legacyBundledSocktainerPIDs(forExecutable: bundled, in: listing) == [10001])
+        #expect(
+            ProcessTable.legacyBundledSocktainerPIDs(
+                forExecutable: "/Users/me/.local/bin/socktainer",
+                in: listing
+            ).isEmpty
+        )
+    }
+}
+
+struct LegacySocktainerRetirementTests {
+    private let bundled = "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
+
+    @Test
+    func waitsUntilEverySelectedLegacyProcessHasExited() throws {
+        var listings = [
+            legacyListing(pid: 10001),
+            legacyListing(pid: 10001),
+            "",
+        ]
+        var signaled: [Int32] = []
+        var waits = 0
+
+        try LegacySocktainerRetirement.retire(
+            executablePath: bundled,
+            maxChecks: 3,
+            processListing: { listings.removeFirst() },
+            signal: { pid in
+                signaled.append(pid)
+                return .delivered
+            },
+            wait: { waits += 1 }
+        )
+
+        #expect(signaled == [10001])
+        #expect(waits == 1)
+    }
+
+    @Test
+    func treatsAlreadyExitedProcessAsRetired() throws {
+        var listings = [legacyListing(pid: 10001), ""]
+
+        try LegacySocktainerRetirement.retire(
+            executablePath: bundled,
+            maxChecks: 2,
+            processListing: { listings.removeFirst() },
+            signal: { _ in .alreadyExited },
+            wait: {}
+        )
+    }
+
+    @Test
+    func failedProcessEnumerationIsAnError() {
+        #expect(throws: LegacySocktainerRetirementError.processEnumerationFailed) {
+            try LegacySocktainerRetirement.retire(
+                executablePath: bundled,
+                maxChecks: 1,
+                processListing: { throw ProbeError.failed },
+                signal: { _ in .delivered },
+                wait: {}
+            )
+        }
+    }
+
+    @Test
+    func failedSignalDeliveryIsAnError() {
+        #expect(throws: LegacySocktainerRetirementError.signalFailed(pid: 10001)) {
+            try LegacySocktainerRetirement.retire(
+                executablePath: bundled,
+                maxChecks: 1,
+                processListing: { legacyListing(pid: 10001) },
+                signal: { _ in throw ProbeError.failed },
+                wait: {}
+            )
+        }
+    }
+
+    @Test
+    func remainingLegacyProcessAfterBoundedChecksAbortsStartup() {
+        var waits = 0
+
+        #expect(throws: LegacySocktainerRetirementError.timedOut(pids: [10001])) {
+            try LegacySocktainerRetirement.retire(
+                executablePath: bundled,
+                maxChecks: 2,
+                processListing: { legacyListing(pid: 10001) },
+                signal: { _ in .delivered },
+                wait: { waits += 1 }
+            )
+        }
+        #expect(waits == 2)
+    }
+
+    private func legacyListing(pid: Int32) -> String {
+        "\(pid) /Applications/ContainerStack.app/Contents/Helpers/socktainer --no-check-compatibility --no-docker-context"
+    }
+
+    private enum ProbeError: Error {
+        case failed
+    }
 }
 
 struct RuntimeRestartPlanTests {

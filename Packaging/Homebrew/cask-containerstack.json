@@ -16,6 +16,6 @@
     "~/Library/Logs/ContainerStack",
     "~/Library/Preferences/app.bshk.containerstack.plist",
     "~/Library/LaunchAgents/com.containerstack.runtime.plist",
-    "~/.socktainer"
+    "~/.containerstack"
   ]
 }

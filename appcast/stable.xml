@@ -3,6 +3,35 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.4.1</title>
+            <pubDate>Tue, 25 Aug 2026 23:42:28 +0300</pubDate>
+            <sparkle:version>151</sparkle:version>
+            <sparkle:shortVersionString>0.4.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>Starting and stopping containers works again on a machine where another Docker<br>
+bridge got there first, and one slow container no longer freezes the rest.</p>
+<h3>Fixed</h3>
+<ul>
+<li>Another program listening on the Docker socket is now named instead of adopted.<br>
+A bridge from a different build answers every status check while start and stop<br>
+hang - measured past 150 seconds against a container the bundled bridge started<br>
+in 2 - so the app reported a healthy engine while nothing could be controlled.<br>
+It now says which socket is held and what to do, keeps saying it while it is<br>
+true, and stops offering the actions that cannot succeed. Listing containers and<br>
+reading their logs keep working, since that is what you need at that point.</li>
+<li>Acting on one container no longer disables every other one. Stopping can take<br>
+the full two-minute timeout, and for that whole time no other container could be<br>
+started, stopped, deleted or have its logs opened - and a click on a different<br>
+container did nothing at all, without a word.</li>
+<li>Quitting no longer leaves runtime commands running. A command the app was<br>
+waiting on used to survive the app that started it: eight of them were found on<br>
+one machine, the oldest four days old, each wedged and invisible. The Docker<br>
+bridge is unaffected and still outlives the app on purpose.</li>
+</ul>]]></description>
+            <enclosure url="https://dl.bshk.app/products/containerstack/releases/0.4.1/59686655-4e4e-420f-8c7c-48904ad6177f/ContainerStack-0.4.1.dmg" length="133483230" type="application/octet-stream" sparkle:edSignature="v0vgbKWRBjf5HtAnymr9Jknk+kgHAhEN/lWxWG5w/SYFRB/GOvUIQAilfwswM7x7Ug1SornF4Z1WFXAXSuOLDQ=="/>
+        </item>
+        <item>
             <title>0.4.0</title>
             <pubDate>Mon, 24 Aug 2026 18:14:10 +0000</pubDate>
             <sparkle:version>140</sparkle:version>

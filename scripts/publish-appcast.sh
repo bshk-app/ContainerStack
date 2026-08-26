@@ -26,6 +26,7 @@ readonly NOTES_MD="${5:-}"
 readonly REPOSITORY="${GITHUB_RELEASE_REPOSITORY:-bshk-app/ContainerStack}"
 readonly PAGES_BRANCH="${APPCAST_BRANCH:-gh-pages}"
 readonly KEYCHAIN_ACCOUNT="${SPARKLE_KEYCHAIN_ACCOUNT:-containerstack}"
+readonly DOWNLOAD_URL_PREFIX="${APPCAST_DOWNLOAD_URL_PREFIX:-https://github.com/${REPOSITORY}/releases/download/${TAG}/}"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 note() { printf '%s\n' "$*" >&2; }
@@ -104,7 +105,7 @@ note "== signing $(basename "$DMG") into $feed =="
 zamokctl appcast \
     --input "$DMG" \
     --ed-key-file "$work/ed-key" \
-    --download-url-prefix "https://github.com/${REPOSITORY}/releases/download/${TAG}/" \
+    --download-url-prefix "$DOWNLOAD_URL_PREFIX" \
     --appcast "$worktree/$feed" \
     "${notes_args[@]}" \
     --maximum-versions 10

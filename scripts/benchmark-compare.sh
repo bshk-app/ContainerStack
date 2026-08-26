@@ -13,7 +13,7 @@ readonly ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly HARNESS="${SCRIPT_DIR}/benchmark-runtime.sh"
 readonly ITERATIONS="${1:-5}"
 readonly ORB_SOCKET="${ORB_SOCKET:-${HOME}/.orbstack/run/docker.sock}"
-readonly CSTACK_SOCKET="${CSTACK_SOCKET:-${HOME}/.socktainer/container.sock}"
+readonly CSTACK_SOCKET="${CSTACK_SOCKET:-${HOME}/.containerstack/docker.sock}"
 readonly MIN_IDLE_CPU="${BENCH_MIN_IDLE_CPU:-70}"
 readonly MAX_LOAD="${BENCH_MAX_LOAD:-4}"
 

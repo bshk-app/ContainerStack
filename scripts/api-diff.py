@@ -2,7 +2,7 @@
 """Differential Docker Engine API conformance: target vs a live reference daemon.
 
     ./scripts/api-diff.py --reference ~/.orbstack/run/docker.sock \
-                          --target    ~/.socktainer/container.sock \
+                          --target    ~/.containerstack/docker.sock \
                           --scenarios scripts/api-scenarios.json
 
 Why differential instead of a ported test suite: expectations written by hand

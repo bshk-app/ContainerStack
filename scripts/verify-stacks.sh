@@ -9,9 +9,9 @@ set -uo pipefail
 #
 #   ./scripts/verify-stacks.sh [socket-path]
 #
-# Default socket: ~/.socktainer/container.sock
+# Default socket: ~/.containerstack/docker.sock
 
-readonly SOCKET="${1:-$HOME/.socktainer/container.sock}"
+readonly SOCKET="${1:-$HOME/.containerstack/docker.sock}"
 readonly PROJECT_DIR="$(mktemp -d /tmp/cstack-verify.XXXXXX)"
 readonly PROJECT_NAME="cstack-verify"
 readonly DOCKER_BIN="${DOCKER_BIN:-docker}"

@@ -22,7 +22,7 @@
 set -uo pipefail
 
 readonly ARM="${1:-control}"
-readonly SOCKET="${2:-$HOME/.socktainer/container.sock}"
+readonly SOCKET="${2:-$HOME/.containerstack/docker.sock}"
 readonly DOCKER_BIN="${DOCKER_BIN:-docker}"
 readonly PORT=18093
 readonly NET="recov-$ARM"

@@ -12,6 +12,19 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.4.2](https://github.com/bshk-app/ContainerStack/compare/v0.4.1...v0.4.2) (2026-08-26)
+
+
+### Fixed
+
+* **app:** follow the core socket configuration ([dfff9c0](https://github.com/bshk-app/ContainerStack/commit/dfff9c0f91dc7c34231c6b4e66ebc736cd04e7f2))
+* **cli:** use the app-owned socket by default ([d15cadf](https://github.com/bshk-app/ContainerStack/commit/d15cadf79eb39090241c4643ec422294a9235a7e))
+* **context:** refresh the active installed context ([23c4cfc](https://github.com/bshk-app/ContainerStack/commit/23c4cfcb3ee6fc2117961319d5bd39b0099a58da))
+* **runtime:** claim startup housekeeping ownership ([d8a3cb3](https://github.com/bshk-app/ContainerStack/commit/d8a3cb3643f33d44cca1927cd9ea67e4ba0cb03d))
+* **runtime:** retire the legacy bundled bridge safely ([27a7122](https://github.com/bshk-app/ContainerStack/commit/27a712266277899dbc2143f0791aee1f394dd7c9))
+* **runtime:** use the app-owned socket ([ea804f1](https://github.com/bshk-app/ContainerStack/commit/ea804f16c6c470484e87810063093816cbf63522))
+* **scripts:** restore the app-owned runtime socket ([c776012](https://github.com/bshk-app/ContainerStack/commit/c776012c56a2581383c82f95c0646cc798e82aac))
+
 ## [0.4.1](https://github.com/bshk-app/ContainerStack/compare/v0.4.0...v0.4.1) (2026-08-25)
 
 Starting and stopping containers works again on a machine where another Docker

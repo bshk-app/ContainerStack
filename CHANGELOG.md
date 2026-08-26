@@ -14,16 +14,33 @@ releases belong in that section — move them there while reviewing.
 
 ## [0.4.2](https://github.com/bshk-app/ContainerStack/compare/v0.4.1...v0.4.2) (2026-08-26)
 
+ContainerStack now owns a Docker socket separate from a standalone Socktainer
+installation. Upgrading moves the app and its Docker context without stopping or
+removing a bridge you run yourself.
+
+### Changed
+
+- The app, `cstack`, Docker context, and verification tools now use
+  `~/.containerstack/docker.sock` instead of `~/.socktainer/container.sock`.
+  An active `containerstack` Docker context is refreshed during the upgrade. If
+  you set `DOCKER_HOST` yourself, update it to the new path.
+- The bundled bridge explicitly owns startup housekeeping for the shared Apple
+  Container runtime. Homebrew cleanup removes only ContainerStack's state and
+  no longer treats `~/.socktainer` as app-owned data.
 
 ### Fixed
 
-* **app:** follow the core socket configuration ([dfff9c0](https://github.com/bshk-app/ContainerStack/commit/dfff9c0f91dc7c34231c6b4e66ebc736cd04e7f2))
-* **cli:** use the app-owned socket by default ([d15cadf](https://github.com/bshk-app/ContainerStack/commit/d15cadf79eb39090241c4643ec422294a9235a7e))
-* **context:** refresh the active installed context ([23c4cfc](https://github.com/bshk-app/ContainerStack/commit/23c4cfcb3ee6fc2117961319d5bd39b0099a58da))
-* **runtime:** claim startup housekeeping ownership ([d8a3cb3](https://github.com/bshk-app/ContainerStack/commit/d8a3cb3643f33d44cca1927cd9ea67e4ba0cb03d))
-* **runtime:** retire the legacy bundled bridge safely ([27a7122](https://github.com/bshk-app/ContainerStack/commit/27a712266277899dbc2143f0791aee1f394dd7c9))
-* **runtime:** use the app-owned socket ([ea804f1](https://github.com/bshk-app/ContainerStack/commit/ea804f16c6c470484e87810063093816cbf63522))
-* **scripts:** restore the app-owned runtime socket ([c776012](https://github.com/bshk-app/ContainerStack/commit/c776012c56a2581383c82f95c0646cc798e82aac))
+- Upgrading retires the old bundled bridge before starting its replacement. The
+  migration matches both the exact helper path inside ContainerStack.app and the
+  old argument list, waits for that process to exit, and aborts safely if it
+  cannot confirm retirement. A standalone Socktainer process is left running.
+
+### Known limitations
+
+Published ports still require a runtime restart if a bridge-created network's
+vmnet helper dies; restarting only the containers does not repair the host route.
+The per-container micro-VM architecture also remains slower than OrbStack on the
+measured M1 system (4.6x container round trip, 3.6x bind-mount writes).
 
 ## [0.4.1](https://github.com/bshk-app/ContainerStack/compare/v0.4.0...v0.4.1) (2026-08-25)
 

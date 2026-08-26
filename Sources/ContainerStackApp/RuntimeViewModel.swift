@@ -8,9 +8,7 @@ import ServiceManagement
 @MainActor
 @Observable
 final class RuntimeViewModel {
-    static let defaultSocketPath = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".socktainer/container.sock")
-        .path
+    static let defaultSocketPath = RuntimeProcessConfiguration.defaultSocketPath
 
     let client: DockerAPIClient
     nonisolated static let launchAgentPlistName = "com.containerstack.runtime.plist"

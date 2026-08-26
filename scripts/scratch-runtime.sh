@@ -106,16 +106,16 @@ restore() {
     # and it exits. Bring the app back so the machine ends where it started.
     if [[ "$app_was_running" == "yes" ]]; then
         pkill -f "/Applications/ContainerStack.app/Contents/Helpers/socktainer" 2>/dev/null
-        rm -f "$HOME/.socktainer/container.sock"
+        rm -f "$HOME/.containerstack/docker.sock"
         open /Applications/ContainerStack.app 2>/dev/null
         for _ in $(seq 1 40); do
-            [[ -S "$HOME/.socktainer/container.sock" ]] \
-                && timeout 5 curl -s --unix-socket "$HOME/.socktainer/container.sock" "http://localhost/_ping" >/dev/null 2>&1 \
+            [[ -S "$HOME/.containerstack/docker.sock" ]] \
+                && timeout 5 curl -s --unix-socket "$HOME/.containerstack/docker.sock" "http://localhost/_ping" >/dev/null 2>&1 \
                 && break
             sleep 1
         done
         printf 'app bridge: %s\n' \
-            "$(timeout 5 curl -s -o /dev/null -w '%{http_code}' --unix-socket "$HOME/.socktainer/container.sock" "http://localhost/_ping" 2>/dev/null)"
+            "$(timeout 5 curl -s -o /dev/null -w '%{http_code}' --unix-socket "$HOME/.containerstack/docker.sock" "http://localhost/_ping" 2>/dev/null)"
     fi
     exit $status
 }

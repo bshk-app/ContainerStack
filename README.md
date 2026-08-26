@@ -36,10 +36,10 @@ revision with `scripts/prepare-v1-runtime.sh`, or set `SOCKTAINER_BINARY`.
 
 ## Socket
 
-Default: `unix://$HOME/.socktainer/container.sock`.
+Default: `unix://$HOME/.containerstack/docker.sock`.
 
 ```sh
-export DOCKER_HOST="unix://$HOME/.socktainer/container.sock"
+export DOCKER_HOST="unix://$HOME/.containerstack/docker.sock"
 docker info
 ```
 

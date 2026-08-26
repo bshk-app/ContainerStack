@@ -8,7 +8,7 @@ Every milestone below maps to a GitHub milestone in `bshk-app/ContainerStack`.
 Working today, verified end to end:
 
 - Apple Container 1.2.2 supervised by a bundled runtime helper, socktainer shipped as a sidecar in `Contents/Helpers`.
-- Docker-compatible socket at `~/.socktainer/container.sock`, registered as the active `containerstack` Docker context by default. Opting out restores the previous context; `/var/run/docker.sock` is never changed.
+- Docker-compatible socket at `~/.containerstack/docker.sock`, registered as the active `containerstack` Docker context by default. Opting out restores the previous context; `/var/run/docker.sock` is never changed.
 - `docker` and `docker compose` work unmodified: networks, volumes, published ports, `exec`, `down -v`.
 - `cstack`: ps, inspect, logs, start/stop/restart/rm, run, images, pull, rmi, volumes, networks, df, prune, context, compose.
 - App: overview, containers grouped by Compose project, images with pull/run/delete, volumes, networks, runtime panel with polled state.
@@ -61,4 +61,3 @@ Options: narrow-and-honest, broad-with-documented-holes, or tiered.
        Tier 3 — explicitly refused with a Docker-shaped error. Which?
      Whatever the shape, name the failure mode for anything outside Tier 1: silent no-op,
      warning, or hard error. socktainer currently no-ops `network connect`/`disconnect`. -->
-

@@ -3,6 +3,40 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.4.2</title>
+            <pubDate>Wed, 26 Aug 2026 12:49:13 +0000</pubDate>
+            <sparkle:version>167</sparkle:version>
+            <sparkle:shortVersionString>0.4.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>ContainerStack now owns a Docker socket separate from a standalone Socktainer<br>
+installation. Upgrading moves the app and its Docker context without stopping or<br>
+removing a bridge you run yourself.</p>
+<h3>Changed</h3>
+<ul>
+<li>The app, <code class="notranslate">cstack</code>, Docker context, and verification tools now use<br>
+<code class="notranslate">~/.containerstack/docker.sock</code> instead of <code class="notranslate">~/.socktainer/container.sock</code>.<br>
+An active <code class="notranslate">containerstack</code> Docker context is refreshed during the upgrade. If<br>
+you set <code class="notranslate">DOCKER_HOST</code> yourself, update it to the new path.</li>
+<li>The bundled bridge explicitly owns startup housekeeping for the shared Apple<br>
+Container runtime. Homebrew cleanup removes only ContainerStack's state and<br>
+no longer treats <code class="notranslate">~/.socktainer</code> as app-owned data.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Upgrading retires the old bundled bridge before starting its replacement. The<br>
+migration matches both the exact helper path inside ContainerStack.app and the<br>
+old argument list, waits for that process to exit, and aborts safely if it<br>
+cannot confirm retirement. A standalone Socktainer process is left running.</li>
+</ul>
+<h3>Known limitations</h3>
+<p>Published ports still require a runtime restart if a bridge-created network's<br>
+vmnet helper dies; restarting only the containers does not repair the host route.<br>
+The per-container micro-VM architecture also remains slower than OrbStack on the<br>
+measured M1 system (4.6x container round trip, 3.6x bind-mount writes).</p>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.4.2/ContainerStack-0.4.2.dmg" length="22434733" type="application/octet-stream" sparkle:edSignature="AuHbAI7HPY/Tt1FnJk5tkv+ldwta3Ci/fv6bHIzdZIbUaUoWtGgllIggwlCyGeUeEn8PBDCkRrF8qpqmvK+8DA=="/>
+        </item>
+        <item>
             <title>0.4.1</title>
             <pubDate>Tue, 25 Aug 2026 23:42:28 +0300</pubDate>
             <sparkle:version>151</sparkle:version>

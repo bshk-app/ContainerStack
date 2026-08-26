@@ -2,7 +2,7 @@ import Foundation
 
 public struct RuntimeProcessConfiguration: Equatable, Sendable {
     public static let defaultSocketPath = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".socktainer/container.sock")
+        .appending(path: ".containerstack/docker.sock")
         .path
 
     /// The version this build is pinned to. Homebrew has no way to express a
@@ -126,7 +126,7 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
     }
 
     public var socktainerArguments: [String] {
-        ["--no-check-compatibility", "--no-docker-context"]
+        ["--no-check-compatibility", "--no-docker-context", "--socket", socketPath]
     }
 
     /// Environment for the bridge, quieting its request log.

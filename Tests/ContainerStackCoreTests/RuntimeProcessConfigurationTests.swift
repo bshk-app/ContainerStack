@@ -4,6 +4,30 @@ import Testing
 
 struct RuntimeProcessConfigurationTests {
     @Test
+    func usesTheAppOwnedSocketByDefault() {
+        #expect(
+            RuntimeProcessConfiguration.defaultSocketPath
+                == FileManager.default.homeDirectoryForCurrentUser
+                .appending(path: ".containerstack/docker.sock")
+                .path
+        )
+    }
+
+    @Test
+    func forwardsTheConfiguredSocketToSocktainer() {
+        let configuration = RuntimeProcessConfiguration(
+            containerPath: "/usr/local/bin/container",
+            socktainerPath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer",
+            socketPath: "/tmp/custom.sock"
+        )
+
+        #expect(
+            configuration.socktainerArguments
+            == ["--no-check-compatibility", "--no-docker-context", "--socket", "/tmp/custom.sock"]
+        )
+    }
+
+    @Test
     func keepsCompatibilityAndDockerContextUnderAppControl() {
         let configuration = RuntimeProcessConfiguration(
             containerPath: "/usr/local/bin/container",
@@ -11,7 +35,13 @@ struct RuntimeProcessConfigurationTests {
         )
 
         #expect(configuration.containerStartArguments == ["system", "start"])
-        #expect(configuration.socktainerArguments == ["--no-check-compatibility", "--no-docker-context"])
+        #expect(
+            configuration.socktainerArguments
+            == [
+                "--no-check-compatibility", "--no-docker-context", "--socket",
+                RuntimeProcessConfiguration.defaultSocketPath,
+            ]
+        )
         #expect(configuration.socktainerPath.hasSuffix("/Contents/Helpers/socktainer"))
         #expect(configuration.expectedContainerVersion == "1.2.2")
     }

@@ -53,7 +53,7 @@ public enum DockerContext {
         installed: Bool?,
         takeoverEnabled: Bool
     ) -> Bool {
-        takeoverEnabled && installed == false
+        takeoverEnabled && (installed == false || activeContext == name)
     }
 
     public static func socketStatus(atPath path: String) -> DockerSocketStatus {

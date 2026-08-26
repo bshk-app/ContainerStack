@@ -206,6 +206,22 @@ struct DockerContextTests {
     }
 
     @Test
+    func updatesAnInstalledContextWhenItIsAlreadyActive() {
+        #expect(
+            DockerContext.shouldAdopt(
+                activeContext: DockerContext.name,
+                installed: true,
+                takeoverEnabled: true
+            ))
+        #expect(
+            !DockerContext.shouldAdopt(
+                activeContext: "orbstack",
+                installed: true,
+                takeoverEnabled: true
+            ))
+    }
+
+    @Test
     func resolvesAndConnectsToTheDefaultSocketWithoutChangingIt() throws {
         let directory = URL(fileURLWithPath: "/tmp/cs-\(UUID().uuidString.prefix(8))")
         let target = directory.appending(path: "orbstack.sock")

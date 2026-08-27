@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Installed by `task hooks:install`, which points core.hooksPath here - git does
+# not ship hooks with a clone, so a hook nobody installs enforces nothing.
+#
+# Blocking checks are the mechanical ones a machine owns: formatting and lint.
+# The comment-length check only warns here; measured over the last 60 commits it
+# would have stopped four hand-written forensic blocks, and a human staging them
+# has already made that call.
+set -euo pipefail
+
+readonly ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACM -- '*.swift')
+if [[ ${#staged[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+status=0
+
+if command -v swift >/dev/null 2>&1; then
+    if ! swift format lint --strict "${staged[@]}"; then
+        printf 'pre-commit: run `task format` (swift format) and stage the result\n' >&2
+        status=1
+    fi
+fi
+
+if command -v swiftlint >/dev/null 2>&1; then
+    if ! swiftlint lint --quiet --strict -- "${staged[@]}"; then
+        printf 'pre-commit: swiftlint is strict here; fix or justify in .swiftlint.yml\n' >&2
+        status=1
+    fi
+else
+    printf 'pre-commit: swiftlint not installed, skipping (brew install swiftlint)\n' >&2
+fi
+
+COMMENT_GROWTH_WARN_ONLY=1 MAX_ADDED_COMMENT_LINES=10 \
+    ./scripts/hooks/check-comment-growth.sh --staged || true
+
+exit "$status"

@@ -33,6 +33,27 @@ distribution artifact (signing audit, gap 6).
 and moves its data directory aside, so it is user-run and never called by a
 build task. `task runtime:check` verifies the checkout is at the pin.
 
+## Style, hooks and the language server
+
+```bash
+task hooks:install  # once per clone - git does not carry hooks
+task lint           # exactly what CI runs
+task format         # swift format in place, then swiftlint --fix
+```
+
+Layout belongs to `swift-format` (`.swift-format`); `.swiftlint.yml` keeps size,
+complexity and naming and delegates the layout rules, because with both tools
+enforcing layout the formatter's own output became SwiftLint findings.
+
+Comment length is gated on **added** lines only: this hook stops an agent at 8
+added comment lines in one block and warns a human at 10. Existing long blocks
+carry measured detail and are deliberately never flagged.
+
+`sourcekit-lsp` runs with background indexing on, but its cross-file index still
+lags an edit: **after a rename or any cross-file change, run `swift build`
+before trusting LSP diagnostics or a "rename applied" report** - a stale index
+has already claimed a rename landed while the old names were still on disk.
+
 ## Release
 
 Merge the release PR release-please keeps open. It bumps `VERSION` and drafts a

@@ -3,6 +3,48 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.5.0</title>
+            <pubDate>Thu, 27 Aug 2026 16:33:09 +0000</pubDate>
+            <sparkle:version>174</sparkle:version>
+            <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>Containers can be sized now, and a stop that loses the runtime's XPC service no<br>
+longer hangs the app with no way out.</p>
+<h3>Added</h3>
+<ul>
+<li>Global CPU and memory defaults in Settings, clamped to this Mac's capacity,<br>
+and per-container overrides in the image Run dialog. Apple Container gives<br>
+every container its own VM, and until now each one got the runtime's built-in<br>
+4 CPUs and 1 GiB. The values travel as Docker's <code class="notranslate">HostConfig.Memory</code> and<br>
+<code class="notranslate">HostConfig.NanoCpus</code>. Fractional CPUs are deliberately not offered: the<br>
+bridge floors them to whole vCPUs, so 0.5 would silently become 1. <code class="notranslate">cstack</code><br>
+keeps its previous behaviour and passes no limits.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Stopping a container no longer hangs on "Stopping…" indefinitely. Measured<br>
+cause: Apple Container's API server had lost its XPC service, so both stop and<br>
+kill answered HTTP 500 "XPC connection error: Connection interrupted" and<br>
+every later ping answered "Connection invalid", while the app waited out the<br>
+full lifecycle timeout. Stop now pins the daemon's grace window at five<br>
+seconds, bounds its own wait, and treats 304 and 404 as the requested end<br>
+state rather than a failure.</li>
+<li>A lost connection is repaired once instead of repeatedly. The health monitor<br>
+is the only owner of restarts and first proves the API server is really gone<br>
+with <code class="notranslate">container system status</code>, so a single transient ping timeout can no<br>
+longer cycle a stack that is serving traffic. A recovery that fails ends the<br>
+startup window, so the manual restart stays available instead of the sidebar<br>
+sitting in a starting state with nothing to click.</li>
+</ul>
+<h3>Known limitations</h3>
+<p>Published ports still require a runtime restart if a bridge-created network's<br>
+vmnet helper dies; restarting only the containers does not repair the host route.<br>
+The per-container micro-VM architecture also remains slower than OrbStack on the<br>
+measured M1 system (4.6x container round trip, 3.6x bind-mount writes).</p>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.5.0/ContainerStack-0.5.0.dmg" length="22550529" type="application/octet-stream" sparkle:edSignature="65Gmq/MEuxGi2TYRFS+QNbDGAf2CYsQ670Qc9w3UGptbvnOrchy9uspxxumqBFBomi6HImhTYznE89bFRDCRDw=="/>
+        </item>
+        <item>
             <title>0.4.2</title>
             <pubDate>Wed, 26 Aug 2026 12:49:13 +0000</pubDate>
             <sparkle:version>167</sparkle:version>

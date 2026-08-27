@@ -55,7 +55,10 @@ else
     printf 'pre-commit: swiftlint not installed, skipping (brew install swiftlint)\n' >&2
 fi
 
-COMMENT_GROWTH_WARN_ONLY=1 MAX_ADDED_COMMENT_LINES=10 \
-    "$ROOT/scripts/hooks/check-comment-growth.sh" --staged || true
+# Working tree rather than the staged snapshot, deliberately: this one only
+# warns, and a human who staged part of a comment block wants to hear about the
+# block they are looking at.
+COMMENT_GROWTH_WARN_ONLY=1 MAX_NEW_COMMENT_LINES=10 \
+    "$ROOT/scripts/hooks/check-new-comment-blocks.sh" || true
 
 exit "$status"

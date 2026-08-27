@@ -45,14 +45,15 @@ Layout belongs to `swift-format` (`.swift-format`); `.swiftlint.yml` keeps size,
 complexity and naming and delegates the layout rules, because with both tools
 enforcing layout the formatter's own output became SwiftLint findings.
 
-Comment length is gated on the lines a change **adds**, counted per comment
-block of the resulting file — growing a block from both sides of an untouched
-line is the same bloat. Existing long blocks carry measured detail and are
-deliberately never flagged.
+Comment length is a SwiftLint rule, not a hand-written scanner
+(`.swiftlint-comments.yml`): token kinds are how `//` inside a `"""` literal
+stays out of it. It is never run repo-wide — `scripts/hooks/check-new-comment-blocks.sh`
+keeps only the blocks a change wrote, so existing long blocks with measured
+detail stay untouched while narration appended to one still counts.
 
 `PostToolUse` runs after the edit is on disk, so it reports; the `Stop` hook is
 what refuses to let the agent finish, at 8 new lines in one block. `pre-commit`
-warns a human at 10 and lints the staged snapshot, not the working tree.
+warns a human at 10.
 
 `sourcekit-lsp` runs with background indexing on, but its cross-file index still
 lags an edit: **after a rename or any cross-file change, run `swift build`

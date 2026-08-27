@@ -7,10 +7,11 @@ struct ContainerStackApp: App {
     @NSApplicationDelegateAdaptor(ContainerStackAppDelegate.self) private var appDelegate
     @State private var model = RuntimeViewModel()
     @State private var updates = AppUpdates()
+    @State private var resourceSettings = ContainerResourceSettings()
 
     var body: some Scene {
         Window("ContainerStack", id: "dashboard") {
-            DashboardView(model: model)
+            DashboardView(model: model, resourceSettings: resourceSettings)
         }
         .commands {
             // The app menu is where macOS users look for this, and the menu bar
@@ -19,6 +20,10 @@ struct ContainerStackApp: App {
                 Button("Check for Updates…") { updates.checkForUpdates() }
                     .disabled(!updates.canCheckForUpdates)
             }
+        }
+
+        Settings {
+            SystemSettingsView(settings: resourceSettings)
         }
 
         MenuBarExtra {

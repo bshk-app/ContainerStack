@@ -13,6 +13,7 @@ extension RuntimeViewModel {
     @discardableResult
     func restartRuntime() async -> Bool {
         guard !isRestarting else { return false }
+        runtimeRecoveryRequested = false
 
         isRestarting = true
         runtimeFailure = nil
@@ -42,20 +43,42 @@ extension RuntimeViewModel {
         })
     }
 
-    func completeRuntimeRestart(waitForSocket: () async throws -> Bool) async -> Bool {
+    /// The probe returns straight after this call, so a restart that failed has to leave the model
+    /// offline here — otherwise the inventory captured before the restart stays on screen while the
+    /// runtime is gone.
+    func completeAutomaticRuntimeRecovery(restart: () async -> Bool) async {
+        if await restart() {
+            containerMessage = "Runtime recovered."
+            return
+        }
+        clearInventoryForStop()
+        endStartupAfterFailedRecovery()
+    }
+
+    func completeRuntimeRestart(
+        waitForSocket: () async throws -> Bool,
+        refreshHealth: (() async throws -> RuntimeHealthSnapshot)? = nil
+    ) async -> Bool {
         let socketReady: Bool
         do {
             socketReady = try await waitForSocket()
         } catch {
             return false
         }
-        if socketReady {
-            runtimeMessage = "Runtime restarted."
-            await refresh()
-            return true
+        guard socketReady else {
+            failRuntime("Runtime did not come back within 60 seconds.")
+            return false
         }
-        failRuntime("Runtime did not come back within 60 seconds.")
-        return false
+
+        runtimeMessage = "Runtime restarted."
+        // A socket that answers is not yet a healthy runtime: `/version` and `/info` can still
+        // fail, and reporting recovery then would contradict the state the refresh just published.
+        if let refreshHealth {
+            await refresh(health: refreshHealth)
+        } else {
+            await refresh()
+        }
+        return runtimeState.isHealthy
     }
 
     static func waitForRestartedSocket(
@@ -74,6 +97,7 @@ extension RuntimeViewModel {
 
     func stopRuntime() async {
         guard !isRestarting else { return }
+        runtimeRecoveryRequested = false
 
         isRestarting = true
         runtimeMessage = "Stopping Docker bridge…"
@@ -99,15 +123,21 @@ extension RuntimeViewModel {
     }
 
     /// The runtime cannot report this over the Docker API: with its app root deleted it still answers
-    /// `_ping` with 200 (measured), so the only witness is `container system status`. Async and off the
-    /// main thread for the same reason as the routing table — spawning the CLI blocks until it exits,
-    /// and the resolution this feeds also runs inside a sixty-attempt wait loop.
+    /// `_ping` with 200 (measured), so the only witness is `container system status`.
     func missingAppRoot() async -> String? {
+        let status = await systemStatusOutput()
+        return RuntimeStatusParser.missingAppRoot(status)
+    }
+
+    /// The single witness behind both the missing-app-root banner and the API-server proof that
+    /// gates a restart. Async and off the main thread for the same reason as the routing table —
+    /// spawning the CLI blocks until it exits, and the resolutions this feeds also run inside a
+    /// sixty-attempt wait loop.
+    func systemStatusOutput() async -> String {
         let containerPath = runtimeConfiguration().containerPath
-        let status = await Task.detached {
+        return await Task.detached {
             RuntimeShell.output(executablePath: containerPath, arguments: ["system", "status"])
         }.value
-        return RuntimeStatusParser.missingAppRoot(status)
     }
 
     private func perform(_ step: RuntimeControlStep) async throws {

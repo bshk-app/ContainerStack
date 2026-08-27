@@ -207,6 +207,7 @@ extension RuntimeViewModel {
         completion: String? = nil,
         refreshList: Bool = true,
         mutates: Bool = true,
+        recoversRuntime: Bool = false,
         _ body: @escaping () async throws -> Void
     ) async {
         guard mutates ? canMutate : isHealthy, !busyContainerIDs.contains(container.id) else {
@@ -225,6 +226,12 @@ extension RuntimeViewModel {
             } else {
                 containerMessage = completion
             }
+        } catch let error
+            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error) {
+            // Losing the runtime's XPC connection while stopping is not a container failure: raise
+            // the recovery request and let the monitor poll prove whether the API server is gone.
+            runtimeRecoveryRequested = true
+            containerMessage = "Runtime connection lost. Checking the runtime…"
         } catch {
             containerMessage = "Container action failed: \(error)"
         }

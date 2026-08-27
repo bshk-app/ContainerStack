@@ -29,6 +29,10 @@ final class RuntimeViewModel {
     let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
     internal(set) var runtimeFailure: String?
     internal(set) var isRestarting = false
+    /// Raised by a stop that lost the XPC connection, consumed by the monitor poll: the poll is the
+    /// only place that restarts the runtime, so a failed stop and a probe can never race two
+    /// recoveries.
+    @ObservationIgnored var runtimeRecoveryRequested = false
     /// One bridge-identity check per launch; see `adoptBridgeIfStale`.
     internal(set) var hasCheckedBridgeIdentity = false
     private(set) var runtimeState: RuntimeState = .unknown
@@ -45,7 +49,7 @@ final class RuntimeViewModel {
     internal(set) var volumesErrorMessage: String?
     internal(set) var networksErrorMessage: String?
     private(set) var isLoading = false
-    private(set) var isStarting = false
+    internal(set) var isStarting = false
     internal(set) var isRunningContainer = false
     /// Every container acting at this moment, not "something is acting". Docker
     /// serializes nothing across containers, and a stop can occupy the full
@@ -296,8 +300,41 @@ final class RuntimeViewModel {
     }
 
     private func probeRuntime() async {
-        let responds = await socketResponds()
+        let responds: Bool
+        let probeError: Error?
+        do {
+            responds = try await client.ping()
+            probeError = nil
+        } catch {
+            responds = false
+            probeError = error
+        }
         let wasHealthy = runtimeState.isHealthy
+
+        if responds, runtimeRecoveryRequested {
+            runtimeRecoveryRequested = false
+            containerMessage = "Container stop timed out; runtime remains available."
+        }
+        let shouldCheckSystemStatus = RuntimeConnectionRecovery.shouldCheckSystemStatus(
+            after: probeError,
+            recoveryRequested: runtimeRecoveryRequested
+        )
+        let apiserverRunning =
+            shouldCheckSystemStatus ? await appleContainerSystemIsRunning() : nil
+        if apiserverRunning != nil {
+            runtimeRecoveryRequested = false
+        }
+
+        if RuntimeConnectionRecovery.shouldAttemptRestart(
+            apiserverRunning: apiserverRunning,
+            isStarting: isStarting,
+            isRestarting: isRestarting,
+            hasRuntimeFailure: runtimeFailure != nil
+        ) {
+            runtimeMessage = "Apple Container API server stopped. Restarting runtime…"
+            await completeAutomaticRuntimeRecovery(restart: { await self.restartRuntime() })
+            return
+        }
 
         if responds, !wasHealthy {
             applyState(socketResponds: true)
@@ -324,6 +361,11 @@ final class RuntimeViewModel {
         } else {
             applyState(socketResponds: false)
         }
+    }
+
+    private func appleContainerSystemIsRunning() async -> Bool? {
+        let status = await systemStatusOutput()
+        return status.isEmpty ? nil : RuntimeStatusParser.isRunning(status)
     }
 
     /// The poll's view of the app root. Asks the CLI at most once per cadence and reuses the
@@ -441,6 +483,15 @@ final class RuntimeViewModel {
         runtimeFailure = reason
         runtimeMessage = reason
         errorMessage = reason
+        applyState(socketResponds: false)
+    }
+
+    /// A recovery that failed while the runtime was still coming up must not stay `.starting`:
+    /// `RuntimeState.resolve` reports `.starting` for as long as `isStarting` holds, and
+    /// `.starting` is also what disables the manual restart — so the app would show progress
+    /// forever and offer no way out.
+    func endStartupAfterFailedRecovery() {
+        isStarting = false
         applyState(socketResponds: false)
     }
 

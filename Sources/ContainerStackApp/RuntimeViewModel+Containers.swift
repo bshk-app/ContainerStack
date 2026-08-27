@@ -35,9 +35,13 @@ extension RuntimeViewModel {
     }
 
     func toggle(container: DockerContainerSummary) async {
+        // Only a stop escalates to runtime recovery: it is the call measured hanging when Apple
+        // Container loses its XPC service, and widening it would relabel an ordinary start or
+        // remove failure as a runtime fault.
         await withContainer(
             container,
-            action: container.isRunning ? "Stopping" : "Starting"
+            action: container.isRunning ? "Stopping" : "Starting",
+            recoversRuntime: container.isRunning
         ) { [client] in
             if container.isRunning {
                 try await client.stopContainer(id: container.id)
@@ -83,5 +87,51 @@ extension RuntimeViewModel {
         } catch {
             containersErrorMessage = "Containers could not be listed: \(error)"
         }
+    }
+}
+
+enum RuntimeConnectionRecovery {
+    static func shouldCheckSystemStatus(
+        after error: Error?,
+        recoveryRequested: Bool
+    ) -> Bool {
+        recoveryRequested || error.map(isHTTPServerFailure) == true
+    }
+
+    /// `isStarting` is deliberately unused: an absent API server must remain recoverable while
+    /// the runtime is coming up, which is the state that previously stayed stuck forever.
+    static func shouldAttemptRestart(
+        apiserverRunning: Bool?,
+        isStarting _: Bool,
+        isRestarting: Bool,
+        hasRuntimeFailure: Bool
+    ) -> Bool {
+        guard !isRestarting, !hasRuntimeFailure else { return false }
+        return apiserverRunning == false
+    }
+
+    static func isStopRecoveryError(_ error: Error) -> Bool {
+        (error as? UnixSocketError) == .timedOut || isDeadXPC(error)
+    }
+
+    private static func isHTTPServerFailure(_ error: Error) -> Bool {
+        guard let apiError = error as? DockerAPIError,
+            case .httpStatus(500, message: _) = apiError
+        else {
+            return false
+        }
+        return true
+    }
+
+    private static func isDeadXPC(_ error: Error) -> Bool {
+        guard let apiError = error as? DockerAPIError,
+            case .httpStatus(500, message: let message?) = apiError
+        else {
+            return false
+        }
+        let normalized = message.lowercased()
+        return normalized.contains("xpc connection error")
+            && (normalized.contains("connection interrupted")
+                || normalized.contains("connection invalid"))
     }
 }

@@ -302,12 +302,13 @@ public actor DockerAPIClient {
     private let transport: any DockerAPITransport
     private let retryPolicy: DockerRetryPolicy
     static let streamingRequestTimeout: Duration? = nil
-    /// Starting, stopping, restarting and removing a container each boot or tear down a virtual
-    /// machine, which the 5 second default for a plain API call does not cover: a restart against
-    /// this runtime measured 6.4s and 6.3s on an idle machine, and a stop waits out the container's
-    /// grace period first. Reporting a failure while the operation is quietly succeeding is worse
-    /// than waiting — the person retries, and the second attempt fights the first.
+    /// Starting, restarting and removing a container boot or tear down a virtual machine.
+    /// They routinely exceed the five-second timeout used for plain API calls.
     static let lifecycleRequestTimeout: Duration? = .seconds(120)
+    /// Pin the daemon's graceful stop window to five seconds, but leave enough client-side time
+    /// for Socktainer's VM-lifecycle admission queue and teardown. When Apple Container loses its
+    /// XPC service, the caller checks `container system status` before deciding to restart.
+    static let gracefulStopRequestTimeout: Duration? = .seconds(30)
     public init(socketPath: String, retryPolicy: DockerRetryPolicy = DockerRetryPolicy()) {
         self.transport = UnixSocketTransport(path: socketPath)
         self.retryPolicy = retryPolicy
@@ -348,7 +349,15 @@ public actor DockerAPIClient {
     }
 
     public func stopContainer(id: String) async throws {
-        _ = try await request(method: "POST", path: "/containers/\(id)/stop", timeout: Self.lifecycleRequestTimeout)
+        do {
+            _ = try await request(
+                method: "POST",
+                path: "/containers/\(id)/stop?t=5",
+                timeout: Self.gracefulStopRequestTimeout
+            )
+        } catch DockerAPIError.httpStatus(let status, _) where status == 304 || status == 404 {
+            return
+        }
     }
 
     public func removeContainer(id: String, force: Bool = false) async throws {

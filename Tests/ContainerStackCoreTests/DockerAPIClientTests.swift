@@ -137,7 +137,7 @@ struct DockerAPIClientTests {
 
         #expect(await transport.paths == [
             "/containers/container-123/start",
-            "/containers/container-123/stop",
+            "/containers/container-123/stop?t=5",
             "/containers/container-123?force=1"
         ])
     }

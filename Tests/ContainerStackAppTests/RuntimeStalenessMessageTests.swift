@@ -249,6 +249,78 @@ struct RuntimeStalenessMessageTests {
         #expect(model.isLoading == false)
     }
 
+    @Test("A failed automatic recovery clears stale inventory and leaves a state the user can act on")
+    func failedAutomaticRecoveryClearsInventory() async throws {
+        let model = makeModel()
+        model.containers = try JSONDecoder().decode(
+            [DockerContainerSummary].self,
+            from: Data(#"[{"Id":"web","State":"running"}]"#.utf8)
+        )
+        // The recovery can fire while the runtime is still coming up, and `.starting` is exactly
+        // the state that disables the manual restart — staying there is the stuck-on-Starting trap.
+        model.isStarting = true
+
+        await model.completeAutomaticRuntimeRecovery(restart: { false })
+
+        #expect(model.containers.isEmpty)
+        #expect(model.runtimeState != .starting)
+        #expect(model.canRestartRuntime)
+    }
+
+    /// The wiring, not the classifier: this hook was silently lost once when `toggle` was
+    /// reconciled with `withContainer`, and nothing else holds it in place.
+    @Test("A stop that loses the XPC connection asks the monitor to check the runtime")
+    func stopConnectionLossRaisesRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.withContainer(try Self.container(), action: "Stopping", recoversRuntime: true) {
+            throw DockerAPIError.httpStatus(500, message: "XPC connection error: Connection invalid")
+        }
+
+        #expect(model.runtimeRecoveryRequested)
+    }
+
+    /// Everything that is not a stop keeps its own failure: widening the hook relabelled an
+    /// ordinary start or remove error as a runtime fault and hid the real message.
+    @Test("A non-stop failure reports itself and leaves the runtime alone")
+    func nonStopFailureDoesNotRaiseRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.withContainer(try Self.container(), action: "Removing") {
+            throw DockerAPIError.httpStatus(500, message: "XPC connection error: Connection invalid")
+        }
+
+        #expect(!model.runtimeRecoveryRequested)
+        #expect(model.containerMessage?.contains("Container action failed") == true)
+    }
+
+    private static func container() throws -> DockerContainerSummary {
+        try JSONDecoder().decode(
+            DockerContainerSummary.self,
+            from: Data(#"{"Id":"web","Names":["/web"],"State":"running"}"#.utf8)
+        )
+    }
+
+    @Test("A ready socket is not recovery success when health refresh fails")
+    func failedPostRestartHealthDoesNotReportSuccess() async {
+        let model = makeModel()
+
+        let restarted = await model.completeRuntimeRestart(
+            waitForSocket: { true },
+            refreshHealth: { throw RecoveryError.failed }
+        )
+
+        #expect(!restarted)
+        #expect(!model.runtimeState.isHealthy)
+        #expect(model.runtimeFailure != nil)
+    }
+
+    private enum RecoveryError: Error {
+        case failed
+    }
+
     private func makeModel() -> RuntimeViewModel {
         RuntimeViewModel(
             socketPath: "/tmp/containerstack-staleness-\(UUID().uuidString).sock",

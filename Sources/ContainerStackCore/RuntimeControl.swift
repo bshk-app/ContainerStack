@@ -7,7 +7,8 @@ public enum ProcessTable {
         listing
             .split(whereSeparator: \.isNewline)
             .compactMap { line -> Int32? in
-                let fields = line
+                let fields =
+                    line
                     .trimmingCharacters(in: .whitespaces)
                     .split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
                 guard fields.count == 2, let pid = Int32(fields[0]) else { return nil }
@@ -29,10 +30,12 @@ public enum ProcessTable {
         else { return [] }
 
         let legacyCommand = "\(executablePath) --no-check-compatibility --no-docker-context"
-        return listing
+        return
+            listing
             .split(whereSeparator: \.isNewline)
             .compactMap { line -> Int32? in
-                let fields = line
+                let fields =
+                    line
                     .trimmingCharacters(in: .whitespaces)
                     .split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
                 guard fields.count == 2, let pid = Int32(fields[0]) else { return nil }
@@ -128,7 +131,7 @@ public enum RuntimeRestartPlan {
         stopSteps(configuration: configuration) + [
             .run(executablePath: configuration.containerPath, arguments: ["system", "stop"]),
             .run(executablePath: configuration.containerPath, arguments: configuration.containerStartArguments),
-            agentRegistered ? .kickstartAgent(label: agentLabel) : .startBridge
+            agentRegistered ? .kickstartAgent(label: agentLabel) : .startBridge,
         ]
     }
 

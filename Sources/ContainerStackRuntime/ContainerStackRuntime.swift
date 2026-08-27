@@ -275,11 +275,11 @@ enum RuntimeProcessError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case let .failed(executablePath, status):
+        case .failed(let executablePath, let status):
             "\(executablePath) exited with status \(status)"
-        case let .signalFailed(pid, errno):
+        case .signalFailed(let pid, let errno):
             "failed to signal pid \(pid): errno \(errno)"
-        case let .notReady(executablePath, statusOutput):
+        case .notReady(let executablePath, let statusOutput):
             "\(executablePath) did not report a running API server. Last status: \(statusOutput)"
         }
     }

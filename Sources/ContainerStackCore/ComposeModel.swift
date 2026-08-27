@@ -64,16 +64,20 @@ public struct ComposePortMapping: Equatable, Sendable, Identifiable {
                 return rangeMapping(hostIP: ip, containerPort: containerPort, transport: transport, raw: raw)
             }
             guard let hostPort = Int(host), let containerPort = Int(container) else { return nil }
-            return ComposePortMapping(hostIP: ip, hostPort: hostPort, containerPort: containerPort, transport: transport)
+            return ComposePortMapping(
+                hostIP: ip, hostPort: hostPort, containerPort: containerPort, transport: transport)
         default:
             return nil
         }
     }
 
-    private static func rangeMapping(hostIP: String?, containerPort: Int, transport: String?, raw: String) -> ComposePortMapping {
+    private static func rangeMapping(hostIP: String?, containerPort: Int, transport: String?, raw: String)
+        -> ComposePortMapping
+    {
         // init builds a canonical raw from fields, which cannot reproduce a span; preserve the
         // original text so re-parsing the same string yields an equal mapping.
-        var mapping = ComposePortMapping(hostIP: hostIP, hostPort: nil, containerPort: containerPort, transport: transport)
+        var mapping = ComposePortMapping(
+            hostIP: hostIP, hostPort: nil, containerPort: containerPort, transport: transport)
         mapping.raw = raw
         return mapping
     }
@@ -195,7 +199,8 @@ public struct ComposeProjectModel: Equatable, Sendable {
 
         let name = (root["name"] as? String) ?? fallbackName
         let servicesObject = (root["services"] as? [String: Any]) ?? [:]
-        let services = servicesObject
+        let services =
+            servicesObject
             .map { serviceName, body -> ComposeService in
                 let dict = (body as? [String: Any]) ?? [:]
                 return ComposeService(

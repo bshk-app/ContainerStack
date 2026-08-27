@@ -1,8 +1,8 @@
 import ContainerStackCore
 import SwiftUI
 
-private extension DockerImageSummary {
-    var displayName: String {
+extension DockerImageSummary {
+    fileprivate var displayName: String {
         repositoryTags?.first ?? ResourceIdentifier.short(id)
     }
 }

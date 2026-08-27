@@ -114,7 +114,7 @@ struct ResourceCreateBar: View {
     let icon: Lucide
     let isBusy: Bool
     let isEnabled: Bool
-    var focused: FocusState<Bool>.Binding? = nil
+    var focused: FocusState<Bool>.Binding?
     let action: (String) -> Void
 
     @State private var text = ""

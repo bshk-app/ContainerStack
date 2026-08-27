@@ -18,7 +18,7 @@ final class LucideResourceTests: XCTestCase {
         try FileManager.default.createDirectory(at: lucideURL, withIntermediateDirectories: true)
         let info: [String: Any] = [
             "CFBundleIdentifier": "app.bshk.containerstack.tests.resources",
-            "CFBundlePackageType": "BNDL"
+            "CFBundlePackageType": "BNDL",
         ]
         let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
         try data.write(to: contentsURL.appending(path: "Info.plist"))

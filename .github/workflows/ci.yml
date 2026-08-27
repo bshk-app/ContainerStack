@@ -39,6 +39,22 @@ jobs:
       - name: Test
         run: swift test
 
+  lint:
+    # Style is machine-owned so review can spend itself on behaviour: swift-format
+    # holds layout, SwiftLint holds size, complexity and naming. Leaving both on
+    # their layout rules made them fight, so .swiftlint.yml delegates those.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Formatting
+        run: swift format lint --strict -r -p Sources Tests
+
+      - name: SwiftLint
+        run: |
+          brew install swiftlint
+          swiftlint lint --quiet --strict
+
   scripts:
     # The release path itself cannot run here, but its scripts are where this
     # repo has actually broken: a stale copy published to the wrong store, and a

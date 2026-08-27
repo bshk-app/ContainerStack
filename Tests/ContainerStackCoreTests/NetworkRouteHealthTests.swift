@@ -1,29 +1,30 @@
 import Foundation
 import Testing
+
 @testable import ContainerStackCore
 
 struct NetworkRouteHealthTests {
     private let routes = """
-    Routing tables
+        Routing tables
 
-    Internet:
-    Destination        Gateway            Flags               Netif Expire
-    default            192.168.1.1        UGScg                 en0
-    127                127.0.0.1          UCS                   lo0
-    192.168.64         link#24            UC                 bridge1
-    192.168.253/24     link#25            UC                 bridge2
-    """
+        Internet:
+        Destination        Gateway            Flags               Netif Expire
+        default            192.168.1.1        UGScg                 en0
+        127                127.0.0.1          UCS                   lo0
+        192.168.64         link#24            UC                 bridge1
+        192.168.253/24     link#25            UC                 bridge2
+        """
 
     /// The measured state from issue #45: the host routes to the compose network only.
     private let routesWithoutDefault = """
-    Routing tables
+        Routing tables
 
-    Internet:
-    Destination        Gateway            Flags               Netif Expire
-    default            192.168.1.1        UGScg                 en0
-    127                127.0.0.1          UCS                   lo0
-    192.168.253/24     link#25            UC                 bridge2
-    """
+        Internet:
+        Destination        Gateway            Flags               Netif Expire
+        default            192.168.1.1        UGScg                 en0
+        127                127.0.0.1          UCS                   lo0
+        192.168.253/24     link#25            UC                 bridge2
+        """
 
     @Test
     func acceptsSubnetWithAHostRoute() throws {
@@ -59,9 +60,11 @@ struct NetworkRouteHealthTests {
             "Names": ["/\(id)"],
             "State": state,
             "Ports": ports as Any,
-            "NetworkSettings": ["Networks": Dictionary(
-                uniqueKeysWithValues: networks.map { ($0, [String: String]()) }
-            )] as Any
+            "NetworkSettings": [
+                "Networks": Dictionary(
+                    uniqueKeysWithValues: networks.map { ($0, [String: String]()) }
+                )
+            ] as Any,
         ]
         let data = try JSONSerialization.data(withJSONObject: [json])
         return try JSONDecoder().decode([DockerContainerSummary].self, from: data)[0]
@@ -88,7 +91,7 @@ struct NetworkRouteHealthTests {
         ]
         let networks = [
             try network(name: "default", subnet: "192.168.64.0/24"),
-            try network(name: "apps_default", subnet: "192.168.253.0/24")
+            try network(name: "apps_default", subnet: "192.168.253.0/24"),
         ]
 
         let candidates = NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks)
@@ -110,7 +113,7 @@ struct NetworkRouteHealthTests {
         ]
         let networks = [
             try network(name: "default", subnet: "192.168.64.0/24"),
-            try network(name: "apps_default", subnet: "192.168.99.0/24")
+            try network(name: "apps_default", subnet: "192.168.99.0/24"),
         ]
 
         let unroutable = NetworkRouteHealth.unroutableNetworks(
@@ -123,9 +126,11 @@ struct NetworkRouteHealthTests {
     @Test
     func stoppedOrUnpublishedContainersDoNotPutTheirNetworkInPlay() throws {
         let containers = [
-            try container(id: "stopped", state: "exited", ports: [["PublicPort": 8080, "PrivatePort": 80]], networks: ["default"]),
+            try container(
+                id: "stopped", state: "exited", ports: [["PublicPort": 8080, "PrivatePort": 80]], networks: ["default"]),
             try container(id: "unpublished", state: "running", ports: [["PrivatePort": 80]], networks: ["default"]),
-            try container(id: "zeroPort", state: "running", ports: [["PublicPort": 0, "PrivatePort": 80]], networks: ["default"])
+            try container(
+                id: "zeroPort", state: "running", ports: [["PublicPort": 0, "PrivatePort": 80]], networks: ["default"]),
         ]
         let networks = [try network(name: "default", subnet: "192.168.64.0/24")]
 

@@ -26,7 +26,8 @@ public struct ContainerGroup: Identifiable, Equatable, Sendable {
             buckets[key]?.append(container)
         }
 
-        return order
+        return
+            order
             .sorted { lhs, rhs in
                 switch (lhs.isEmpty, rhs.isEmpty) {
                 case (false, true): true

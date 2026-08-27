@@ -1,0 +1,60 @@
+# Layout belongs to swift-format (.swift-format); SwiftLint keeps what a
+# formatter cannot see: size, complexity and naming. The two tools disagree on
+# trailing commas and brace placement, and measuring that disagreement is how
+# this split was chosen: with those rules left on, running the formatter *raised*
+# SwiftLint's count from 129 to 145, every added finding being the formatter's
+# own output.
+#
+# Thresholds sit just above what this tree measures today, so existing code
+# passes and any growth fails. Raising one is a visible decision in the diff.
+
+included:
+  - Sources
+  - Tests
+
+disabled_rules:
+  # Owned by swift-format.
+  - trailing_comma
+  - opening_brace
+  - closure_parameter_position
+
+  # The rule asks for the failable `String(bytes:encoding:)`. This code reads
+  # process stdout and Docker payloads with `String(decoding:as:)` on purpose:
+  # one malformed byte should become U+FFFD, not discard the whole output.
+  - optional_data_string_conversion
+
+# A backstop, not the style: swift-format wraps at 120, but it will not split a
+# string literal, so 19 lines stay over 120 in a fully formatted tree and the
+# longest is 175. Without any limit nothing would report a 400-column literal.
+line_length:
+  warning: 180
+  error: 220
+  ignores_urls: true
+
+identifier_name:
+  min_length:
+    warning: 2 # os, ip, to - Docker API field names, not abbreviations we chose
+
+file_length:
+  warning: 690 # today's longest file: 681
+  error: 900
+
+type_body_length:
+  warning: 600 # today's longest type body: 595
+  error: 800
+
+function_body_length:
+  warning: 90 # today's longest function body: 87
+  error: 120
+
+cyclomatic_complexity:
+  warning: 15 # today's most branching function: 14
+  error: 20
+
+large_tuple:
+  warning: 3
+  error: 4
+
+function_parameter_count:
+  warning: 8 # today's widest signature: 8 (ComposeFileEditor)
+  error: 10

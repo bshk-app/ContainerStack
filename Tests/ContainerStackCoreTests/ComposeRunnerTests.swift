@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContainerStackCore
 
 struct ComposeRunnerTests {
@@ -61,7 +62,10 @@ struct ComposeRunnerTests {
 
     @Test
     func logsForNamedService() {
-        #expect(planArgs("logs", ["--no-color", "--tail", "50", "webserver"]) == prefix + ["logs", "--no-color", "--tail", "50", "webserver"])
+        #expect(
+            planArgs("logs", ["--no-color", "--tail", "50", "webserver"]) == prefix + [
+                "logs", "--no-color", "--tail", "50", "webserver",
+            ])
     }
 
     @Test
@@ -82,75 +86,95 @@ struct ComposeRunnerTests {
     @Test
     func parsesJSONLines() {
         let output = """
-        {"Name":"demo-web-1","Service":"web","State":"running","Health":"healthy","Publishers":[{"URL":"0.0.0.0","TargetPort":3000,"PublishedPort":3000,"Protocol":"tcp"}]}
-        {"Name":"demo-db-1","Service":"db","State":"exited","Health":"","Publishers":[]}
-        """
+            {"Name":"demo-web-1","Service":"web","State":"running","Health":"healthy","Publishers":[{"URL":"0.0.0.0","TargetPort":3000,"PublishedPort":3000,"Protocol":"tcp"}]}
+            {"Name":"demo-db-1","Service":"db","State":"exited","Health":"","Publishers":[]}
+            """
 
         let statuses = ComposeRunner.parseStatus(output)
 
-        #expect(statuses == [
-            ComposeServiceStatus(name: "web", state: "running", health: "healthy", publishedPorts: ["0.0.0.0:3000->3000/tcp"], isRunning: true),
-            ComposeServiceStatus(name: "db", state: "exited", health: nil, publishedPorts: [], isRunning: false)
-        ])
+        #expect(
+            statuses == [
+                ComposeServiceStatus(
+                    name: "web", state: "running", health: "healthy", publishedPorts: ["0.0.0.0:3000->3000/tcp"],
+                    isRunning: true),
+                ComposeServiceStatus(name: "db", state: "exited", health: nil, publishedPorts: [], isRunning: false),
+            ])
     }
 
     @Test
     func parsesSingleArray() {
         let output = """
-        [{"Name":"demo-web-1","Service":"web","State":"running","Health":"healthy","Publishers":[
-          {"URL":"0.0.0.0","TargetPort":3000,"PublishedPort":3000,"Protocol":"tcp"}]},{"Name":"demo-db-1","Service":"db","State":"exited","Health":"","Publishers":[
-          ]}]
-        """
+            [{"Name":"demo-web-1","Service":"web","State":"running","Health":"healthy","Publishers":[
+              {"URL":"0.0.0.0","TargetPort":3000,"PublishedPort":3000,"Protocol":"tcp"}]},{"Name":"demo-db-1","Service":"db","State":"exited","Health":"","Publishers":[
+              ]}]
+            """
 
         let statuses = ComposeRunner.parseStatus(output)
 
         #expect(statuses.count == 2)
-        #expect(statuses[0] == ComposeServiceStatus(name: "web", state: "running", health: "healthy", publishedPorts: ["0.0.0.0:3000->3000/tcp"], isRunning: true))
-        #expect(statuses[1] == ComposeServiceStatus(name: "db", state: "exited", health: nil, publishedPorts: [], isRunning: false))
+        #expect(
+            statuses[0]
+                == ComposeServiceStatus(
+                    name: "web", state: "running", health: "healthy", publishedPorts: ["0.0.0.0:3000->3000/tcp"],
+                    isRunning: true))
+        #expect(
+            statuses[1]
+                == ComposeServiceStatus(name: "db", state: "exited", health: nil, publishedPorts: [], isRunning: false))
     }
 
     @Test
     func skipsUnpublishedPortsAndMissingHealth() {
         let output = """
-        {"Name":"demo-db-1","Service":"db","State":"running","Publishers":[{"URL":"0.0.0.0","TargetPort":5432,"PublishedPort":0,"Protocol":"tcp"}]}
-        """
+            {"Name":"demo-db-1","Service":"db","State":"running","Publishers":[{"URL":"0.0.0.0","TargetPort":5432,"PublishedPort":0,"Protocol":"tcp"}]}
+            """
 
         let statuses = ComposeRunner.parseStatus(output)
 
         // No Health key -> nil; PublishedPort 0 -> dropped, leaving no published ports.
-        #expect(statuses == [ComposeServiceStatus(name: "db", state: "running", health: nil, publishedPorts: [], isRunning: true)])
+        #expect(
+            statuses == [
+                ComposeServiceStatus(name: "db", state: "running", health: nil, publishedPorts: [], isRunning: true)
+            ])
     }
 
     @Test
     func defaultsMissingUrlToWildcard() {
         let output = """
-        {"Name":"demo-web-1","Service":"web","State":"running","Publishers":[{"TargetPort":80,"PublishedPort":8080,"Protocol":"tcp"}]}
-        """
+            {"Name":"demo-web-1","Service":"web","State":"running","Publishers":[{"TargetPort":80,"PublishedPort":8080,"Protocol":"tcp"}]}
+            """
 
         let statuses = ComposeRunner.parseStatus(output)
 
-        #expect(statuses == [ComposeServiceStatus(name: "web", state: "running", health: nil, publishedPorts: ["0.0.0.0:8080->80/tcp"], isRunning: true)])
+        #expect(
+            statuses == [
+                ComposeServiceStatus(
+                    name: "web", state: "running", health: nil, publishedPorts: ["0.0.0.0:8080->80/tcp"],
+                    isRunning: true)
+            ])
     }
 
     @Test
     func treatsEmptyHealthAsNone() {
         let output = """
-        {"Name":"demo-web-1","Service":"web","State":"running","Health":"","Publishers":[]}
-        """
+            {"Name":"demo-web-1","Service":"web","State":"running","Health":"","Publishers":[]}
+            """
 
         let statuses = ComposeRunner.parseStatus(output)
 
-        #expect(statuses == [ComposeServiceStatus(name: "web", state: "running", health: nil, publishedPorts: [], isRunning: true)])
+        #expect(
+            statuses == [
+                ComposeServiceStatus(name: "web", state: "running", health: nil, publishedPorts: [], isRunning: true)
+            ])
     }
 
     @Test
     func mapsRunningState() {
         // isRunning is true only when state == "running".
         let output = """
-        {"Name":"a-1","Service":"a","State":"running","Publishers":[]}
-        {"Name":"b-1","Service":"b","State":"exited","Publishers":[]}
-        {"Name":"c-1","Service":"c","State":"restarting","Publishers":[]}
-        """
+            {"Name":"a-1","Service":"a","State":"running","Publishers":[]}
+            {"Name":"b-1","Service":"b","State":"exited","Publishers":[]}
+            {"Name":"c-1","Service":"c","State":"restarting","Publishers":[]}
+            """
 
         let statuses = ComposeRunner.parseStatus(output)
 
@@ -161,13 +185,17 @@ struct ComposeRunnerTests {
     func skipsStrayNonJsonLines() {
         // Combined stdout/stderr may interleave a Compose warning before the JSON Lines objects.
         let output = """
-        WARN[0000] /tmp/demo/compose.yaml: `version` is obsolete
-        {"Name":"demo-web-1","Service":"web","State":"running","Health":"healthy","Publishers":[]}
-        """
+            WARN[0000] /tmp/demo/compose.yaml: `version` is obsolete
+            {"Name":"demo-web-1","Service":"web","State":"running","Health":"healthy","Publishers":[]}
+            """
 
         let statuses = ComposeRunner.parseStatus(output)
 
-        #expect(statuses == [ComposeServiceStatus(name: "web", state: "running", health: "healthy", publishedPorts: [], isRunning: true)])
+        #expect(
+            statuses == [
+                ComposeServiceStatus(
+                    name: "web", state: "running", health: "healthy", publishedPorts: [], isRunning: true)
+            ])
     }
 
     @Test

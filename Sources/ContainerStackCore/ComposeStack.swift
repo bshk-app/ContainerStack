@@ -53,7 +53,8 @@ public struct ComposeStack: Identifiable, Codable, Equatable, Sendable {
         var result = ""
         var needsSeparator = false
         for character in directory {
-            let allowed = character.isASCII
+            let allowed =
+                character.isASCII
                 && (character.isLetter || character.isNumber || character == "_" || character == "-")
             if allowed {
                 result.append(character)

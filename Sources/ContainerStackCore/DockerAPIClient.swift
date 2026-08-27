@@ -20,8 +20,8 @@ public protocol DockerAPITransport: Sendable {
     func send(request: Data, timeout: Duration?) async throws -> Data
 }
 
-public extension DockerAPITransport {
-    func send(request: Data, timeout: Duration?) async throws -> Data {
+extension DockerAPITransport {
+    public func send(request: Data, timeout: Duration?) async throws -> Data {
         try await send(request: request)
     }
 }
@@ -285,13 +285,13 @@ public enum DockerAPIError: Error, Equatable, Sendable {
 extension DockerAPIError: LocalizedError, CustomStringConvertible {
     public var description: String {
         switch self {
-        case let .httpStatus(code, message):
+        case .httpStatus(let code, let message):
             if let message, !message.isEmpty { return message }
             return "Docker API returned status \(code)."
         case .invalidResponseBody: return "The Docker API sent a response that could not be read."
         case .invalidRequestBody: return "The request could not be encoded."
         case .invalidPingBody: return "The Docker API answered a ping with something unexpected."
-        case let .remoteFailure(reason): return reason
+        case .remoteFailure(let reason): return reason
         }
     }
 
@@ -321,8 +321,9 @@ public actor DockerAPIClient {
 
     public func health() async throws -> RuntimeHealthSnapshot {
         let pingResponse = try await requestWithRetry(path: "/_ping")
-        guard String(decoding: pingResponse.body, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines) == "OK"
+        guard
+            String(decoding: pingResponse.body, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines) == "OK"
         else {
             throw DockerAPIError.invalidPingBody
         }
@@ -470,7 +471,7 @@ public actor DockerAPIClient {
             "\(method) \(path) HTTP/1.1",
             "Host: localhost",
             "Connection: close",
-            "Accept: application/json"
+            "Accept: application/json",
         ]
         if let body {
             headers.append("Content-Type: application/json")
@@ -492,7 +493,8 @@ public actor DockerAPIClient {
         struct Failure: Decodable { let message: String? }
         if let decoded = try? JSONDecoder().decode(Failure.self, from: body),
             let message = decoded.message?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !message.isEmpty {
+            !message.isEmpty
+        {
             return message
         }
         let text = String(decoding: body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -506,7 +508,7 @@ public actor DockerAPIClient {
         switch socketError {
         case .timedOut:
             return true
-        case let .systemCallFailed(code):
+        case .systemCallFailed(let code):
             return [EAGAIN, EINTR, ECONNREFUSED, ECONNRESET, ENOTCONN, EPIPE].contains(code)
         case .pathTooLong:
             return false
@@ -521,7 +523,8 @@ public actor DockerAPIClient {
         var offset = 0
         var output = Data()
         while offset + 8 <= body.count {
-            let length = (UInt32(body[offset + 4]) << 24)
+            let length =
+                (UInt32(body[offset + 4]) << 24)
                 | (UInt32(body[offset + 5]) << 16)
                 | (UInt32(body[offset + 6]) << 8)
                 | UInt32(body[offset + 7])

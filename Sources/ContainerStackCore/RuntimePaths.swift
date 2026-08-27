@@ -9,11 +9,13 @@ public enum RuntimePaths {
         ofExecutableAt executablePath: String,
         workingDirectory: String
     ) -> String {
-        let executable = executablePath.hasPrefix("/")
+        let executable =
+            executablePath.hasPrefix("/")
             ? URL(fileURLWithPath: executablePath)
             : URL(fileURLWithPath: workingDirectory).appending(path: executablePath)
 
-        return executable
+        return
+            executable
             .deletingLastPathComponent()
             .appending(path: name)
             .standardizedFileURL

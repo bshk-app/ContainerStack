@@ -48,6 +48,24 @@ tasks:
     cmds:
       - swift test
 
+  lint:
+    desc: Formatting and lint gates, exactly as CI runs them
+    cmds:
+      - swift format lint --strict -r -p Sources Tests
+      - swiftlint lint --quiet --strict
+
+  format:
+    desc: Apply swift-format in place, then SwiftLint's own autocorrections
+    cmds:
+      - swift format -r -i Sources Tests
+      - swiftlint --fix --quiet
+
+  hooks:install:
+    desc: Point this clone's git hooks at .githooks (a clone does not carry them)
+    cmds:
+      - git config core.hooksPath .githooks
+      - printf 'core.hooksPath -> %s\n' "$(git config core.hooksPath)"
+
   build:
     desc: Debug build of every product
     cmds:

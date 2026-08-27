@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContainerStackCore
 
 struct DockerHTTPResponseParserTests {
@@ -18,9 +19,9 @@ struct DockerHTTPResponseParserTests {
     func decodesChunkedResponseBody() throws {
         let rawText =
             "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
-                + "5\r\nHello\r\n"
-                + "7\r\n world!\r\n"
-                + "0\r\n\r\n"
+            + "5\r\nHello\r\n"
+            + "7\r\n world!\r\n"
+            + "0\r\n\r\n"
         let raw = Data(rawText.utf8)
 
         let response = try DockerHTTPResponseParser.parse(raw)

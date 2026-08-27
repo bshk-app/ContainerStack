@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContainerStackCore
 
 struct DockerAPIClientTests {
@@ -9,12 +10,16 @@ struct DockerAPIClientTests {
             httpResponse(status: 200, body: Data("OK".utf8)),
             httpResponse(
                 status: 200,
-                body: Data("{\"Version\":\"28.5.2\",\"ApiVersion\":\"1.51\",\"MinAPIVersion\":\"1.32\",\"GitCommit\":\"abc123\",\"Os\":\"linux\",\"Arch\":\"arm64\"}".utf8)
+                body: Data(
+                    "{\"Version\":\"28.5.2\",\"ApiVersion\":\"1.51\",\"MinAPIVersion\":\"1.32\",\"GitCommit\":\"abc123\",\"Os\":\"linux\",\"Arch\":\"arm64\"}"
+                        .utf8)
             ),
             httpResponse(
                 status: 200,
-                body: Data("{\"ServerVersion\":\"28.5.2\",\"OperatingSystem\":\"Apple Container\",\"Architecture\":\"arm64\",\"Containers\":1,\"Images\":2}".utf8)
-            )
+                body: Data(
+                    "{\"ServerVersion\":\"28.5.2\",\"OperatingSystem\":\"Apple Container\",\"Architecture\":\"arm64\",\"Containers\":1,\"Images\":2}"
+                        .utf8)
+            ),
         ])
         let client = DockerAPIClient(transport: transport)
 
@@ -51,7 +56,7 @@ struct DockerAPIClientTests {
             responses: [
                 httpResponse(status: 200, body: Data("OK".utf8)),
                 httpResponse(status: 200, body: Data("{\"Version\":\"28.5.2\",\"ApiVersion\":\"1.51\"}".utf8)),
-                httpResponse(status: 200, body: Data("{\"ServerVersion\":\"28.5.2\"}".utf8))
+                httpResponse(status: 200, body: Data("{\"ServerVersion\":\"28.5.2\"}".utf8)),
             ]
         )
         let policy = DockerRetryPolicy(maxAttempts: 2, delay: .zero)
@@ -68,7 +73,9 @@ struct DockerAPIClientTests {
         let transport = StubDockerTransport(responses: [
             httpResponse(
                 status: 200,
-                body: Data("[{\"Id\":\"sha256:abc\",\"RepoTags\":[\"hello-world:latest\"],\"Size\":4768,\"Created\":1700000000,\"Architecture\":\"arm64\",\"Os\":\"linux\"}]".utf8)
+                body: Data(
+                    "[{\"Id\":\"sha256:abc\",\"RepoTags\":[\"hello-world:latest\"],\"Size\":4768,\"Created\":1700000000,\"Architecture\":\"arm64\",\"Os\":\"linux\"}]"
+                        .utf8)
             )
         ])
         let client = DockerAPIClient(transport: transport)
@@ -86,7 +93,9 @@ struct DockerAPIClientTests {
         let transport = StubDockerTransport(responses: [
             httpResponse(
                 status: 200,
-                body: Data("[{\"Id\":\"container-123\",\"Names\":[\"/hello\"],\"Image\":\"hello-world:latest\",\"State\":\"exited\",\"Status\":\"Exited (0) 2 minutes ago\"}]".utf8)
+                body: Data(
+                    "[{\"Id\":\"container-123\",\"Names\":[\"/hello\"],\"Image\":\"hello-world:latest\",\"State\":\"exited\",\"Status\":\"Exited (0) 2 minutes ago\"}]"
+                        .utf8)
             )
         ])
         let client = DockerAPIClient(transport: transport)
@@ -127,7 +136,7 @@ struct DockerAPIClientTests {
         let transport = StubDockerTransport(responses: [
             httpResponse(status: 204, body: Data()),
             httpResponse(status: 204, body: Data()),
-            httpResponse(status: 204, body: Data())
+            httpResponse(status: 204, body: Data()),
         ])
         let client = DockerAPIClient(transport: transport)
 
@@ -135,11 +144,12 @@ struct DockerAPIClientTests {
         try await client.stopContainer(id: "container-123")
         try await client.removeContainer(id: "container-123", force: true)
 
-        #expect(await transport.paths == [
-            "/containers/container-123/start",
-            "/containers/container-123/stop?t=5",
-            "/containers/container-123?force=1"
-        ])
+        #expect(
+            await transport.paths == [
+                "/containers/container-123/start",
+                "/containers/container-123/stop?t=5",
+                "/containers/container-123?force=1",
+            ])
     }
 
     @Test
@@ -152,7 +162,7 @@ struct DockerAPIClientTests {
             httpResponse(status: 204, body: Data()),
             chunkedHTTPResponse(body: Data("{\"StatusCode\":0}".utf8)),
             chunkedHTTPResponse(body: framedLogs),
-            httpResponse(status: 204, body: Data())
+            httpResponse(status: 204, body: Data()),
         ])
         let client = DockerAPIClient(transport: transport)
         let result = try await client.run(
@@ -162,13 +172,14 @@ struct DockerAPIClientTests {
         )
         #expect(result.exitCode == 0)
         #expect(result.output == "Hello from container\n")
-        #expect(await transport.paths == [
-            "/containers/create",
-            "/containers/container-123/start",
-            "/containers/container-123/wait",
-            "/containers/container-123/logs?stdout=1&stderr=1",
-            "/containers/container-123?force=1"
-        ])
+        #expect(
+            await transport.paths == [
+                "/containers/create",
+                "/containers/container-123/start",
+                "/containers/container-123/wait",
+                "/containers/container-123/logs?stdout=1&stderr=1",
+                "/containers/container-123?force=1",
+            ])
         #expect(await transport.requests[0].contains("\"Image\":\"hello-world:latest\""))
         #expect(await transport.timeouts == [.seconds(5), .seconds(5), nil, nil, .seconds(5)])
     }
@@ -217,11 +228,12 @@ struct DockerAPIClientTests {
             Issue.record("Unexpected error: \(error)")
         }
 
-        #expect(await transport.paths == [
-            "/containers/create",
-            "/containers/container-running/start",
-            "/containers/container-running/wait"
-        ])
+        #expect(
+            await transport.paths == [
+                "/containers/create",
+                "/containers/container-running/start",
+                "/containers/container-running/wait",
+            ])
         #expect(await transport.timeouts == [.seconds(5), .seconds(5), nil])
     }
 
@@ -288,7 +300,9 @@ struct DockerFailureMessageTests {
 
     @Test("a bare-text body is used rather than dropped")
     func fallsBackToText() {
-        #expect(DockerAPIClient.failureMessage(in: Data("container web is not running".utf8)) == "container web is not running")
+        #expect(
+            DockerAPIClient.failureMessage(in: Data("container web is not running".utf8))
+                == "container web is not running")
     }
 
     @Test("nothing is invented when there is nothing to read")

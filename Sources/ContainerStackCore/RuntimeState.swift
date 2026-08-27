@@ -100,7 +100,7 @@ public enum RuntimeState: Equatable, Sendable {
         case .unknown: nil
         case .starting: "Waiting for the Docker socket to accept connections."
         case .running: nil
-        case let .degraded(networks):
+        case .degraded(let networks):
             // Two things a person cannot see for themselves. What they will observe is not a port
             // that refuses: the forwarder accepts the connection and nothing answers, which reads
             // as a hung application. And restarting the containers does not fix it — measured on a
@@ -112,7 +112,7 @@ public enum RuntimeState: Equatable, Sendable {
             "No route to \(networks.map(\.label).joined(separator: ", ")). "
                 + "Published ports still accept connections and then hang; "
                 + "restarting the containers will not fix it — restart the runtime."
-        case let .detached(appRoot):
+        case .detached(let appRoot):
             // The runtime keeps answering with its root deleted — measured: `_ping` returns 200 and
             // `container system status` still reports the path that is gone, so every check the app
             // had said "running". A person who used a temporary root to reproduce something lands
@@ -123,14 +123,14 @@ public enum RuntimeState: Equatable, Sendable {
             "The runtime is storing into \(appRoot), which no longer exists. "
                 + "Images, volumes and containers kept there cannot be found. "
                 + "Restart the runtime to move it back to the default location."
-        case let .foreignBridge(socketPath):
+        case .foreignBridge(let socketPath):
             // Measured: a bridge from another build answered `_ping`, `/version`
             // and `/info` while `POST /containers/{id}/start` never returned and
             // the container stayed `Created` past 150s. Nothing else reports it,
             // and the app deliberately does not kill a bridge someone else runs.
             "Another Docker bridge holds \(socketPath), so starting and stopping "
                 + "containers can hang. Stop it, then start the runtime again."
-        case let .offline(reason): reason
+        case .offline(let reason): reason
         }
     }
 

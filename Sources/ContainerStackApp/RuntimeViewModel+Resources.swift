@@ -227,7 +227,8 @@ extension RuntimeViewModel {
                 containerMessage = completion
             }
         } catch let error
-            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error) {
+            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
+        {
             // Losing the runtime's XPC connection while stopping is not a container failure: raise
             // the recovery request and let the monitor poll prove whether the API server is gone.
             runtimeRecoveryRequested = true

@@ -83,7 +83,8 @@ final class ResourceUsageTests: XCTestCase {
             networks: []
         )
 
-        XCTAssertEqual(ResourceUsage.containers(usingImage: image, from: [collision, abbreviated]).map(\.name), ["short"])
+        XCTAssertEqual(
+            ResourceUsage.containers(usingImage: image, from: [collision, abbreviated]).map(\.name), ["short"])
     }
 
     func testNetworkMatchUsesAttachedName() {

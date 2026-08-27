@@ -11,19 +11,27 @@ public enum ComposeFileEditor {
         case malformedDocument(String)
     }
 
-    public static func addPort(_ mapping: ComposePortMapping, toService service: String, in text: String) throws -> String {
+    public static func addPort(_ mapping: ComposePortMapping, toService service: String, in text: String) throws
+        -> String
+    {
         try perform(entry: mapping, key: "ports", service: service, text: text, mode: .add)
     }
 
-    public static func removePort(_ mapping: ComposePortMapping, fromService service: String, in text: String) throws -> String {
+    public static func removePort(_ mapping: ComposePortMapping, fromService service: String, in text: String) throws
+        -> String
+    {
         try perform(entry: mapping, key: "ports", service: service, text: text, mode: .remove)
     }
 
-    public static func addVolume(_ mount: ComposeVolumeMount, toService service: String, in text: String) throws -> String {
+    public static func addVolume(_ mount: ComposeVolumeMount, toService service: String, in text: String) throws
+        -> String
+    {
         try perform(entry: mount, key: "volumes", service: service, text: text, mode: .add)
     }
 
-    public static func removeVolume(_ mount: ComposeVolumeMount, fromService service: String, in text: String) throws -> String {
+    public static func removeVolume(_ mount: ComposeVolumeMount, fromService service: String, in text: String) throws
+        -> String
+    {
         try perform(entry: mount, key: "volumes", service: service, text: text, mode: .remove)
     }
 
@@ -50,7 +58,9 @@ public enum ComposeFileEditor {
             throw EditError.serviceNotFound(service)
         }
 
-        guard let (svcLine, blockEnd) = serviceBlock(name: service, indent: serviceIndent, after: servicesLine, in: lines) else {
+        guard
+            let (svcLine, blockEnd) = serviceBlock(name: service, indent: serviceIndent, after: servicesLine, in: lines)
+        else {
             throw EditError.serviceNotFound(service)
         }
 
@@ -59,22 +69,26 @@ public enum ComposeFileEditor {
 
         guard let keyLine = index(ofChildKey: key, indent: keyIndent, from: svcLine + 1, to: blockEnd, in: lines) else {
             if mode == .remove { throw EditError.entryNotFound(entry.raw) }
-            return createKey(entry: entry, key: key, keyIndent: keyIndent, itemIndent: itemIndentFallback,
-                             svcLine: svcLine, blockEnd: blockEnd, lines: &lines, trailingNewline: trailingNewline)
+            return createKey(
+                entry: entry, key: key, keyIndent: keyIndent, itemIndent: itemIndentFallback,
+                svcLine: svcLine, blockEnd: blockEnd, lines: &lines, trailingNewline: trailingNewline)
         }
 
         if let flow = parseFlow(lines[keyLine]) {
-            return try editFlow(flow: flow, entry: entry, mode: mode, keyLine: keyLine,
-                                lines: &lines, trailingNewline: trailingNewline)
+            return try editFlow(
+                flow: flow, entry: entry, mode: mode, keyLine: keyLine,
+                lines: &lines, trailingNewline: trailingNewline)
         }
-        return try editBlock(entry: entry, mode: mode, lines: &lines, at: SequenceLocation(
-            key: key,
-            keyLine: keyLine,
-            keyIndent: keyIndent,
-            itemIndentFallback: itemIndentFallback,
-            blockEnd: blockEnd,
-            trailingNewline: trailingNewline
-        ))
+        return try editBlock(
+            entry: entry, mode: mode, lines: &lines,
+            at: SequenceLocation(
+                key: key,
+                keyLine: keyLine,
+                keyIndent: keyIndent,
+                itemIndentFallback: itemIndentFallback,
+                blockEnd: blockEnd,
+                trailingNewline: trailingNewline
+            ))
     }
 
     /// Where a service's `ports:`/`volumes:` sequence sits in the document, and how the document
@@ -99,8 +113,9 @@ public enum ComposeFileEditor {
         let key = location.key
         let keyLine = location.keyLine
         let trailingNewline = location.trailingNewline
-        let items = try collectBlockItems(key: key, keyLine: keyLine, keyIndent: location.keyIndent,
-                                          blockEnd: location.blockEnd, lines: lines)
+        let items = try collectBlockItems(
+            key: key, keyLine: keyLine, keyIndent: location.keyIndent,
+            blockEnd: location.blockEnd, lines: lines)
         let itemIndent = items.first?.indent ?? location.itemIndentFallback
 
         switch mode {
@@ -145,7 +160,10 @@ public enum ComposeFileEditor {
         var index = keyLine + 1
         while index < blockEnd {
             let line = lines[index]
-            if isBlankOrComment(line) { index += 1; continue }
+            if isBlankOrComment(line) {
+                index += 1
+                continue
+            }
             let indent = leadingSpaces(line)
             if indent <= keyIndent { break }
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -189,9 +207,9 @@ public enum ComposeFileEditor {
     // MARK: - Flow sequences
 
     private struct FlowSequence {
-        let prefix: String   // through and including "["
+        let prefix: String  // through and including "["
         let items: [String]  // raw item text, quoting preserved
-        let suffix: String   // from "]" onward
+        let suffix: String  // from "]" onward
     }
 
     private static func editFlow<E: ComposeSequenceEntry>(
@@ -232,7 +250,8 @@ public enum ComposeFileEditor {
         guard between.isEmpty else { return nil }
         guard let close = afterColon[open...].firstIndex(of: "]") else { return nil }
         let inner = String(afterColon[afterColon.index(after: open)..<close])
-        let items = inner
+        let items =
+            inner
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
@@ -337,8 +356,7 @@ public enum ComposeFileEditor {
 
     private static func extractItemScalar(_ line: String) -> String {
         var text = line.trimmingCharacters(in: .whitespaces)
-        if text.hasPrefix("- ") { text = String(text.dropFirst(2)) }
-        else if text == "-" { text = "" }
+        if text.hasPrefix("- ") { text = String(text.dropFirst(2)) } else if text == "-" { text = "" }
         return unquote(text.trimmingCharacters(in: .whitespaces))
     }
 
@@ -381,7 +399,8 @@ public enum ComposeFileEditor {
     /// space or flow indicator forces double quotes.
     static func quoteIfNeeded(_ scalar: String) -> String {
         guard needsQuoting(scalar) else { return scalar }
-        let escaped = scalar
+        let escaped =
+            scalar
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escaped)\""
@@ -404,7 +423,7 @@ public enum ComposeFileEditor {
 /// `matches`, because a value derived from `docker compose config` is not textually identical to
 /// the file entry it came from: bind sources are resolved to absolute paths, and ports gain an
 /// explicit `tcp` protocol.
-fileprivate protocol ComposeSequenceEntry: Equatable {
+private protocol ComposeSequenceEntry: Equatable {
     var raw: String { get }
     static func parse(_ raw: String) -> Self?
     func renderedScalar() -> String

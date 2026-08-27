@@ -25,7 +25,7 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         "/usr/local/bin/container",
         "/opt/homebrew/bin/container",
         "\(NSHomeDirectory())/.local/bin/container",
-        "/usr/bin/container"
+        "/usr/bin/container",
     ]
 
     /// The vendored runtime inside the app bundle, or nil outside a staged bundle.
@@ -37,7 +37,8 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         exists: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
     ) -> String? {
         guard let executable else { return nil }
-        let root = executable
+        let root =
+            executable
             .resolvingSymlinksInPath()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -183,7 +184,8 @@ public enum RuntimeStatusParser {
             return true
         }
 
-        return normalizedOutput
+        return
+            normalizedOutput
             .split(whereSeparator: \.isNewline)
             .contains { line in
                 let fields = line.split(whereSeparator: { $0 == " " || $0 == "\t" })

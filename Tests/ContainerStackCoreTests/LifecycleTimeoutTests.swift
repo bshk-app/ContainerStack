@@ -1,5 +1,5 @@
-import Foundation
 import Darwin
+import Foundation
 import Testing
 
 @testable import ContainerStackCore
@@ -21,12 +21,13 @@ struct LifecycleTimeoutTests {
         try await client.stopContainer(id: "web")
         try await client.removeContainer(id: "web", force: true)
 
-        #expect(await transport.timeouts == [
-            DockerAPIClient.lifecycleRequestTimeout,
-            DockerAPIClient.lifecycleRequestTimeout,
-            DockerAPIClient.gracefulStopRequestTimeout,
-            DockerAPIClient.lifecycleRequestTimeout,
-        ])
+        #expect(
+            await transport.timeouts == [
+                DockerAPIClient.lifecycleRequestTimeout,
+                DockerAPIClient.lifecycleRequestTimeout,
+                DockerAPIClient.gracefulStopRequestTimeout,
+                DockerAPIClient.lifecycleRequestTimeout,
+            ])
     }
 
     @Test("a wedged graceful stop times out without issuing another request")

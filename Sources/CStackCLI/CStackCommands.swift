@@ -102,7 +102,9 @@ extension CStackCLI {
             case .within:
                 print("Container memory limits: \(summary)")
             case .approaching:
-                print("Container memory limits: \(summary) — guests approaching their limits may pressure other applications")
+                print(
+                    "Container memory limits: \(summary) — guests approaching their limits may pressure other applications"
+                )
             case .exceeding:
                 print("Container memory limits: HIGH — \(summary)")
                 print("Guests do not reserve every byte immediately, but host use can grow toward these limits.")

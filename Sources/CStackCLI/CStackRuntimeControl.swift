@@ -88,10 +88,10 @@ extension CStackCLI {
         var failed: [String] = []
         for step in steps {
             switch step {
-            case let .stopBridge(executablePath):
+            case .stopBridge(let executablePath):
                 let stopped = CommandShell.terminate(executablePath: executablePath)
                 print("Stopped \(stopped) bridge process(es)")
-            case let .run(executablePath, arguments):
+            case .run(let executablePath, let arguments):
                 let description = "\(executablePath) \(arguments.joined(separator: " "))"
                 print("Running \(description)")
                 do {
@@ -110,7 +110,7 @@ extension CStackCLI {
             case .startBridge:
                 print("Starting \(configuration.socktainerPath)")
                 try startBridge(configuration: configuration)
-            case let .kickstartAgent(label):
+            case .kickstartAgent(let label):
                 let description = "launchctl kickstart gui/\(getuid())/\(label)"
                 print("Restarting LaunchAgent \(label)")
                 do {
@@ -183,7 +183,8 @@ extension CStackCLI {
             return FileManager.default.homeDirectoryForCurrentUser
                 .appending(path: ".local/bin/socktainer").path
         }
-        let helpers = executable
+        let helpers =
+            executable
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appending(path: "Helpers/socktainer")

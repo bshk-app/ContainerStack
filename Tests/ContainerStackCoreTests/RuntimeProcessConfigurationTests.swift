@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContainerStackCore
 
 struct RuntimeProcessConfigurationTests {
@@ -23,10 +24,10 @@ struct RuntimeProcessConfigurationTests {
 
         #expect(
             configuration.socktainerArguments
-            == [
-                "--no-check-compatibility", "--no-docker-context", "--socket", "/tmp/custom.sock",
-                "--startup-housekeeping",
-            ]
+                == [
+                    "--no-check-compatibility", "--no-docker-context", "--socket", "/tmp/custom.sock",
+                    "--startup-housekeeping",
+                ]
         )
     }
 
@@ -40,10 +41,10 @@ struct RuntimeProcessConfigurationTests {
         #expect(configuration.containerStartArguments == ["system", "start"])
         #expect(
             configuration.socktainerArguments
-            == [
-                "--no-check-compatibility", "--no-docker-context", "--socket",
-                RuntimeProcessConfiguration.defaultSocketPath, "--startup-housekeeping",
-            ]
+                == [
+                    "--no-check-compatibility", "--no-docker-context", "--socket",
+                    RuntimeProcessConfiguration.defaultSocketPath, "--startup-housekeeping",
+                ]
         )
         #expect(configuration.socktainerPath.hasSuffix("/Contents/Helpers/socktainer"))
         #expect(configuration.expectedContainerVersion == "1.2.2")
@@ -87,10 +88,10 @@ struct RuntimeProcessConfigurationTests {
     @Test
     func recognizesTabularContainerStatus() {
         let status = """
-        FIELD              VALUE
-        status             running
-        appRoot            /Users/example/Library/Application Support/com.apple.container/
-        """
+            FIELD              VALUE
+            status             running
+            appRoot            /Users/example/Library/Application Support/com.apple.container/
+            """
 
         #expect(RuntimeStatusParser.isRunning(status))
         #expect(!RuntimeStatusParser.isRunning("apiserver is not running and not registered with launchd"))

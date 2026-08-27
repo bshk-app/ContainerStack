@@ -16,7 +16,9 @@ struct NetworkRecoveryTests {
     /// otherwise read as a bug in their own application.
     @Test("the degraded detail names the hang and the way out")
     func detailNamesTheSymptomAndTheFix() {
-        let state = RuntimeState.degraded(networks: [UnroutableNetwork(networkName: "app_default", subnet: "192.168.254.0/24")])
+        let state = RuntimeState.degraded(networks: [
+            UnroutableNetwork(networkName: "app_default", subnet: "192.168.254.0/24")
+        ])
         let detail = state.detail ?? ""
 
         #expect(detail.contains("app_default (192.168.254.0/24)"))

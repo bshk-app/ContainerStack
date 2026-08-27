@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContainerStackCore
 
 struct ComposeStackTests {
@@ -17,7 +18,7 @@ struct ComposeStackTests {
             ("Hello World!", "hello-world"),
             ("!!!", "stack"),
             ("测试目录", "stack"),
-            ("Café", "caf")
+            ("Café", "caf"),
         ]
 
         for (directory, expected) in cases {
@@ -62,7 +63,7 @@ struct ComposeStackTests {
 
         let stacks = [
             ComposeStack(name: "demo", fileURL: URL(fileURLWithPath: "/tmp/demo/compose.yaml")),
-            ComposeStack(name: "web", fileURL: URL(fileURLWithPath: "/srv/web/compose.yml"))
+            ComposeStack(name: "web", fileURL: URL(fileURLWithPath: "/srv/web/compose.yml")),
         ]
         try registry.save(stacks)
 

@@ -24,13 +24,16 @@ public enum NetworkRouteHealth {
     public static func hasRoute(to subnet: String, in routes: String) -> Bool {
         guard let prefix = routePrefix(for: subnet) else { return false }
 
-        return routes
+        return
+            routes
             .split(whereSeparator: \.isNewline)
             .contains { line in
-                guard let destination = line
-                    .trimmingCharacters(in: .whitespaces)
-                    .split(separator: " ", omittingEmptySubsequences: true)
-                    .first
+                guard
+                    let destination =
+                        line
+                        .trimmingCharacters(in: .whitespaces)
+                        .split(separator: " ", omittingEmptySubsequences: true)
+                        .first
                 else { return false }
 
                 // netstat prints 192.168.64.0/24 as "192.168.64" or "192.168.64/24".

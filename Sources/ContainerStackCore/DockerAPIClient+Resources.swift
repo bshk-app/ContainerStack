@@ -56,7 +56,8 @@ private struct PrunePayload: Decodable {
     }
 
     var result: DockerPruneResult {
-        let deleted = containersDeleted
+        let deleted =
+            containersDeleted
             ?? volumesDeleted
             ?? imagesDeleted?.compactMap { $0.deleted ?? $0.untagged }
             ?? []
@@ -176,40 +177,40 @@ public struct DockerImageReference: Equatable, Sendable {
     }
 }
 
-public extension DockerAPIClient {
+extension DockerAPIClient {
     /// Cheap liveness probe for status polling: one request, no version or info lookups.
-    func ping() async throws -> Bool {
+    public func ping() async throws -> Bool {
         let response = try await request(path: "/_ping")
         return String(decoding: response.body, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines) == "OK"
     }
 
-    func listVolumes() async throws -> [DockerVolumeSummary] {
+    public func listVolumes() async throws -> [DockerVolumeSummary] {
         let payload = try await decode(VolumeListPayload.self, response: request(path: "/volumes"))
         return payload.volumes ?? []
     }
 
-    func createVolume(name: String) async throws -> DockerVolumeSummary {
+    public func createVolume(name: String) async throws -> DockerVolumeSummary {
         let body = try Self.encode(VolumeCreateRequest(name: name))
         let response = try await request(method: "POST", path: "/volumes/create", body: body)
         return try await decode(DockerVolumeSummary.self, response: response)
     }
 
-    func removeVolume(name: String, force: Bool = false) async throws {
+    public func removeVolume(name: String, force: Bool = false) async throws {
         let segment = Self.pathEncoded(name)
         let path = force ? "/volumes/\(segment)?force=1" : "/volumes/\(segment)"
         _ = try await request(method: "DELETE", path: path)
     }
 
-    func pruneVolumes() async throws -> DockerPruneResult {
+    public func pruneVolumes() async throws -> DockerPruneResult {
         try await prune(path: "/volumes/prune")
     }
 
-    func listNetworks() async throws -> [DockerNetworkSummary] {
+    public func listNetworks() async throws -> [DockerNetworkSummary] {
         try await decode([DockerNetworkSummary].self, response: request(path: "/networks"))
     }
 
-    func createNetwork(name: String) async throws -> String {
+    public func createNetwork(name: String) async throws -> String {
         let body = try Self.encode(NetworkCreateRequest(name: name))
         let response = try await request(method: "POST", path: "/networks/create", body: body)
         return try await decode(NetworkCreateResponse.self, response: response).id
@@ -219,7 +220,7 @@ public extension DockerAPIClient {
     /// rather than on the 5s read default. It also has to outlast the bridge's own 60s bound on a
     /// wedged removal: on the short default the socket gave up first and the explanation the bridge
     /// had prepared — restart the runtime — never arrived.
-    func removeNetwork(id: String) async throws {
+    public func removeNetwork(id: String) async throws {
         _ = try await request(
             method: "DELETE",
             path: "/networks/\(Self.pathEncoded(id))",
@@ -227,29 +228,29 @@ public extension DockerAPIClient {
         )
     }
 
-    func diskUsage() async throws -> DockerDiskUsage {
+    public func diskUsage() async throws -> DockerDiskUsage {
         try await decode(DockerDiskUsage.self, response: request(path: "/system/df"))
     }
 
-    func pruneContainers() async throws -> DockerPruneResult {
+    public func pruneContainers() async throws -> DockerPruneResult {
         try await prune(path: "/containers/prune")
     }
 
-    func pruneImages() async throws -> DockerPruneResult {
+    public func pruneImages() async throws -> DockerPruneResult {
         try await prune(path: "/images/prune")
     }
 
-    func restartContainer(id: String) async throws {
+    public func restartContainer(id: String) async throws {
         _ = try await request(
             method: "POST", path: "/containers/\(id)/restart", timeout: DockerAPIClient.lifecycleRequestTimeout)
     }
 
-    func inspectContainer(id: String) async throws -> DockerContainerDetail {
+    public func inspectContainer(id: String) async throws -> DockerContainerDetail {
         let response = try await request(path: "/containers/\(id)/json")
         return try await decode(ContainerDetailPayload.self, response: response).detail
     }
 
-    func containerLogs(id: String, tail: Int? = nil) async throws -> String {
+    public func containerLogs(id: String, tail: Int? = nil) async throws -> String {
         var path = "/containers/\(id)/logs?stdout=1&stderr=1"
         if let tail {
             path += "&tail=\(tail)"
@@ -263,7 +264,7 @@ public extension DockerAPIClient {
     }
 
     @discardableResult
-    func pullImage(reference: String) async throws -> [DockerPullEvent] {
+    public func pullImage(reference: String) async throws -> [DockerPullEvent] {
         let image = DockerImageReference(reference)
         let path = "/images/create?fromImage=\(Self.queryEncoded(image.name))&tag=\(Self.queryEncoded(image.tag))"
         let response = try await request(
@@ -283,7 +284,7 @@ public extension DockerAPIClient {
         return events
     }
 
-    func removeImage(reference: String, force: Bool = false) async throws {
+    public func removeImage(reference: String, force: Bool = false) async throws {
         _ = try await request(
             method: "DELETE",
             path: "/images/\(Self.pathEncoded(reference))?force=\(force ? 1 : 0)"
@@ -308,11 +309,11 @@ public extension DockerAPIClient {
         value.addingPercentEncoding(withAllowedCharacters: .dockerPathSegment) ?? value
     }
 
-    static func pathEncoded(_ value: String) -> String {
+    public static func pathEncoded(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .dockerPathSegment) ?? value
     }
 }
 
-private extension CharacterSet {
-    static let dockerPathSegment = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+extension CharacterSet {
+    fileprivate static let dockerPathSegment = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
 }

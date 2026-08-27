@@ -92,13 +92,14 @@ public enum DockerHTTPResponseParser {
             guard let sizeLine = String(data: sizeData, encoding: .ascii) else {
                 throw DockerHTTPParseError.invalidChunkedBody
             }
-            guard let sizeToken = sizeLine.split(
-                separator: ";",
-                maxSplits: 1,
-                omittingEmptySubsequences: true
-            ).first,
-            let size = Int(sizeToken, radix: 16),
-            size >= 0
+            guard
+                let sizeToken = sizeLine.split(
+                    separator: ";",
+                    maxSplits: 1,
+                    omittingEmptySubsequences: true
+                ).first,
+                let size = Int(sizeToken, radix: 16),
+                size >= 0
             else {
                 throw DockerHTTPParseError.invalidChunkedBody
             }
@@ -114,10 +115,10 @@ public enum DockerHTTPResponseParser {
             let (chunkEnd, chunkEndOverflowed) = offset.addingReportingOverflow(size)
             let (terminatorEnd, terminatorOverflowed) = chunkEnd.addingReportingOverflow(2)
             guard !chunkEndOverflowed,
-                  !terminatorOverflowed,
-                  terminatorEnd <= data.count,
-                  data[chunkEnd] == 13,
-                  data[chunkEnd + 1] == 10
+                !terminatorOverflowed,
+                terminatorEnd <= data.count,
+                data[chunkEnd] == 13,
+                data[chunkEnd + 1] == 10
             else {
                 throw DockerHTTPParseError.invalidChunkedBody
             }

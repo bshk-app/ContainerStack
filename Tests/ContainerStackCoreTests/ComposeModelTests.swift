@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import ContainerStackCore
 
 struct ComposeModelTests {
@@ -62,7 +63,7 @@ struct ComposeModelTests {
             ComposePortMapping(hostPort: 3000, containerPort: 3000),
             ComposePortMapping(hostIP: "127.0.0.1", hostPort: 8080, containerPort: 80),
             ComposePortMapping(hostPort: 3000, containerPort: 3000, transport: "udp"),
-            ComposePortMapping(hostIP: "127.0.0.1", hostPort: 8080, containerPort: 80, transport: "tcp")
+            ComposePortMapping(hostIP: "127.0.0.1", hostPort: 8080, containerPort: 80, transport: "tcp"),
         ]
         for mapping in mappings {
             #expect(ComposePortMapping.parse(mapping.raw) == mapping, "failed to round-trip \(mapping.raw)")
@@ -114,7 +115,7 @@ struct ComposeModelTests {
             ComposeVolumeMount(source: "data", target: "/target", isReadOnly: false),
             ComposeVolumeMount(source: "/host", target: "/target", isReadOnly: false),
             ComposeVolumeMount(source: "./rel", target: "/target", isReadOnly: true),
-            ComposeVolumeMount(source: "", target: "/data", isReadOnly: false)
+            ComposeVolumeMount(source: "", target: "/data", isReadOnly: false),
         ]
         for mount in mounts {
             #expect(ComposeVolumeMount.parse(mount.raw) == mount, "failed to round-trip \(mount.raw)")
@@ -127,26 +128,26 @@ struct ComposeModelTests {
         // Mirrors current `docker compose config --format json`: `published` is a string,
         // absent for ephemeral ports; volumes carry type/source/target/read_only.
         let json = """
-        {
-          "name": "demo",
-          "services": {
-            "web": {
-              "image": "nginx",
-              "restart": "always",
-              "ports": [
-                {"mode": "ingress", "target": 80, "published": "8080", "host_ip": "127.0.0.1", "protocol": "tcp"},
-                {"mode": "ingress", "target": 443}
-              ],
-              "volumes": [
-                {"type": "bind", "source": "/host", "target": "/data", "read_only": true}
-              ]
-            },
-            "db": {
-              "image": "postgres"
+            {
+              "name": "demo",
+              "services": {
+                "web": {
+                  "image": "nginx",
+                  "restart": "always",
+                  "ports": [
+                    {"mode": "ingress", "target": 80, "published": "8080", "host_ip": "127.0.0.1", "protocol": "tcp"},
+                    {"mode": "ingress", "target": 443}
+                  ],
+                  "volumes": [
+                    {"type": "bind", "source": "/host", "target": "/data", "read_only": true}
+                  ]
+                },
+                "db": {
+                  "image": "postgres"
+                }
+              }
             }
-          }
-        }
-        """
+            """
         let model = try ComposeProjectModel.parse(configJSON: Data(json.utf8), fallbackName: "fallback")
 
         #expect(model.name == "demo")
@@ -169,7 +170,8 @@ struct ComposeModelTests {
     }
 
     @Test func parsesRangePublishedAsEphemeral() throws {
-        let json = #"{"name":"x","services":{"web":{"ports":[{"target":90,"published":"8090-8092","protocol":"tcp"}]}}}"#
+        let json =
+            #"{"name":"x","services":{"web":{"ports":[{"target":90,"published":"8090-8092","protocol":"tcp"}]}}}"#
         let model = try ComposeProjectModel.parse(configJSON: Data(json.utf8), fallbackName: "f")
         let port = try #require(model.services.first?.ports.first)
         #expect(port.hostPort == nil)

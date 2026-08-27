@@ -112,7 +112,7 @@ public struct ComposeRunner: Sendable {
             "--project-name", stack.name,
             "--file", tempURL.path,
             "--project-directory", directory.path,
-            "config", "-q"
+            "config", "-q",
         ]
         let result = try await run(arguments)
         guard result.status == 0 else {
@@ -166,7 +166,7 @@ public struct ComposeRunner: Sendable {
 
         return output.split(separator: "\n").compactMap { line in
             guard let bytes = String(line).data(using: .utf8),
-                  let item = try? JSONDecoder().decode(ComposePSItem.self, from: bytes)
+                let item = try? JSONDecoder().decode(ComposePSItem.self, from: bytes)
             else {
                 return nil
             }

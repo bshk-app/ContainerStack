@@ -96,7 +96,8 @@ extension RuntimeViewModel {
         }
         stackModels = models
         stackStatuses = statuses
-        stackMessage = failures.isEmpty
+        stackMessage =
+            failures.isEmpty
             ? nil
             : "Some stacks could not be refreshed: " + failures.joined(separator: ", ")
     }

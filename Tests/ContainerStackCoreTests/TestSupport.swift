@@ -1,4 +1,5 @@
 import Foundation
+
 @testable import ContainerStackCore
 
 actor StubDockerTransport: DockerAPITransport {

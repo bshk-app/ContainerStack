@@ -21,7 +21,9 @@ only_rules:
 custom_rules:
   long_comment_block:
     name: "Comment block too long"
-    regex: '(?:[ \t]*\/\/[^\n]*\n){8,}'
+    # `(?:\n|$)` so an eight-line block that ends the file without a trailing
+    # newline is still a block.
+    regex: '(?:[ \t]*\/\/[^\n]*(?:\n|$)){8,}'
     match_kinds:
       - comment
       - doccomment

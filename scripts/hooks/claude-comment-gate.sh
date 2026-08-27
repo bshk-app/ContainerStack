@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
-# One Claude Code hook for both events that can carry the comment gate, because
-# they need the same payload and the same checker.
+# Claude Code hook for the comment gate, one script for both events it applies
+# to. The event comes from the argument the hook is registered with, not from the
+# payload: a payload missing `hook_event_name` used to fall through as if it were
+# an edit, which silently disabled the Stop gate.
 #
-#   PostToolUse  runs after the edit is on disk, so it can only report: exit 2
-#                puts the finding in front of the agent.
-#   Stop         is the only event where a non-zero exit actually refuses, so it
-#                checks the whole working tree.
+#   --edit  PostToolUse. Runs after the edit is on disk, so it can only report;
+#           exit 2 puts the finding in front of the agent.
+#   --stop  Stop. The only event where a non-zero exit actually refuses, so it
+#           checks the whole tree and honours `stop_hook_active` - without that
+#           flag, refusing a stop loops the agent against the same file forever.
 #
-# `stop_hook_active` is the loop breaker: without it, refusing a stop makes
-# Claude continue, reach the next stop, and be refused again by the same
-# unchanged file, forever.
+# `jq` is used when present and never required. The fallback reader is not a JSON
+# parser, so when it cannot produce a usable path the gate widens to the whole
+# changed set rather than skipping: a gate that says nothing because it could not
+# read its input is the failure this file exists to avoid.
 set -euo pipefail
 
 if [[ -n "${CLAUDE_PROJECT_DIR:-}" ]]; then
@@ -20,10 +24,17 @@ fi
 readonly ROOT
 readonly CHECKER="$ROOT/scripts/hooks/check-new-comment-blocks.sh"
 
+readonly MODE="${1:-}"
+case "$MODE" in
+    --edit | --stop) ;;
+    *)
+        printf 'usage: claude-comment-gate.sh --edit | --stop  (payload on stdin)\n' >&2
+        exit 64
+        ;;
+esac
+
 payload="$(cat)"
 
-# jq when it is there, a plainer reader when it is not: a gate that disappears
-# on a machine without jq is worse than one with a simpler parser.
 field() {
     local name="$1" value=""
     if command -v jq >/dev/null 2>&1; then
@@ -39,17 +50,22 @@ field() {
 
 cd "$ROOT"
 
-if [[ "$(field hook_event_name)" == "Stop" ]]; then
+if [[ "$MODE" == "--stop" ]]; then
     [[ "$(field stop_hook_active)" == "true" ]] && exit 0
     exec "$CHECKER"
 fi
 
 file="$(field file_path)"
-[[ -n "$file" && "$file" == *.swift ]] || exit 0
+case "$file" in
+    "") exec "$CHECKER" ;; # unreadable payload: check everything rather than nothing
+    *.swift) ;;
+    *) exit 0 ;;
+esac
+
 case "$file" in
     /*) ;;
     *) file="$ROOT/$file" ;;
 esac
-[[ -f "$file" ]] || exit 0
+[[ -f "$file" ]] || exec "$CHECKER"
 
 exec "$CHECKER" "$file"

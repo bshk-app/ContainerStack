@@ -2,32 +2,53 @@
 # Installed by `task hooks:install`, which points core.hooksPath here - git does
 # not ship hooks with a clone, so a hook nobody installs enforces nothing.
 #
-# Blocking checks are the mechanical ones a machine owns: formatting and lint.
-# The comment-length check only warns here; measured over the last 60 commits it
-# would have stopped four hand-written forensic blocks, and a human staging them
-# has already made that call.
+# Two properties this hook has to get right:
+#
+#   * It lints the bytes the commit will contain. Running the linters against
+#     paths on disk passes a staged violation whose fix is still unstaged, and
+#     blocks a clean staged commit because of unstaged work. So staged blobs are
+#     materialised into a temp tree and linted there.
+#   * It runs under /bin/bash, which on macOS is still 3.2: no mapfile, no
+#     associative arrays. File lists live in the positional parameters.
+#
+# Formatting and lint block. The comment-length check only warns: measured over
+# the last 60 commits it would have stopped four hand-written forensic blocks,
+# and a human staging those has already made that call.
 set -euo pipefail
 
-readonly ROOT="$(git rev-parse --show-toplevel)"
+ROOT="$(git rev-parse --show-toplevel)"
+readonly ROOT
 cd "$ROOT"
 
-mapfile -t staged < <(git diff --cached --name-only --diff-filter=ACM -- '*.swift')
-if [[ ${#staged[@]} -eq 0 ]]; then
-    exit 0
-fi
+set --
+while IFS= read -r -d '' path; do
+    case "$path" in
+        Sources/*.swift | Tests/*.swift) set -- "$@" "$path" ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+[[ $# -gt 0 ]] || exit 0
+
+snapshot="$(mktemp -d)"
+trap 'rm -rf "$snapshot"' EXIT
+
+for path in "$@"; do
+    mkdir -p "$snapshot/$(dirname "$path")"
+    git show ":$path" >"$snapshot/$path"
+done
 
 status=0
 
 if command -v swift >/dev/null 2>&1; then
-    if ! swift format lint --strict "${staged[@]}"; then
-        printf 'pre-commit: run `task format` (swift format) and stage the result\n' >&2
+    if ! (cd "$snapshot" && swift format lint --strict "$@"); then
+        printf 'pre-commit: run `task format`, then stage the result\n' >&2
         status=1
     fi
 fi
 
 if command -v swiftlint >/dev/null 2>&1; then
-    if ! swiftlint lint --quiet --strict -- "${staged[@]}"; then
-        printf 'pre-commit: swiftlint is strict here; fix or justify in .swiftlint.yml\n' >&2
+    if ! (cd "$snapshot" && swiftlint lint --quiet --strict --config "$ROOT/.swiftlint.yml" -- "$@"); then
+        printf 'pre-commit: the paths above are the staged snapshot, not your working tree\n' >&2
         status=1
     fi
 else
@@ -35,6 +56,6 @@ else
 fi
 
 COMMENT_GROWTH_WARN_ONLY=1 MAX_ADDED_COMMENT_LINES=10 \
-    ./scripts/hooks/check-comment-growth.sh --staged || true
+    "$ROOT/scripts/hooks/check-comment-growth.sh" --staged || true
 
 exit "$status"

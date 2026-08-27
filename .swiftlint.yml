@@ -16,13 +16,20 @@ disabled_rules:
   # Owned by swift-format.
   - trailing_comma
   - opening_brace
-  - line_length
   - closure_parameter_position
 
   # The rule asks for the failable `String(bytes:encoding:)`. This code reads
   # process stdout and Docker payloads with `String(decoding:as:)` on purpose:
   # one malformed byte should become U+FFFD, not discard the whole output.
   - optional_data_string_conversion
+
+# A backstop, not the style: swift-format wraps at 120, but it will not split a
+# string literal, so 19 lines stay over 120 in a fully formatted tree and the
+# longest is 175. Without any limit nothing would report a 400-column literal.
+line_length:
+  warning: 180
+  error: 220
+  ignores_urls: true
 
 identifier_name:
   min_length:

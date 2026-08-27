@@ -12,6 +12,18 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.5.0](https://github.com/bshk-app/ContainerStack/compare/v0.4.2...v0.5.0) (2026-08-27)
+
+
+### Added
+
+* **ui:** container resource limits with per-run overrides ([f69d864](https://github.com/bshk-app/ContainerStack/commit/f69d8646d630bd1373f4ef06d91787446bba1d0e))
+
+
+### Fixed
+
+* **runtime:** bound the graceful stop and recover a lost XPC connection ([db3a623](https://github.com/bshk-app/ContainerStack/commit/db3a6231f6e51c883b1f6ed7aeecf66e03181527))
+
 ## [0.4.2](https://github.com/bshk-app/ContainerStack/compare/v0.4.1...v0.4.2) (2026-08-26)
 
 ContainerStack now owns a Docker socket separate from a standalone Socktainer

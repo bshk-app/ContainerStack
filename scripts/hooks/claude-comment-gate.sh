@@ -51,7 +51,21 @@ field() {
 cd "$ROOT"
 
 if [[ "$MODE" == "--stop" ]]; then
-    [[ "$(field stop_hook_active)" == "true" ]] && exit 0
+    active="$(field stop_hook_active)"
+    [[ "$active" == "true" ]] && exit 0
+
+    # A refusal is only safe when this payload was actually read. If nothing at
+    # all parses out of it, refusing would repeat on the next stop against the
+    # same unchanged file - the loop `stop_hook_active` exists to prevent. A
+    # payload that parses but omits the flag is a first stop, and does get gated.
+    if [[ -z "$active" ]]; then
+        readable="$(field hook_event_name)$(field session_id)$(field transcript_path)$(field cwd)"
+        if [[ -z "$readable" ]]; then
+            printf 'claude-comment-gate: unreadable stop payload, letting the stop through\n' >&2
+            exit 0
+        fi
+    fi
+
     exec "$CHECKER"
 fi
 

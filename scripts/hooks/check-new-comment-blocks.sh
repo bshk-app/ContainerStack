@@ -43,10 +43,16 @@ changed_files() {
     git ls-files --others --exclude-standard -z -- 'Sources/*.swift' 'Tests/*.swift'
 }
 
-# `path:line` for every line this tree adds, from one rename-aware diff plus the
-# untracked files, whose every line is new.
+# `path<TAB>line` for every line this tree adds, from one rename-aware diff plus
+# the untracked files, whose every line is new.
+#
+# Tab-separated and matched by exact string later, not `path:line` matched by a
+# regex: a colon is legal in a POSIX filename and would split the record, and a
+# path with `[` in it would turn a `grep` prefix into a character class.
+# `core.quotePath=false` keeps git from C-quoting non-ASCII paths into a shape
+# the parser would read as empty.
 added_map() {
-    git diff HEAD -U0 --find-renames | awk '
+    git -c core.quotePath=false diff HEAD -U0 --find-renames | awk '
         /^diff --git / { path = ""; in_header = 1; next }
         in_header && /^\+\+\+ / {
             in_header = 0
@@ -54,7 +60,7 @@ added_map() {
             next
         }
         /^@@ / { in_header = 0; split($3, hunk, ","); line = substr(hunk[1], 2) + 0; next }
-        /^\+/ { if (path != "") { print path ":" line; line++ } }
+        /^\+/ { if (path != "") { print path "\t" line; line++ } }
     '
 
     local file
@@ -66,7 +72,7 @@ added_map() {
         [[ -f "$file" ]] || continue
         # `< "$file"` rather than a filename argument: BSD awk reads `--` as a
         # file to open, so the usual end-of-options guard breaks it.
-        awk -v path="$file" '{ print path ":" FNR }' <"$file"
+        awk -v path="$file" '{ print path "\t" FNR }' <"$file"
     done < <(git ls-files --others --exclude-standard -z -- 'Sources/*.swift' 'Tests/*.swift')
 }
 
@@ -93,7 +99,7 @@ repo_relative() {
     if [[ "$dir" == "$root_physical" ]]; then
         printf '%s' "$base"
     elif [[ "$dir" == "$prefix"* ]]; then
-        printf '%s/%s' "${dir#$prefix}" "$base"
+        printf '%s/%s' "${dir#"$prefix"}" "$base"
     else
         printf '%s' "$path"
     fi
@@ -101,18 +107,26 @@ repo_relative() {
 
 # The detector has to be proven alive, not assumed: an invalid custom rule makes
 # SwiftLint warn and fall back to its default rules, exit 0, and report nothing
-# our rule would have caught. A canary block it must flag is the cheapest proof.
+# our rule would have caught. So a canary block it must flag is the cheapest
+# proof - and the canary ends without a trailing newline, which exercises the
+# end-of-file branch of the regex at the same time.
+#
+# The rule id has to appear in the output: any other finding would mean the
+# fallback rules ran, which is precisely the failure being ruled out.
 detector_alive() {
-    local dir canary
-    dir="$(mktemp -d)"
+    local dir canary alive=1
+    dir="$(mktemp -d)" || return 1
     canary="$dir/Canary.swift"
     {
-        for _ in 1 2 3 4 5 6 7 8 9 10; do printf '// canary\n'; done
         printf 'let canary = 1\n'
-    } >"$canary"
+        for _ in 1 2 3 4 5 6 7 8 9; do printf '// canary\n'; done
+        printf '// canary'
+    } >"$canary" || alive=0
 
-    local alive=1
-    swiftlint lint --quiet --no-cache --config "$CONFIG" -- "$canary" 2>/dev/null | grep -q . || alive=0
+    if [[ "$alive" -eq 1 ]]; then
+        swiftlint lint --quiet --no-cache --config "$CONFIG" -- "$canary" 2>/dev/null |
+            grep -q 'long_comment_block' || alive=0
+    fi
     rm -rf -- "$dir"
     [[ "$alive" -eq 1 ]]
 }
@@ -124,7 +138,9 @@ detector_alive() {
 gate_file() {
     local file="$1" map="$2" lines status output
     lines="$(mktemp)"
-    grep "^$file:" "$map" 2>/dev/null | cut -d: -f2 >"$lines" || true
+    # Exact field compare, so a colon or a regex metacharacter in the path cannot
+    # match the wrong record or none at all.
+    awk -F'\t' -v file="$file" '$1 == file { print $2 }' "$map" >"$lines" || true
 
     output="$(mktemp)"
     status=0
@@ -218,6 +234,15 @@ main() {
 
     for file in "$@"; do
         file="$(repo_relative "$file")"
+        # An absolute path here means repo_relative could not place it inside the
+        # tree. Judging it would compare against a map keyed relative and report
+        # a clean bill for a file nobody checked, so say so instead.
+        case "$file" in
+            /*)
+                printf 'check-new-comment-blocks: %s is outside %s, skipped\n' "$file" "$ROOT" >&2
+                continue
+                ;;
+        esac
         if [[ ! -f "$file" ]]; then
             printf 'check-new-comment-blocks: %s does not exist, skipped\n' "$file" >&2
             continue

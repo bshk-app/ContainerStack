@@ -77,10 +77,25 @@ jobs:
       - uses: actions/checkout@v7
 
       # Hook scripts and .githooks are the files most recently broken, and
-      # `scripts/*.sh` matched neither: the glob has to name every directory that
-      # holds shell.
+      # `scripts/*.sh` matched neither. The list is built rather than globbed
+      # straight into the command: an unmatched glob would reach shellcheck as a
+      # literal and fail the job, and a future README or directory under
+      # .githooks is not shell.
       - name: Shellcheck
-        run: shellcheck --severity=error scripts/*.sh scripts/hooks/*.sh .githooks/*
+        run: |
+          files=""
+          for f in scripts/*.sh scripts/hooks/*.sh .githooks/*; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.sh) ;;
+              *) head -1 "$f" | grep -q '^#!.*\(ba\)\?sh' || continue ;;
+            esac
+            files="$files $f"
+          done
+          [ -n "$files" ] || { echo "no shell files found - the globs are wrong"; exit 1; }
+          echo "shellcheck over:$files"
+          # shellcheck disable=SC2086 # the list is built from a controlled glob
+          shellcheck --severity=error $files
 
       # An invalid workflow file is not a parse error YAML can see: putting the
       # `runner` context in a job-level `env:` produced a run whose only symptom

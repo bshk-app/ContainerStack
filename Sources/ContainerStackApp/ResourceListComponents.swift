@@ -70,7 +70,7 @@ struct EmptyInspector: View {
 struct InspectorHeader<Actions: View>: View {
     let title: String
     let subtitle: String
-    var pill: String? = nil
+    var pill: String?
     @ViewBuilder var actions: () -> Actions
     @Environment(\.appTheme) private var theme
 

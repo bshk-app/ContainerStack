@@ -157,7 +157,11 @@ extension CStackCLI {
 
     static func runImage(_ invocation: CStackInvocation, client: DockerAPIClient) async throws {
         let image = requireArgument(invocation, name: "image")
-        let result = try await client.run(image: image, command: invocation.trailing)
+        let result = try await client.run(
+            image: image,
+            command: invocation.trailing,
+            resourceLimits: nil
+        )
         print(result.output, terminator: "")
         if result.exitCode != 0 {
             exit(Int32(result.exitCode))

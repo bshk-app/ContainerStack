@@ -26,6 +26,7 @@ enum DashboardDestination: String, CaseIterable, Hashable, Identifiable {
 
 struct DashboardView: View {
     let model: RuntimeViewModel
+    let resourceSettings: ContainerResourceSettings
     @State private var selection: DashboardDestination = .containers
     @State private var isConfirmingPrune = false
     @State private var searchText = ""
@@ -50,6 +51,7 @@ struct DashboardView: View {
                     case .images:
                         ImagesView(
                             model: model,
+                            resourceSettings: resourceSettings,
                             searchText: searchText,
                             focusPull: focusImagePull,
                             onFocusConsumed: { focusImagePull = false }

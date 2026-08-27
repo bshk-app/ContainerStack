@@ -155,7 +155,11 @@ struct DockerAPIClientTests {
             httpResponse(status: 204, body: Data())
         ])
         let client = DockerAPIClient(transport: transport)
-        let result = try await client.run(image: "hello-world:latest", command: [])
+        let result = try await client.run(
+            image: "hello-world:latest",
+            command: [],
+            resourceLimits: nil
+        )
         #expect(result.exitCode == 0)
         #expect(result.output == "Hello from container\n")
         #expect(await transport.paths == [
@@ -170,12 +174,42 @@ struct DockerAPIClientTests {
     }
 
     @Test
+    func runsImageWithResourceLimits() async throws {
+        let transport = StubDockerTransport(responses: [
+            httpResponse(status: 201, body: Data("{\"Id\":\"container-123\",\"Warnings\":null}".utf8)),
+            httpResponse(status: 204, body: Data()),
+            chunkedHTTPResponse(body: Data("{\"StatusCode\":0}".utf8)),
+            chunkedHTTPResponse(body: Data()),
+            httpResponse(status: 204, body: Data()),
+        ])
+        let client = DockerAPIClient(transport: transport)
+
+        _ = try await client.run(
+            image: "alpine:latest",
+            command: [],
+            resourceLimits: ContainerResourceLimits(
+                cpus: 2,
+                memoryInBytes: 3 * 1_024 * 1_024 * 1_024
+            )
+        )
+
+        let createRequest = await transport.requests[0]
+        #expect(createRequest.contains("\"HostConfig\""))
+        #expect(createRequest.contains("\"Memory\":3221225472"))
+        #expect(createRequest.contains("\"NanoCpus\":2000000000"))
+    }
+
+    @Test
     func preservesRunningContainerWhenWaitSocketTimesOut() async {
         let transport = RunningContainerTimeoutTransport()
         let client = DockerAPIClient(transport: transport)
 
         do {
-            _ = try await client.run(image: "busybox:latest", command: ["sleep", "30"])
+            _ = try await client.run(
+                image: "busybox:latest",
+                command: ["sleep", "30"],
+                resourceLimits: nil
+            )
             Issue.record("Expected wait timeout")
         } catch let error as UnixSocketError {
             #expect(error == .timedOut)

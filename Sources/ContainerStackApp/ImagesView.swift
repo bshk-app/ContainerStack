@@ -1,13 +1,26 @@
 import ContainerStackCore
 import SwiftUI
 
+private extension DockerImageSummary {
+    var displayName: String {
+        repositoryTags?.first ?? ResourceIdentifier.short(id)
+    }
+}
+
+private struct RunImage: Identifiable {
+    let image: String
+    var id: String { image }
+}
+
 struct ImagesView: View {
     let model: RuntimeViewModel
+    let resourceSettings: ContainerResourceSettings
     var searchText: String = ""
     var focusPull: Bool = false
     var onFocusConsumed: () -> Void = {}
     @FocusState private var pullFocused: Bool
     @State private var selectedImageID: String?
+    @State private var runImage: RunImage?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -43,20 +56,22 @@ struct ImagesView: View {
                                 ImageRow(
                                     image: image,
                                     model: model,
-                                    isSelected: selectedImageID == image.id
-                                ) {
-                                    selectedImageID = image.id
-                                }
+                                    isSelected: selectedImageID == image.id,
+                                    onSelect: { selectedImageID = image.id },
+                                    onRun: { runImage = RunImage(image: image.displayName) }
+                                )
                             }
                         }
                     }
                 } inspector: {
-                    ImageInspector(image: selectedImage, model: model)
-                        .task(id: selectedImageID) {
-                            if let image = selectedImage {
-                                await model.loadImageDetail(for: image)
-                            }
+                    ImageInspector(image: selectedImage, model: model) { image in
+                        runImage = RunImage(image: image)
+                    }
+                    .task(id: selectedImageID) {
+                        if let image = selectedImage {
+                            await model.loadImageDetail(for: image)
                         }
+                    }
                 }
             }
 
@@ -78,6 +93,11 @@ struct ImagesView: View {
             }
         }
         .background(theme.windowBackground)
+        .sheet(item: $runImage) { request in
+            RunContainerSheet(image: request.image, settings: resourceSettings) { limits in
+                Task { await model.run(image: request.image, resourceLimits: limits) }
+            }
+        }
         .onChange(of: focusPull) { _, want in
             guard want else { return }
             pullFocused = true
@@ -113,26 +133,23 @@ struct ImageRow: View {
     let model: RuntimeViewModel
     var isSelected: Bool = false
     var onSelect: () -> Void = {}
+    var onRun: () -> Void = {}
     @Environment(\.appTheme) private var theme
-
-    private var imageName: String {
-        image.repositoryTags?.first ?? ResourceIdentifier.short(image.id)
-    }
 
     var body: some View {
         SelectableResourceRow(
             isSelected: isSelected,
-            accessibilityLabel: imageName,
+            accessibilityLabel: image.displayName,
             action: onSelect
         ) {
             HStack(spacing: 9) {
                 ResourceAvatar(
-                    text: ResourceAvatar.initials(from: imageName),
+                    text: ResourceAvatar.initials(from: image.displayName),
                     tint: Color(uiHex: 0x8B5CF6),
                     isOn: true
                 )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(imageName)
+                    Text(image.displayName)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
                         .lineLimit(1)
@@ -147,15 +164,15 @@ struct ImageRow: View {
                 RowActionButton(
                     icon: .play,
                     help: "Run",
-                    accessibilityLabel: "Run \(imageName)",
+                    accessibilityLabel: "Run \(image.displayName)",
                     isSelected: isSelected
                 ) {
-                    Task { await model.run(image: imageName) }
+                    onRun()
                 }
                 RowActionButton(
                     icon: .trash,
                     help: "Delete",
-                    accessibilityLabel: "Delete \(imageName)",
+                    accessibilityLabel: "Delete \(image.displayName)",
                     destructive: true,
                     isSelected: isSelected
                 ) {
@@ -165,7 +182,7 @@ struct ImageRow: View {
             .disabled(model.busyResource != nil || model.isRunningContainer || !model.canMutate)
             .confirmDestructive(
                 $isConfirmingDelete,
-                title: "Delete image \(imageName)?",
+                title: "Delete image \(image.displayName)?",
                 confirmTitle: "Delete Image",
                 message: "The image is deleted locally and must be pulled again to be used."
             ) {
@@ -185,6 +202,7 @@ private struct ImageInspector: View {
     @State private var isConfirmingDelete = false
     let image: DockerImageSummary?
     let model: RuntimeViewModel
+    let onRun: (String) -> Void
 
     private var detail: DockerImageDetail? {
         image.flatMap { model.imageDetail(for: $0) }
@@ -192,12 +210,12 @@ private struct ImageInspector: View {
 
     var body: some View {
         if let image {
-            let name = image.repositoryTags?.first ?? ResourceIdentifier.short(image.id)
+            let name = image.displayName
             let used = ResourceUsage.containers(usingImage: image, from: model.containers)
             VStack(alignment: .leading, spacing: 0) {
                 InspectorHeader(title: name, subtitle: ResourceIdentifier.short(image.id)) {
                     InspectorAction(title: "Run", prominent: true) {
-                        Task { await model.run(image: name) }
+                        onRun(name)
                     }
                     InspectorAction(title: "Delete", destructive: true) {
                         isConfirmingDelete = true

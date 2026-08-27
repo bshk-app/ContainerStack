@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 extension RuntimeViewModel {
-    func run(image: String) async {
+    func run(image: String, resourceLimits: ContainerResourceLimits) async {
         guard canMutate else {
             containerMessage = "Start the runtime before launching a container."
             return
@@ -15,7 +15,11 @@ extension RuntimeViewModel {
         defer { isRunningContainer = false }
 
         do {
-            let result = try await client.run(image: image, command: [])
+            let result = try await client.run(
+                image: image,
+                command: [],
+                resourceLimits: resourceLimits
+            )
             containerOutput = result.output
             containerMessage = "\(image) exited with status \(result.exitCode)."
             await refreshContainers()

@@ -90,6 +90,23 @@ public struct DockerRunResult: Equatable, Sendable {
     }
 }
 
+public struct ContainerResourceLimits: Equatable, Sendable {
+    static let nanoCPUsPerCPU: Int64 = 1_000_000_000
+
+    public let cpus: Int
+    public let memoryInBytes: Int64
+
+    var nanoCPUs: Int64 { Int64(cpus) * Self.nanoCPUsPerCPU }
+
+    public init(cpus: Int, memoryInBytes: Int64) {
+        precondition(cpus > 0, "cpus must be positive")
+        precondition(Int64(cpus) <= Int64.max / Self.nanoCPUsPerCPU, "cpus exceeds the nano-CPU range")
+        precondition(memoryInBytes > 0, "memoryInBytes must be positive")
+        self.cpus = cpus
+        self.memoryInBytes = memoryInBytes
+    }
+}
+
 private struct ContainerCreateResponse: Decodable {
     let id: String
 
@@ -106,9 +123,25 @@ private struct ContainerWaitResponse: Decodable {
     }
 }
 
+private struct ContainerCreateHostConfig: Encodable {
+    let memory: Int64
+    let nanoCpus: Int64
+
+    init(resourceLimits: ContainerResourceLimits) {
+        memory = resourceLimits.memoryInBytes
+        nanoCpus = resourceLimits.nanoCPUs
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case memory = "Memory"
+        case nanoCpus = "NanoCpus"
+    }
+}
+
 private struct ContainerCreateRequest: Encodable {
     let image: String
     let command: [String]?
+    let hostConfig: ContainerCreateHostConfig?
     let attachStdout = true
     let attachStderr = true
     let tty = false
@@ -119,6 +152,7 @@ private struct ContainerCreateRequest: Encodable {
         case attachStdout = "AttachStdout"
         case attachStderr = "AttachStderr"
         case tty = "Tty"
+        case hostConfig = "HostConfig"
     }
 }
 
@@ -325,10 +359,15 @@ public actor DockerAPIClient {
         )
     }
 
-    public func run(image: String, command: [String]) async throws -> DockerRunResult {
+    public func run(
+        image: String,
+        command: [String],
+        resourceLimits: ContainerResourceLimits?
+    ) async throws -> DockerRunResult {
         let createRequest = ContainerCreateRequest(
             image: image,
-            command: command.isEmpty ? nil : command
+            command: command.isEmpty ? nil : command,
+            hostConfig: resourceLimits.map(ContainerCreateHostConfig.init)
         )
         let createBody: Data
         do {

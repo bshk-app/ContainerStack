@@ -17,7 +17,7 @@
 set -euo pipefail
 
 readonly THRESHOLD="${MAX_NEW_COMMENT_LINES:-8}"
-readonly WARN_ONLY="${COMMENT_GROWTH_WARN_ONLY:-0}"
+readonly WARN_ONLY="${COMMENT_BLOCK_WARN_ONLY:-0}"
 ROOT="$(git rev-parse --show-toplevel)"
 readonly ROOT
 readonly CONFIG="$ROOT/.swiftlint-comments.yml"
@@ -31,7 +31,7 @@ usage: check-new-comment-blocks.sh [FILE...]
 
 env:
   MAX_NEW_COMMENT_LINES     new lines in one block before it reports (default 8)
-  COMMENT_GROWTH_WARN_ONLY  1 reports without failing
+  COMMENT_BLOCK_WARN_ONLY  1 reports without failing
 
 exit: 0 nothing to say, 2 a comment block gained at least the threshold
 EOF

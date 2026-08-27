@@ -58,7 +58,7 @@ fi
 # Working tree rather than the staged snapshot, deliberately: this one only
 # warns, and a human who staged part of a comment block wants to hear about the
 # block they are looking at.
-COMMENT_GROWTH_WARN_ONLY=1 MAX_NEW_COMMENT_LINES=10 \
+COMMENT_BLOCK_WARN_ONLY=1 MAX_NEW_COMMENT_LINES=10 \
     "$ROOT/scripts/hooks/check-new-comment-blocks.sh" || true
 
 exit "$status"

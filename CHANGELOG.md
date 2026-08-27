@@ -12,6 +12,44 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.5.0](https://github.com/bshk-app/ContainerStack/compare/v0.4.2...v0.5.0) (2026-08-27)
+
+Containers can be sized now, and a stop that loses the runtime's XPC service no
+longer hangs the app with no way out.
+
+### Added
+
+- Global CPU and memory defaults in Settings, clamped to this Mac's capacity,
+  and per-container overrides in the image Run dialog. Apple Container gives
+  every container its own VM, and until now each one got the runtime's built-in
+  4 CPUs and 1 GiB. The values travel as Docker's `HostConfig.Memory` and
+  `HostConfig.NanoCpus`. Fractional CPUs are deliberately not offered: the
+  bridge floors them to whole vCPUs, so 0.5 would silently become 1. `cstack`
+  keeps its previous behaviour and passes no limits.
+
+### Fixed
+
+- Stopping a container no longer hangs on "Stopping…" indefinitely. Measured
+  cause: Apple Container's API server had lost its XPC service, so both stop and
+  kill answered HTTP 500 "XPC connection error: Connection interrupted" and
+  every later ping answered "Connection invalid", while the app waited out the
+  full lifecycle timeout. Stop now pins the daemon's grace window at five
+  seconds, bounds its own wait, and treats 304 and 404 as the requested end
+  state rather than a failure.
+- A lost connection is repaired once instead of repeatedly. The health monitor
+  is the only owner of restarts and first proves the API server is really gone
+  with `container system status`, so a single transient ping timeout can no
+  longer cycle a stack that is serving traffic. A recovery that fails ends the
+  startup window, so the manual restart stays available instead of the sidebar
+  sitting in a starting state with nothing to click.
+
+### Known limitations
+
+Published ports still require a runtime restart if a bridge-created network's
+vmnet helper dies; restarting only the containers does not repair the host route.
+The per-container micro-VM architecture also remains slower than OrbStack on the
+measured M1 system (4.6x container round trip, 3.6x bind-mount writes).
+
 ## [0.4.2](https://github.com/bshk-app/ContainerStack/compare/v0.4.1...v0.4.2) (2026-08-26)
 
 ContainerStack now owns a Docker socket separate from a standalone Socktainer

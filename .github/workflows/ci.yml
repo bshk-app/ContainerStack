@@ -55,6 +55,19 @@ jobs:
           brew install swiftlint
           swiftlint lint --quiet --strict
 
+      # The shell that ships on macOS is bash 3.2, and it is stricter than any
+      # newer one: it tracks quotes through comments inside a command
+      # substitution, so an apostrophe there stops the parser. `#!/usr/bin/env
+      # bash` finds 5.x wherever Homebrew bash exists, and the ubuntu runner has
+      # no 3.2 at all, so this sweep has to run here and name /bin/bash.
+      - name: Parse every shell script under the shell macOS ships
+        run: |
+          /bin/bash -c 'echo "bash ${BASH_VERSION}"'
+          for f in scripts/*.sh scripts/hooks/*.sh .githooks/*; do
+            [ -f "$f" ] || continue
+            /bin/bash -n "$f"
+          done
+
   scripts:
     # The release path itself cannot run here, but its scripts are where this
     # repo has actually broken: a stale copy published to the wrong store, and a
@@ -63,14 +76,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Parse every script
-        run: |
-          for f in scripts/*.sh; do bash -n "$f"; done
-
-      # Style-only findings (SC2155 and friends) are excluded on purpose; this
-      # gate is for genuine breakage, so it stays green until something is wrong.
+      # Hook scripts and .githooks are the files most recently broken, and
+      # `scripts/*.sh` matched neither. The list is built rather than globbed
+      # straight into the command: an unmatched glob would reach shellcheck as a
+      # literal and fail the job, and a future README or directory under
+      # .githooks is not shell.
       - name: Shellcheck
-        run: shellcheck --severity=error scripts/*.sh
+        run: |
+          files=""
+          for f in scripts/*.sh scripts/hooks/*.sh .githooks/*; do
+            [ -f "$f" ] || continue
+            case "$f" in
+              *.sh) ;;
+              *) head -1 "$f" | grep -q '^#!.*\(ba\)\?sh' || continue ;;
+            esac
+            files="$files $f"
+          done
+          [ -n "$files" ] || { echo "no shell files found - the globs are wrong"; exit 1; }
+          echo "shellcheck over:$files"
+          # shellcheck disable=SC2086 # the list is built from a controlled glob
+          shellcheck --severity=error $files
 
       # An invalid workflow file is not a parse error YAML can see: putting the
       # `runner` context in a job-level `env:` produced a run whose only symptom

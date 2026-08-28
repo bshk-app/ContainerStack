@@ -40,7 +40,10 @@ done
 status=0
 
 if command -v swift >/dev/null 2>&1; then
-    if ! (cd "$snapshot" && swift format lint --strict "$@"); then
+    # The snapshot lives outside the repository, so the configuration has to be
+    # named: without it swift-format falls back to its own defaults (2 spaces,
+    # 100 columns) and rejects files that match this repository's policy.
+    if ! (cd "$snapshot" && swift format lint --strict --configuration "$ROOT/.swift-format" "$@"); then
         printf 'pre-commit: run `task format`, then stage the result\n' >&2
         status=1
     fi

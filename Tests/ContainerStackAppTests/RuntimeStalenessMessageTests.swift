@@ -267,6 +267,40 @@ struct RuntimeStalenessMessageTests {
         #expect(model.canRestartRuntime)
     }
 
+    /// #39: the manual restart had no equivalent of the automatic path's cleanup, so a restart the
+    /// user asked for could fail and leave the dead runtime's containers on screen indefinitely.
+    @Test("A failed manual restart clears the dead runtime's inventory")
+    func failedManualRestartClearsInventory() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        model.containers = try JSONDecoder().decode(
+            [DockerContainerSummary].self,
+            from: Data(#"[{"Id":"web","State":"running"}]"#.utf8)
+        )
+
+        let recovered = await model.completeRuntimeRestart(waitForSocket: { false })
+
+        #expect(recovered == false)
+        #expect(model.containers.isEmpty)
+    }
+
+    /// The poll cannot repair it afterwards: `failRuntime` already published the offline state, so
+    /// the probe's `!responds, wasHealthy` clearing branch never fires on the next tick.
+    @Test("Declaring the runtime failed drops the inventory it described")
+    func failRuntimeClearsInventory() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        model.containers = try JSONDecoder().decode(
+            [DockerContainerSummary].self,
+            from: Data(#"[{"Id":"web","State":"running"}]"#.utf8)
+        )
+
+        model.failRuntime("Restart failed at Stopping Docker bridge…: boom")
+
+        #expect(model.containers.isEmpty)
+        #expect(model.runtimeFailure != nil)
+    }
+
     /// The wiring, not the classifier: this hook was silently lost once when `toggle` was
     /// reconciled with `withContainer`, and nothing else holds it in place.
     @Test("A stop that loses the XPC connection asks the monitor to check the runtime")

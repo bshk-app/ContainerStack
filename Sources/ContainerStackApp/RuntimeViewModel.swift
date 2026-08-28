@@ -479,10 +479,15 @@ final class RuntimeViewModel {
         }
     }
 
+    /// Declaring the runtime failed is also declaring its inventory stale: every caller here has
+    /// established the socket is gone, so the containers, images and volumes last read describe a
+    /// runtime that no longer exists. The poll cannot clean up afterwards — `applyState` below
+    /// publishes the offline state, so the probe's `!responds, wasHealthy` branch never fires (#39).
     func failRuntime(_ reason: String) {
         runtimeFailure = reason
         runtimeMessage = reason
         errorMessage = reason
+        clearInventory()
         applyState(socketResponds: false)
     }
 

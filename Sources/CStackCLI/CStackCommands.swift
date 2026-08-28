@@ -46,22 +46,29 @@ extension CStackCLI {
             return
         }
 
-        let subnets = try await client.listNetworks().compactMap(\.subnet)
-        let routes = CommandShell.output(
-            executablePath: "/usr/sbin/netstat",
-            arguments: ["-rn", "-f", "inet"]
-        )
-        let unreachable = NetworkRouteHealth.unreachableSubnets(subnets: subnets, routes: routes)
-        if unreachable.isEmpty {
-            print("Container routes: reachable (\(subnets.joined(separator: ", ")))")
+        // Only networks a running container publishes on can break a published port. Judging every
+        // network condemned the runtime for an idle `default` nobody was using (#36).
+        let networks = try await client.listNetworks()
+        let publishing = NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks)
+        if publishing.isEmpty {
+            print("Container routes: no running container publishes ports")
         } else {
-            print("Container routes: NO ROUTE to \(unreachable.joined(separator: ", "))")
-            // The ports do not refuse — they accept and then nothing answers, which is why this
-            // gets mistaken for an application bug. The container restart that looks like the
-            // cheaper repair was measured failing on every network this bridge creates; the runtime
-            // restart recovered the same case in 17s and kept the container addresses.
-            print("Published ports accept connections and then hang.")
-            print("Restarting the containers does not fix it. Run: cstack runtime restart")
+            let routes = CommandShell.output(
+                executablePath: "/usr/sbin/netstat",
+                arguments: ["-rn", "-f", "inet"]
+            )
+            let unroutable = NetworkRouteHealth.unroutableNetworks(publishing, routes: routes)
+            if unroutable.isEmpty {
+                print("Container routes: reachable (\(publishing.map(\.label).joined(separator: ", ")))")
+            } else {
+                print("Container routes: NO ROUTE to \(unroutable.map(\.label).joined(separator: ", "))")
+                // The ports do not refuse — they accept and then nothing answers, which is why this
+                // gets mistaken for an application bug. The container restart that looks like the
+                // cheaper repair was measured failing on every network this bridge creates; the runtime
+                // restart recovered the same case in 17s and kept the container addresses.
+                print("Published ports accept connections and then hang.")
+                print("Restarting the containers does not fix it. Run: cstack runtime restart")
+            }
         }
 
         await reportMemoryCommitment(client, running: containers.filter(\.isRunning))

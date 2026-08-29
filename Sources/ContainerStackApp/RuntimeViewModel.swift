@@ -302,6 +302,7 @@ final class RuntimeViewModel {
     }
 
     private func probeRuntime() async {
+        let epoch = inventoryEpoch
         let responds: Bool
         let probeError: Error?
         do {
@@ -339,6 +340,8 @@ final class RuntimeViewModel {
         }
 
         if responds, !wasHealthy {
+            // `responds` predates the system-status await above, so the same staleness applies here.
+            guard inventoryEpochIsCurrent(epoch) else { return }
             applyState(socketResponds: true)
             await adoptBridgeIfStale()
             await refresh()
@@ -354,10 +357,15 @@ final class RuntimeViewModel {
             // refresh — images, volumes and disk usage feed neither.
             await refreshContainers()
             await refreshNetworks()
+            let unroutable = await unroutablePublishingNetworks()
+            let missingAppRoot = await throttledMissingAppRoot()
+            // `responds` was read before all of those awaits. If the runtime has been declared dead
+            // since, publishing it as responding puts a healthy verdict over the offline state (#43).
+            guard inventoryEpochIsCurrent(epoch) else { return }
             applyState(
                 socketResponds: true,
-                unroutableNetworks: await unroutablePublishingNetworks(),
-                missingAppRoot: await throttledMissingAppRoot(),
+                unroutableNetworks: unroutable,
+                missingAppRoot: missingAppRoot,
                 foreignBridge: throttledForeignBridge()
             )
         } else {
@@ -531,9 +539,14 @@ final class RuntimeViewModel {
             runtimeFailure = nil
             // Supplied here as well as in the poll: a full refresh that left it out would clear the
             // banner it had just raised and put it back on the next tick.
+            let missingAppRoot = await freshMissingAppRoot()
+            // Re-checked, because the line above is another await: publishing `socketResponds: true`
+            // after the runtime died would overwrite the offline state with a healthy verdict, which
+            // is worse than stale rows and equally permanent.
+            guard inventoryEpochIsCurrent(epoch) else { return }
             applyState(
                 socketResponds: true,
-                missingAppRoot: await freshMissingAppRoot(),
+                missingAppRoot: missingAppRoot,
                 foreignBridge: freshForeignBridge()
             )
             await refreshImages()

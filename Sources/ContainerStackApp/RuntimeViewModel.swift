@@ -248,7 +248,11 @@ final class RuntimeViewModel {
     }
 
     private func startRuntimeIfSocketIsDown() async {
+        let epoch = inventoryEpoch
         if await socketResponds() {
+            // The ping's own await is the window: if the runtime was declared dead while it was in
+            // flight, adopting the socket now would publish healthy over that failure (#43).
+            guard inventoryEpochIsCurrent(epoch) else { return }
             runtimeFailure = nil
             runtimeMessage = "Adopted the Docker socket already serving this machine."
             isStarting = false
@@ -462,6 +466,10 @@ final class RuntimeViewModel {
         // Derived from containers, so it goes with them: leaving it behind kept running-project rows
         // on the Stacks screen after the runtime stopped, pointing at containers that are gone.
         discoveredProjects = []
+        // Same reasoning one level up: a registered stack's status describes containers that are now
+        // gone, so the Stacks screen would keep showing Running for a runtime that is not there.
+        // `stackModels` stays — it is read from compose files, not from the runtime.
+        stackStatuses.removeAll()
     }
 
     /// Whether an inventory read started under `epoch` may still be published.
@@ -574,6 +582,7 @@ final class RuntimeViewModel {
     }
 
     private func waitForRuntime() async {
+        let epoch = inventoryEpoch
         defer {
             isStarting = false
             applyState(socketResponds: runtimeState.isHealthy)
@@ -584,6 +593,7 @@ final class RuntimeViewModel {
             guard !Task.isCancelled else { return }
 
             if await socketResponds() {
+                guard inventoryEpochIsCurrent(epoch) else { return }
                 runtimeFailure = nil
                 runtimeMessage = "Runtime ready."
                 applyState(socketResponds: true)

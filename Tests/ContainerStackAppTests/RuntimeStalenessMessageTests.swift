@@ -301,6 +301,20 @@ struct RuntimeStalenessMessageTests {
         #expect(model.runtimeFailure != nil)
     }
 
+    /// Stack rows are built from `stackStatuses`, which describes live containers, so a dead runtime
+    /// left registered stacks reading Running. `stackModels` is read from compose files and stays.
+    @Test("A failed runtime stops its stacks reporting Running")
+    func failRuntimeClearsStackStatuses() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        let stackID = UUID()
+        model.stackStatuses[stackID] = []
+
+        model.failRuntime("Runtime helper exited.")
+
+        #expect(model.stackStatuses.isEmpty)
+    }
+
     /// #43: clearing is not durable on its own. A refresh suspended at its await when the runtime
     /// failed used to resume and write the dead runtime's rows back over the cleared state, and
     /// nothing cleaned up after — the model was offline by then, so the poll's clearing branch

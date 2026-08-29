@@ -393,7 +393,11 @@ public actor DockerAPIClient {
 
         var isRunning = false
         do {
-            _ = try await request(method: "POST", path: "/containers/\(createResponse.id)/start")
+            _ = try await request(
+                method: "POST",
+                path: "/containers/\(createResponse.id)/start",
+                timeout: Self.lifecycleRequestTimeout
+            )
             isRunning = true
             let waitResponse = try await request(
                 method: "POST",
@@ -413,7 +417,8 @@ public actor DockerAPIClient {
             let output = Self.decodeLogs(logs.body)
             _ = try await request(
                 method: "DELETE",
-                path: "/containers/\(createResponse.id)?force=1"
+                path: "/containers/\(createResponse.id)?force=1",
+                timeout: Self.lifecycleRequestTimeout
             )
             return DockerRunResult(
                 containerID: createResponse.id,

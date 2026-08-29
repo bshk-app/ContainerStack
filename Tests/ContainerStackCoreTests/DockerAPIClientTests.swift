@@ -181,7 +181,14 @@ struct DockerAPIClientTests {
                 "/containers/container-123?force=1",
             ])
         #expect(await transport.requests[0].contains("\"Image\":\"hello-world:latest\""))
-        #expect(await transport.timeouts == [.seconds(5), .seconds(5), nil, nil, .seconds(5)])
+        #expect(
+            await transport.timeouts == [
+                .seconds(5),
+                DockerAPIClient.lifecycleRequestTimeout,
+                nil,
+                nil,
+                DockerAPIClient.lifecycleRequestTimeout,
+            ])
     }
 
     @Test
@@ -234,7 +241,12 @@ struct DockerAPIClientTests {
                 "/containers/container-running/start",
                 "/containers/container-running/wait",
             ])
-        #expect(await transport.timeouts == [.seconds(5), .seconds(5), nil])
+        #expect(
+            await transport.timeouts == [
+                .seconds(5),
+                DockerAPIClient.lifecycleRequestTimeout,
+                nil,
+            ])
     }
 
 }

@@ -70,6 +70,13 @@ public enum NetworkRouteHealth {
         networks.filter { !hasRoute(to: $0.subnet, in: routes) }
     }
 
+    /// `CommandShell.output` / `RuntimeShell.output` return `""` when netstat fails or times
+    /// out. That is "could not ask", not an empty routing table: judging it as no-route
+    /// prescribes `cstack runtime restart` for a check that never ran.
+    public static func canJudgeRoutes(_ routes: String) -> Bool {
+        !routes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// `192.168.64.0/24` -> `192.168.64`, matching how netstat truncates trailing zero octets.
     private static func routePrefix(for subnet: String) -> String? {
         let address = subnet.split(separator: "/").first.map(String.init) ?? subnet

@@ -57,17 +57,21 @@ extension CStackCLI {
                 executablePath: "/usr/sbin/netstat",
                 arguments: ["-rn", "-f", "inet"]
             )
-            let unroutable = NetworkRouteHealth.unroutableNetworks(publishing, routes: routes)
-            if unroutable.isEmpty {
-                print("Container routes: reachable (\(publishing.map(\.label).joined(separator: ", ")))")
+            if !NetworkRouteHealth.canJudgeRoutes(routes) {
+                print("Container routes: could not read the routing table")
             } else {
-                print("Container routes: NO ROUTE to \(unroutable.map(\.label).joined(separator: ", "))")
-                // The ports do not refuse — they accept and then nothing answers, which is why this
-                // gets mistaken for an application bug. The container restart that looks like the
-                // cheaper repair was measured failing on every network this bridge creates; the runtime
-                // restart recovered the same case in 17s and kept the container addresses.
-                print("Published ports accept connections and then hang.")
-                print("Restarting the containers does not fix it. Run: cstack runtime restart")
+                let unroutable = NetworkRouteHealth.unroutableNetworks(publishing, routes: routes)
+                if unroutable.isEmpty {
+                    print("Container routes: reachable (\(publishing.map(\.label).joined(separator: ", ")))")
+                } else {
+                    print("Container routes: NO ROUTE to \(unroutable.map(\.label).joined(separator: ", "))")
+                    // The ports do not refuse — they accept and then nothing answers, which is why this
+                    // gets mistaken for an application bug. The container restart that looks like the
+                    // cheaper repair was measured failing on every network this bridge creates; the runtime
+                    // restart recovered the same case in 17s and kept the container addresses.
+                    print("Published ports accept connections and then hang.")
+                    print("Restarting the containers does not fix it. Run: cstack runtime restart")
+                }
             }
         }
 

@@ -37,6 +37,20 @@ struct NetworkRouteHealthTests {
         #expect(NetworkRouteHealth.hasRoute(to: "192.168.99.0/24", in: routes) == false)
     }
 
+    @Test
+    func emptyRoutingTableCannotBeJudged() {
+        #expect(NetworkRouteHealth.canJudgeRoutes("") == false)
+        #expect(NetworkRouteHealth.canJudgeRoutes("   \n") == false)
+        #expect(NetworkRouteHealth.canJudgeRoutes(routes))
+        #expect(
+            NetworkRouteHealth.unroutableNetworks(
+                [UnroutableNetwork(networkName: "default", subnet: "192.168.64.0/24")],
+                routes: ""
+            ).map(\.networkName) == ["default"],
+            "callers must consult canJudgeRoutes before treating this as NO ROUTE"
+        )
+    }
+
     /// A network whose containers are all stopped has no host attachment yet; only networks with
     /// running containers are expected to be routable.
     @Test

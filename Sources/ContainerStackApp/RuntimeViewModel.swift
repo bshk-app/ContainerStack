@@ -42,6 +42,8 @@ final class RuntimeViewModel {
     internal(set) var volumes: [DockerVolumeSummary] = []
     internal(set) var networks: [DockerNetworkSummary] = []
     internal(set) var diskUsage: DockerDiskUsage?
+    /// Bumped whenever the inventory is cleared, so a read in flight can tell it was superseded.
+    private(set) var inventoryEpoch = 0
     internal(set) var logs: String?
     internal(set) var logsContainerName: String?
     internal(set) var busyResource: String?
@@ -442,6 +444,7 @@ final class RuntimeViewModel {
     }
 
     private func clearInventory() {
+        inventoryEpoch &+= 1
         snapshot = nil
         images = []
         containers = []
@@ -451,6 +454,16 @@ final class RuntimeViewModel {
         // Derived from containers, so it goes with them: leaving it behind kept running-project rows
         // on the Stacks screen after the runtime stopped, pointing at containers that are gone.
         discoveredProjects = []
+    }
+
+    /// Whether an inventory read started under `epoch` may still be published.
+    ///
+    /// Every refresh reads across an await, so the runtime can fail and the inventory be cleared
+    /// while the call is in flight. Writing the result back then resurrects rows describing a dead
+    /// runtime, and nothing cleans up after: the model is already offline, so the poll's
+    /// `!responds, wasHealthy` branch never fires again (#43).
+    func inventoryEpochIsCurrent(_ epoch: Int) -> Bool {
+        epoch == inventoryEpoch
     }
 
     private func socketResponds() async -> Bool {
@@ -505,11 +518,16 @@ final class RuntimeViewModel {
     }
 
     func refresh(health: () async throws -> RuntimeHealthSnapshot) async {
+        let epoch = inventoryEpoch
         isLoading = true
         defer { isLoading = false }
 
         do {
-            snapshot = try await health()
+            let fetched = try await health()
+            // The runtime can die while health is in flight. Publishing then would put a healthy
+            // state and a fresh snapshot back over the cleared inventory, which nothing undoes.
+            guard inventoryEpochIsCurrent(epoch) else { return }
+            snapshot = fetched
             runtimeFailure = nil
             // Supplied here as well as in the poll: a full refresh that left it out would clear the
             // banner it had just raised and put it back on the next tick.

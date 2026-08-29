@@ -42,8 +42,11 @@ extension RuntimeViewModel {
     }
 
     func refreshVolumes() async {
+        let epoch = inventoryEpoch
         do {
-            volumes = try await client.listVolumes()
+            let fetched = try await client.listVolumes()
+            guard inventoryEpochIsCurrent(epoch) else { return }
+            volumes = fetched
             volumesErrorMessage = nil
         } catch {
             volumesErrorMessage = "Volumes could not be listed: \(error)"
@@ -51,8 +54,11 @@ extension RuntimeViewModel {
     }
 
     func refreshNetworks() async {
+        let epoch = inventoryEpoch
         do {
-            networks = try await client.listNetworks()
+            let fetched = try await client.listNetworks()
+            guard inventoryEpochIsCurrent(epoch) else { return }
+            networks = fetched
             networksErrorMessage = nil
         } catch {
             networksErrorMessage = "Networks could not be listed: \(error)"
@@ -60,7 +66,10 @@ extension RuntimeViewModel {
     }
 
     func refreshDiskUsage() async {
-        diskUsage = try? await client.diskUsage()
+        let epoch = inventoryEpoch
+        let usage = try? await client.diskUsage()
+        guard inventoryEpochIsCurrent(epoch) else { return }
+        diskUsage = usage
     }
 
     func restart(container: DockerContainerSummary) async {

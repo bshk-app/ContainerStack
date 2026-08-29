@@ -50,9 +50,11 @@ extension CStackCLI {
         // network condemned the runtime for an idle `default` nobody was using (#36).
         let networks = try await client.listNetworks()
         let publishing = NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks)
-        if publishing.isEmpty {
+        // Silence has two causes and they call for opposite reactions, so they are never merged (#45).
+        let uncheckable = NetworkRouteHealth.uncheckablePublishingNetworks(containers: containers, networks: networks)
+        if publishing.isEmpty, uncheckable.isEmpty {
             print("Container routes: no running container publishes ports")
-        } else {
+        } else if !publishing.isEmpty {
             let routes = CommandShell.output(
                 executablePath: "/usr/sbin/netstat",
                 arguments: ["-rn", "-f", "inet"]
@@ -69,6 +71,10 @@ extension CStackCLI {
                 print("Published ports accept connections and then hang.")
                 print("Restarting the containers does not fix it. Run: cstack runtime restart")
             }
+        }
+
+        if !uncheckable.isEmpty {
+            print("Container routes: cannot check \(uncheckable.joined(separator: ", ")) — no subnet reported")
         }
 
         await reportMemoryCommitment(client, running: containers.filter(\.isRunning))

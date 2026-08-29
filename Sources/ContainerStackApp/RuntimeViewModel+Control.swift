@@ -144,6 +144,17 @@ extension RuntimeViewModel {
         switch step {
         case .stopBridge(let executablePath):
             await Task.detached { RuntimeShell.terminate(executablePath: executablePath) }.value
+        case .stopContainers(let executablePath, let graceSeconds):
+            // `try?`, not `try`: `restartRuntime` abandons the sequence on a throw, and this step
+            // throws exactly when the runtime is wedged — which is when the steps after it are the
+            // ones that repair it. A container that will not exit must not cost the user the fix.
+            try? await Task.detached {
+                try RuntimeShell.run(
+                    executablePath: executablePath,
+                    arguments: RuntimeControlStep.stopContainersArguments(graceSeconds: graceSeconds),
+                    timeout: .seconds(graceSeconds + 10)
+                )
+            }.value
         case .run(let executablePath, let arguments):
             try await Task.detached {
                 try RuntimeShell.run(executablePath: executablePath, arguments: arguments)
@@ -163,6 +174,7 @@ extension RuntimeViewModel {
     private func message(for step: RuntimeControlStep) -> String {
         switch step {
         case .stopBridge: "Stopping Docker bridge…"
+        case .stopContainers: "Asking containers to exit…"
         case .run(_, let arguments) where arguments.contains("stop"): "Stopping Apple Container…"
         case .run: "Starting Apple Container…"
         case .startBridge: "Starting Docker bridge…"
@@ -173,15 +185,22 @@ extension RuntimeViewModel {
 
 /// Process plumbing kept out of the view model so the decision logic stays testable.
 enum RuntimeShell {
-    /// `container system start`/`stop` boots or tears down a micro-VM, so this takes the
+    /// `container system start`/`stop` boots or tears down a micro-VM, so this defaults to the
     /// lifecycle deadline. Bounded either way: on the old unbounded wait a wedged runtime left
     /// `runtimeProcess?.isRunning` true forever, which made every later Start click a silent
     /// no-op and could strand Restart with `isRestarting` stuck true.
-    static func run(executablePath: String, arguments: [String]) throws {
+    ///
+    /// The graceful container stop overrides it: that call carries its own `--time` budget, so the
+    /// lifecycle deadline would only add two minutes to a recovery already known to be needed.
+    static func run(
+        executablePath: String,
+        arguments: [String],
+        timeout: Duration = ProcessRunner.lifecycleTimeout
+    ) throws {
         _ = try ProcessRunner.run(
             executablePath: executablePath,
             arguments: arguments,
-            timeout: ProcessRunner.lifecycleTimeout
+            timeout: timeout
         )
     }
 

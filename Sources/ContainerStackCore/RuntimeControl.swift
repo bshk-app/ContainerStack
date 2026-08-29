@@ -114,21 +114,48 @@ public enum LegacySocktainerRetirement {
 
 public enum RuntimeControlStep: Equatable, Sendable {
     case stopBridge(executablePath: String)
+    /// Ask every running container to exit before the service under it is stopped.
+    ///
+    /// A case of its own rather than a `.run`, because it is the one step in the sequence that is
+    /// **advisory**: it must never abort the restart. The situation this whole plan exists to repair
+    /// is a wedged Apple Container, and a stop is precisely the call measured hanging when the
+    /// daemon has lost its XPC service. Executed as a plain `.run` it would time out, throw, and
+    /// take `system stop` — the step that actually clears the wedge — down with it.
+    case stopContainers(executablePath: String, graceSeconds: Int)
     case run(executablePath: String, arguments: [String])
     case startBridge
     case kickstartAgent(label: String)
+
+    /// The command behind `stopContainers`, kept here so both executors spell it the same way.
+    public static func stopContainersArguments(graceSeconds: Int) -> [String] {
+        ["stop", "--all", "--time", String(graceSeconds)]
+    }
 }
 
 /// Recovering a wedged runtime needs the same sequence regardless of who started it: drop the
-/// bridge, cycle Apple Container so its vmnet attachment is rebuilt, then bring the bridge back.
+/// bridge, ask the containers to exit, cycle Apple Container so its vmnet attachment is rebuilt,
+/// then bring the bridge back.
 public enum RuntimeRestartPlan {
     public static let agentLabel = "com.containerstack.runtime"
+
+    /// Matches the five seconds `DockerAPIClient.stopContainer` already gives a guest (`?t=5`), so a
+    /// container sees the same grace period whichever path stops it.
+    public static let gracefulStopSeconds = 5
 
     public static func steps(
         configuration: RuntimeProcessConfiguration,
         agentRegistered: Bool
     ) -> [RuntimeControlStep] {
         stopSteps(configuration: configuration) + [
+            // `container system stop` stops the services, and the running guests go down with them
+            // without being asked to exit. Anything holding a filesystem open across that loses the
+            // writes it had not flushed: recovering a wedged network this way once left postgres
+            // reporting `database system was not properly shut down` and an ext4 that needed
+            // `e2fsck` before it would mount.
+            .stopContainers(
+                executablePath: configuration.containerPath,
+                graceSeconds: gracefulStopSeconds
+            ),
             .run(executablePath: configuration.containerPath, arguments: ["system", "stop"]),
             .run(executablePath: configuration.containerPath, arguments: configuration.containerStartArguments),
             agentRegistered ? .kickstartAgent(label: agentLabel) : .startBridge,

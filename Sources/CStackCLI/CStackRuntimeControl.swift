@@ -4,15 +4,22 @@ import Foundation
 
 /// Minimal process plumbing for the CLI. The decisions live in `RuntimeRestartPlan`.
 enum CommandShell {
-    /// Backs `container system start`/`stop` and `launchctl kickstart`, so the deadline is the
-    /// lifecycle one. Output stays inherited: the person ran the command and wants to see it.
+    /// Backs `container system start`/`stop` and `launchctl kickstart`, so the deadline defaults to
+    /// the lifecycle one. Output stays inherited: the person ran the command and wants to see it.
+    ///
+    /// The graceful container stop passes a shorter deadline: it carries its own `--time` budget, so
+    /// waiting two minutes past it only delays a recovery that is already overdue.
     @discardableResult
-    static func run(executablePath: String, arguments: [String]) throws -> Int32 {
+    static func run(
+        executablePath: String,
+        arguments: [String],
+        timeout: Duration = ProcessRunner.lifecycleTimeout
+    ) throws -> Int32 {
         try ProcessRunner.run(
             executablePath: executablePath,
             arguments: arguments,
             output: .inherit,
-            timeout: ProcessRunner.lifecycleTimeout
+            timeout: timeout
         ).status
     }
 
@@ -91,6 +98,16 @@ extension CStackCLI {
             case .stopBridge(let executablePath):
                 let stopped = CommandShell.terminate(executablePath: executablePath)
                 print("Stopped \(stopped) bridge process(es)")
+            case .stopContainers(let executablePath, let graceSeconds):
+                // Advisory on purpose, and so deliberately absent from `failed`: an idle machine has
+                // nothing to stop, and a wedged daemon cannot answer. Neither means the restart
+                // failed, and neither may stop the sequence reaching `system stop`.
+                print("Asking containers to exit (\(graceSeconds)s grace)")
+                _ = try? CommandShell.run(
+                    executablePath: executablePath,
+                    arguments: RuntimeControlStep.stopContainersArguments(graceSeconds: graceSeconds),
+                    timeout: .seconds(graceSeconds + 10)
+                )
             case .run(let executablePath, let arguments):
                 let description = "\(executablePath) \(arguments.joined(separator: " "))"
                 print("Running \(description)")

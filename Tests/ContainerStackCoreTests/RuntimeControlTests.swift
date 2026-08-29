@@ -160,6 +160,7 @@ struct RuntimeRestartPlanTests {
         #expect(
             steps == [
                 .stopBridge(executablePath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer"),
+                .stopContainers(executablePath: "/usr/local/bin/container", graceSeconds: 5),
                 .run(executablePath: "/usr/local/bin/container", arguments: ["system", "stop"]),
                 .run(executablePath: "/usr/local/bin/container", arguments: ["system", "start"]),
                 .startBridge,
@@ -174,6 +175,24 @@ struct RuntimeRestartPlanTests {
         #expect(
             steps.contains(
                 .run(executablePath: "/usr/local/bin/container", arguments: ["system", "stop"])))
+    }
+
+    /// `container system stop` takes the whole service down, and the containers with it. Asking them
+    /// to exit first is what keeps a database's volume consistent: a restart run to recover a wedged
+    /// network once left postgres with an unreplayable WAL and an ext4 that needed `e2fsck`.
+    @Test
+    func restartAsksContainersToExitBeforeStoppingTheService() {
+        let steps = RuntimeRestartPlan.steps(configuration: configuration, agentRegistered: false)
+
+        let gracefulStop = steps.firstIndex(
+            of: .stopContainers(executablePath: "/usr/local/bin/container", graceSeconds: 5))
+        let serviceStop = steps.firstIndex(
+            of: .run(executablePath: "/usr/local/bin/container", arguments: ["system", "stop"]))
+
+        #expect(gracefulStop != nil)
+        #expect(serviceStop != nil)
+        guard let gracefulStop, let serviceStop else { return }
+        #expect(gracefulStop < serviceStop)
     }
 
     @Test

@@ -62,7 +62,10 @@ public enum NetworkRouteHealth {
 
         return networks.compactMap { network in
             guard inUse.contains(network.name) else { return nil }
-            return network.subnet.map { UnroutableNetwork(networkName: network.name, subnet: $0) }
+            // An empty subnet is as uncheckable as a missing one: `hasRoute(to: "")` matches nothing
+            // and would report a route failure the runtime never had.
+            guard let subnet = network.subnet, !subnet.isEmpty else { return nil }
+            return UnroutableNetwork(networkName: network.name, subnet: subnet)
         }
     }
 

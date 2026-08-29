@@ -140,6 +140,27 @@ struct NetworkRouteHealthTests {
     /// #45: an empty candidate set is not proof that nothing publishes. A network the runtime
     /// reports without a subnet is dropped silently, so doctor would call it "no publishers".
     @Test
+    func treatsAnEmptySubnetAsUncheckableRatherThanUnroutable() throws {
+        let containers = [
+            try container(
+                id: "web",
+                state: "running",
+                ports: [["PublicPort": 8080, "PrivatePort": 80]],
+                networks: ["apps_default"]
+            )
+        ]
+        let networks = [try network(name: "apps_default", subnet: "")]
+
+        // Without this, the empty subnet becomes a candidate, `hasRoute(to: "")` fails, and doctor
+        // reports NO ROUTE for a network it never actually checked.
+        #expect(NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks).isEmpty)
+        #expect(
+            NetworkRouteHealth.uncheckablePublishingNetworks(containers: containers, networks: networks)
+                == ["apps_default"]
+        )
+    }
+
+    @Test
     func namesAPublishingNetworkThatReportsNoSubnet() throws {
         let containers = [
             try container(

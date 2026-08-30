@@ -51,6 +51,13 @@ tasks:
   lint:
     desc: Formatting and lint gates, exactly as CI runs them
     cmds:
+      # "Exactly as CI runs them" is only true at the same SwiftLint version: a rule
+      # added upstream is a clean local run and a red CI. Says so rather than
+      # failing, because an older SwiftLint still checks almost everything.
+      - |
+        pinned="$(tr -d '[:space:]' < .swiftlint-version)"
+        actual="$(swiftlint version)"
+        [ "$pinned" = "$actual" ] || printf 'warning: swiftlint %s here, CI pins %s\n' "$actual" "$pinned" >&2
       - swift format lint --strict -r -p Sources Tests
       - swiftlint lint --quiet --strict
 

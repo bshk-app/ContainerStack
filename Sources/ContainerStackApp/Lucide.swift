@@ -45,7 +45,7 @@ struct LucideIcon: View {
         Image(nsImage: icon.templateImage)
             .renderingMode(.template)
             .resizable()
-            .aspectRatio(contentMode: .fit)
+            .scaledToFit()
     }
 }
 

@@ -22,24 +22,41 @@ ROOT="$(git rev-parse --show-toplevel)"
 readonly ROOT
 readonly CONFIG="$ROOT/.swiftlint-comments.yml"
 
+# What "added" is measured against. The hook wants the working tree, so HEAD is the
+# default; CI has nothing uncommitted and must compare the branch against its base
+# instead, or the gate inspects an empty diff and passes without checking anything.
+# The merge base, not the ref itself: commits that landed on the base after this
+# branch started did not add these lines.
+DIFF_BASE="${COMMENT_BLOCK_DIFF_BASE:-HEAD}"
+if [[ "$DIFF_BASE" != "HEAD" ]]; then
+    DIFF_BASE="$(git merge-base "$DIFF_BASE" HEAD)" || {
+        printf 'check-new-comment-blocks: no merge base with %s\n' "$COMMENT_BLOCK_DIFF_BASE" >&2
+        exit 1
+    }
+fi
+readonly DIFF_BASE
+
 usage() {
     cat >&2 <<'EOF'
 usage: check-new-comment-blocks.sh [FILE...]
 
-  no arguments   every Swift file this tree touched since HEAD, untracked included
+  no arguments   every Swift file this tree touched since the diff base, untracked
+                 included
   FILE...        only these files
 
 env:
   MAX_NEW_COMMENT_LINES     new lines in one block before it reports (default 8,
                             cannot go below the bound in .swiftlint-comments.yml)
   COMMENT_BLOCK_WARN_ONLY   1 reports without failing
+  COMMENT_BLOCK_DIFF_BASE   ref the added lines are measured against (default HEAD,
+                            i.e. the working tree; CI passes origin/main)
 
 exit: 0 nothing to say, 1 the gate could not run, 2 a block gained the threshold
 EOF
 }
 
 changed_files() {
-    git diff HEAD --name-only --diff-filter=ACMR -z
+    git diff "$DIFF_BASE" --name-only --diff-filter=ACMR -z
     git ls-files --others --exclude-standard -z -- 'Sources/*.swift' 'Tests/*.swift'
 }
 
@@ -52,7 +69,7 @@ changed_files() {
 # `core.quotePath=false` keeps git from C-quoting non-ASCII paths into a shape
 # the parser would read as empty.
 added_map() {
-    git -c core.quotePath=false diff HEAD -U0 --find-renames | awk '
+    git -c core.quotePath=false diff "$DIFF_BASE" -U0 --find-renames | awk '
         /^diff --git / { path = ""; in_header = 1; next }
         in_header && /^\+\+\+ / {
             in_header = 0

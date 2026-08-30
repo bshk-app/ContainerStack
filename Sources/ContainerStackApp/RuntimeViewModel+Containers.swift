@@ -62,8 +62,11 @@ extension RuntimeViewModel {
     }
 
     func refreshImages() async {
+        let epoch = inventoryEpoch
         do {
-            images = try await client.listImages()
+            let fetched = try await client.listImages()
+            guard inventoryEpochIsCurrent(epoch) else { return }
+            images = fetched
             imagesErrorMessage = nil
         } catch {
             imagesErrorMessage = "Images could not be listed: \(error)"
@@ -71,8 +74,11 @@ extension RuntimeViewModel {
     }
 
     func refreshContainers() async {
+        let epoch = inventoryEpoch
         do {
-            containers = try await client.listContainers(all: true)
+            let fetched = try await client.listContainers(all: true)
+            guard inventoryEpochIsCurrent(epoch) else { return }
+            containers = fetched
             // The Stacks list is built from these: Compose labels every container it creates with its
             // project, working directory and config files, so a project started outside the app is
             // discoverable without a registry entry.

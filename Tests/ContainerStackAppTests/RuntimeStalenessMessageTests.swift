@@ -301,6 +301,49 @@ struct RuntimeStalenessMessageTests {
         #expect(model.runtimeFailure != nil)
     }
 
+    /// Stack rows are built from `stackStatuses`, which describes live containers, so a dead runtime
+    /// left registered stacks reading Running. `stackModels` is read from compose files and stays.
+    @Test("A failed runtime stops its stacks reporting Running")
+    func failRuntimeClearsStackStatuses() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        let stackID = UUID()
+        model.stackStatuses[stackID] = []
+
+        model.failRuntime("Runtime helper exited.")
+
+        #expect(model.stackStatuses.isEmpty)
+    }
+
+    /// #43: clearing is not durable on its own. A refresh suspended at its await when the runtime
+    /// failed used to resume and write the dead runtime's rows back over the cleared state, and
+    /// nothing cleaned up after — the model was offline by then, so the poll's clearing branch
+    /// never fired again.
+    @Test("A refresh in flight when the runtime failed does not write its rows back")
+    func inFlightRefreshDoesNotResurrectInventory() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        model.containers = try JSONDecoder().decode(
+            [DockerContainerSummary].self,
+            from: Data(#"[{"Id":"web","State":"running"}]"#.utf8)
+        )
+        let healthy = RuntimeHealthSnapshot(
+            pingOK: true,
+            version: try JSONDecoder().decode(DockerVersion.self, from: Data("{}".utf8)),
+            info: try JSONDecoder().decode(DockerInfo.self, from: Data("{}".utf8))
+        )
+
+        await model.refresh(health: {
+            // The runtime dies while this call is in flight, which is the whole race.
+            model.failRuntime("Runtime helper exited.")
+            return healthy
+        })
+
+        #expect(model.containers.isEmpty)
+        #expect(model.snapshot == nil)
+        #expect(model.runtimeState.isHealthy == false)
+    }
+
     /// The wiring, not the classifier: this hook was silently lost once when `toggle` was
     /// reconciled with `withContainer`, and nothing else holds it in place.
     @Test("A stop that loses the XPC connection asks the monitor to check the runtime")

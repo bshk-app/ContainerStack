@@ -20,6 +20,7 @@ extension RuntimeViewModel {
     /// Fetches config and status for every registered stack concurrently. A single stack failing
     /// never aborts the rest: its error is folded into stackMessage so the list keeps working.
     func refreshStacks() async {
+        let epoch = inventoryEpoch
         // Registered and discovered alike: a project started from a terminal needs its config and
         // status fetched exactly like one the user added by hand.
         let listed = allStacks
@@ -95,7 +96,11 @@ extension RuntimeViewModel {
             if let error = refresh.statusError { failures.append("\(refresh.name) status: \(error)") }
         }
         stackModels = models
-        stackStatuses = statuses
+        // Models are read from compose files and stay true whatever the runtime does; statuses
+        // describe live containers, so they are the half that goes stale if it died mid-refresh (#43).
+        if inventoryEpochIsCurrent(epoch) {
+            stackStatuses = statuses
+        }
         stackMessage =
             failures.isEmpty
             ? nil
@@ -322,8 +327,11 @@ extension RuntimeViewModel {
     }
 
     private func refreshStackStatus(_ stack: ComposeStack) async {
+        let epoch = inventoryEpoch
         do {
-            stackStatuses[stack.id] = try await stackRunner.status(stack: stack)
+            let status = try await stackRunner.status(stack: stack)
+            guard inventoryEpochIsCurrent(epoch) else { return }
+            stackStatuses[stack.id] = status
         } catch {
             stackMessage = "Could not read status for \(stack.name): \(error)"
         }

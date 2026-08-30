@@ -42,6 +42,8 @@ final class RuntimeViewModel {
     internal(set) var volumes: [DockerVolumeSummary] = []
     internal(set) var networks: [DockerNetworkSummary] = []
     internal(set) var diskUsage: DockerDiskUsage?
+    /// Bumped whenever the inventory is cleared, so a read in flight can tell it was superseded.
+    private(set) var inventoryEpoch = 0
     internal(set) var logs: String?
     internal(set) var logsContainerName: String?
     internal(set) var busyResource: String?
@@ -246,7 +248,11 @@ final class RuntimeViewModel {
     }
 
     private func startRuntimeIfSocketIsDown() async {
+        let epoch = inventoryEpoch
         if await socketResponds() {
+            // The ping's own await is the window: if the runtime was declared dead while it was in
+            // flight, adopting the socket now would publish healthy over that failure (#43).
+            guard inventoryEpochIsCurrent(epoch) else { return }
             runtimeFailure = nil
             runtimeMessage = "Adopted the Docker socket already serving this machine."
             isStarting = false
@@ -300,6 +306,7 @@ final class RuntimeViewModel {
     }
 
     private func probeRuntime() async {
+        let epoch = inventoryEpoch
         let responds: Bool
         let probeError: Error?
         do {
@@ -337,6 +344,8 @@ final class RuntimeViewModel {
         }
 
         if responds, !wasHealthy {
+            // `responds` predates the system-status await above, so the same staleness applies here.
+            guard inventoryEpochIsCurrent(epoch) else { return }
             applyState(socketResponds: true)
             await adoptBridgeIfStale()
             await refresh()
@@ -352,10 +361,15 @@ final class RuntimeViewModel {
             // refresh — images, volumes and disk usage feed neither.
             await refreshContainers()
             await refreshNetworks()
+            let unroutable = await unroutablePublishingNetworks()
+            let missingAppRoot = await throttledMissingAppRoot()
+            // `responds` was read before all of those awaits. If the runtime has been declared dead
+            // since, publishing it as responding puts a healthy verdict over the offline state (#43).
+            guard inventoryEpochIsCurrent(epoch) else { return }
             applyState(
                 socketResponds: true,
-                unroutableNetworks: await unroutablePublishingNetworks(),
-                missingAppRoot: await throttledMissingAppRoot(),
+                unroutableNetworks: unroutable,
+                missingAppRoot: missingAppRoot,
                 foreignBridge: throttledForeignBridge()
             )
         } else {
@@ -442,6 +456,7 @@ final class RuntimeViewModel {
     }
 
     private func clearInventory() {
+        inventoryEpoch &+= 1
         snapshot = nil
         images = []
         containers = []
@@ -451,6 +466,20 @@ final class RuntimeViewModel {
         // Derived from containers, so it goes with them: leaving it behind kept running-project rows
         // on the Stacks screen after the runtime stopped, pointing at containers that are gone.
         discoveredProjects = []
+        // Same reasoning one level up: a registered stack's status describes containers that are now
+        // gone, so the Stacks screen would keep showing Running for a runtime that is not there.
+        // `stackModels` stays — it is read from compose files, not from the runtime.
+        stackStatuses.removeAll()
+    }
+
+    /// Whether an inventory read started under `epoch` may still be published.
+    ///
+    /// Every refresh reads across an await, so the runtime can fail and the inventory be cleared
+    /// while the call is in flight. Writing the result back then resurrects rows describing a dead
+    /// runtime, and nothing cleans up after: the model is already offline, so the poll's
+    /// `!responds, wasHealthy` branch never fires again (#43).
+    func inventoryEpochIsCurrent(_ epoch: Int) -> Bool {
+        epoch == inventoryEpoch
     }
 
     private func socketResponds() async -> Bool {
@@ -505,17 +534,27 @@ final class RuntimeViewModel {
     }
 
     func refresh(health: () async throws -> RuntimeHealthSnapshot) async {
+        let epoch = inventoryEpoch
         isLoading = true
         defer { isLoading = false }
 
         do {
-            snapshot = try await health()
+            let fetched = try await health()
+            // The runtime can die while health is in flight. Publishing then would put a healthy
+            // state and a fresh snapshot back over the cleared inventory, which nothing undoes.
+            guard inventoryEpochIsCurrent(epoch) else { return }
+            snapshot = fetched
             runtimeFailure = nil
             // Supplied here as well as in the poll: a full refresh that left it out would clear the
             // banner it had just raised and put it back on the next tick.
+            let missingAppRoot = await freshMissingAppRoot()
+            // Re-checked, because the line above is another await: publishing `socketResponds: true`
+            // after the runtime died would overwrite the offline state with a healthy verdict, which
+            // is worse than stale rows and equally permanent.
+            guard inventoryEpochIsCurrent(epoch) else { return }
             applyState(
                 socketResponds: true,
-                missingAppRoot: await freshMissingAppRoot(),
+                missingAppRoot: missingAppRoot,
                 foreignBridge: freshForeignBridge()
             )
             await refreshImages()
@@ -543,6 +582,7 @@ final class RuntimeViewModel {
     }
 
     private func waitForRuntime() async {
+        let epoch = inventoryEpoch
         defer {
             isStarting = false
             applyState(socketResponds: runtimeState.isHealthy)
@@ -553,6 +593,7 @@ final class RuntimeViewModel {
             guard !Task.isCancelled else { return }
 
             if await socketResponds() {
+                guard inventoryEpochIsCurrent(epoch) else { return }
                 runtimeFailure = nil
                 runtimeMessage = "Runtime ready."
                 applyState(socketResponds: true)

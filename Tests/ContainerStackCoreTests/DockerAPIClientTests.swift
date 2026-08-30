@@ -192,6 +192,40 @@ struct DockerAPIClientTests {
     }
 
     @Test
+    func failedRunCleanupUsesLifecycleTimeout() async {
+        let transport = StubDockerTransport(responses: [
+            httpResponse(status: 201, body: Data("{\"Id\":\"container-123\",\"Warnings\":null}".utf8)),
+            httpResponse(status: 500, body: Data("start failed".utf8)),
+            httpResponse(status: 204, body: Data()),
+        ])
+        let client = DockerAPIClient(transport: transport)
+
+        do {
+            _ = try await client.run(
+                image: "hello-world:latest",
+                command: [],
+                resourceLimits: nil
+            )
+            Issue.record("Expected Docker API failure")
+        } catch {
+            // The failed start is expected; this test verifies cleanup behavior.
+        }
+
+        #expect(
+            await transport.paths == [
+                "/containers/create",
+                "/containers/container-123/start",
+                "/containers/container-123?force=1",
+            ])
+        #expect(
+            await transport.timeouts == [
+                .seconds(5),
+                DockerAPIClient.lifecycleRequestTimeout,
+                DockerAPIClient.lifecycleRequestTimeout,
+            ])
+    }
+
+    @Test
     func runsImageWithResourceLimits() async throws {
         let transport = StubDockerTransport(responses: [
             httpResponse(status: 201, body: Data("{\"Id\":\"container-123\",\"Warnings\":null}".utf8)),

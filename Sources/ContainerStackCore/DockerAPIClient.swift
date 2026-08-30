@@ -429,7 +429,8 @@ public actor DockerAPIClient {
             if !isRunning {
                 _ = try? await request(
                     method: "DELETE",
-                    path: "/containers/\(createResponse.id)?force=1"
+                    path: "/containers/\(createResponse.id)?force=1",
+                    timeout: Self.lifecycleRequestTimeout
                 )
             }
             throw error

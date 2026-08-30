@@ -136,4 +136,87 @@ struct NetworkRouteHealthTests {
 
         #expect(NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks).isEmpty)
     }
+
+    /// #45: an empty candidate set is not proof that nothing publishes. A network the runtime
+    /// reports without a subnet is dropped silently, so doctor would call it "no publishers".
+    @Test
+    func treatsAnEmptySubnetAsUncheckableRatherThanUnroutable() throws {
+        let containers = [
+            try container(
+                id: "web",
+                state: "running",
+                ports: [["PublicPort": 8080, "PrivatePort": 80]],
+                networks: ["apps_default"]
+            )
+        ]
+        let networks = [try network(name: "apps_default", subnet: "")]
+
+        // Without this, the empty subnet becomes a candidate, `hasRoute(to: "")` fails, and doctor
+        // reports NO ROUTE for a network it never actually checked.
+        #expect(NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks).isEmpty)
+        #expect(
+            NetworkRouteHealth.uncheckablePublishingNetworks(containers: containers, networks: networks)
+                == ["apps_default"]
+        )
+    }
+
+    @Test
+    func namesAPublishingNetworkThatReportsNoSubnet() throws {
+        let containers = [
+            try container(
+                id: "web",
+                state: "running",
+                ports: [["PublicPort": 8080, "PrivatePort": 80]],
+                networks: ["apps_default"]
+            )
+        ]
+        let networks = [try network(name: "apps_default", subnet: nil)]
+
+        #expect(NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks).isEmpty)
+        #expect(
+            NetworkRouteHealth.uncheckablePublishingNetworks(containers: containers, networks: networks)
+                == ["apps_default"]
+        )
+    }
+
+    /// The other way a candidate disappears: the container names a network the runtime did not
+    /// list at all, so there is no record to read a subnet from.
+    @Test
+    func namesAPublishingNetworkTheRuntimeDidNotReport() throws {
+        let containers = [
+            try container(
+                id: "web",
+                state: "running",
+                ports: [["PublicPort": 8080, "PrivatePort": 80]],
+                networks: ["ghost"]
+            )
+        ]
+        let networks = [try network(name: "default", subnet: "192.168.64.0/24")]
+
+        #expect(
+            NetworkRouteHealth.uncheckablePublishingNetworks(containers: containers, networks: networks)
+                == ["ghost"]
+        )
+    }
+
+    /// A network that resolves fully is not uncheckable, and neither is one nothing publishes on.
+    @Test
+    func aResolvableOrIdleNetworkIsNotUncheckable() throws {
+        let publishing = [
+            try container(
+                id: "web",
+                state: "running",
+                ports: [["PublicPort": 8080, "PrivatePort": 80]],
+                networks: ["apps_default"]
+            )
+        ]
+        let idle = [try container(id: "quiet", state: "running", ports: [["PrivatePort": 80]], networks: ["default"])]
+        let networks = [
+            try network(name: "apps_default", subnet: "192.168.253.0/24"),
+            try network(name: "default", subnet: nil),
+        ]
+
+        #expect(NetworkRouteHealth.uncheckablePublishingNetworks(containers: publishing, networks: networks).isEmpty)
+        #expect(NetworkRouteHealth.uncheckablePublishingNetworks(containers: idle, networks: networks).isEmpty)
+    }
 }

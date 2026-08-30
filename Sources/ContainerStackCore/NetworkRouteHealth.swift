@@ -62,8 +62,30 @@ public enum NetworkRouteHealth {
 
         return networks.compactMap { network in
             guard inUse.contains(network.name) else { return nil }
-            return network.subnet.map { UnroutableNetwork(networkName: network.name, subnet: $0) }
+            // An empty subnet is as uncheckable as a missing one: `hasRoute(to: "")` matches nothing
+            // and would report a route failure the runtime never had.
+            guard let subnet = network.subnet, !subnet.isEmpty else { return nil }
+            return UnroutableNetwork(networkName: network.name, subnet: subnet)
         }
+    }
+
+    /// Networks a running publisher sits on that cannot be route-checked: either the runtime listed
+    /// no record for them, or the record carries no subnet. `publishingNetworks` drops both silently,
+    /// so without this an empty candidate set reads as "nothing publishes" when it may mean "nothing
+    /// could be determined" (#45).
+    public static func uncheckablePublishingNetworks(
+        containers: [DockerContainerSummary],
+        networks: [DockerNetworkSummary]
+    ) -> [String] {
+        let inUse = Set(
+            containers
+                .filter { $0.isRunning && $0.publishesPorts }
+                .flatMap(\.networkNames)
+        )
+        guard !inUse.isEmpty else { return [] }
+
+        let checkable = Set(publishingNetworks(containers: containers, networks: networks).map(\.networkName))
+        return inUse.subtracting(checkable).sorted()
     }
 
     public static func unroutableNetworks(_ networks: [UnroutableNetwork], routes: String) -> [UnroutableNetwork] {

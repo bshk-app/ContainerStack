@@ -46,14 +46,39 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The comment gate needs a merge base with the target branch.
+          fetch-depth: 0
 
       - name: Formatting
         run: swift format lint --strict -r -p Sources Tests
 
+      # Pinned, where this used to be `brew install swiftlint`. An unpinned install
+      # means the day the runner image picks up a release that adds a rule, every
+      # open pull request fails on a line nobody touched. .swiftlint-version is the
+      # one number, and the same file tells `task lint` what CI is running.
+      - name: Install SwiftLint
+        run: |
+          version="$(tr -d '[:space:]' < .swiftlint-version)"
+          curl -fsSL -o swiftlint.zip \
+            "https://github.com/realm/SwiftLint/releases/download/${version}/portable_swiftlint.zip"
+          unzip -q swiftlint.zip -d "$RUNNER_TEMP/swiftlint"
+          echo "$RUNNER_TEMP/swiftlint" >> "$GITHUB_PATH"
+
       - name: SwiftLint
         run: |
-          brew install swiftlint
+          swiftlint version
           swiftlint lint --quiet --strict
+
+      # Hooks are not carried by a clone, so a contributor who never ran
+      # `task hooks:install` has never run this gate — and every fork PR is that
+      # case. The base ref is not optional: with the default the diff here is empty,
+      # and the gate would pass without having checked anything.
+      - name: Comment gate
+        if: github.event_name == 'pull_request'
+        env:
+          COMMENT_BLOCK_DIFF_BASE: origin/${{ github.base_ref }}
+        run: ./scripts/hooks/check-new-comment-blocks.sh
 
       # The shell that ships on macOS is bash 3.2, and it is stricter than any
       # newer one: it tracks quotes through comments inside a command

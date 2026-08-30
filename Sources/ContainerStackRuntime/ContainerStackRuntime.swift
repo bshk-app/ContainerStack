@@ -37,19 +37,55 @@ struct ContainerStackRuntime {
     /// launchd gives the agent no output destination, so the helper owns its log file.
     /// Append mode keeps it safe when the app is also writing to the same file.
     private static func redirectOutputToRuntimeLog() {
-        let directory = FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Logs/ContainerStack")
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let candidates = RuntimePaths.runtimeLogCandidates(
+            home: FileManager.default.homeDirectoryForCurrentUser,
+            temporaryDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+        )
 
-        let logPath = directory.appending(path: "runtime.log").path
-        let descriptor = open(logPath, O_WRONLY | O_CREAT | O_APPEND, 0o644)
-        guard descriptor >= 0 else { return }
+        var rejected: [String] = []
+        for candidate in candidates {
+            if let failure = redirectOutput(to: candidate) {
+                rejected.append(failure)
+                continue
+            }
+
+            print("--- ContainerStackRuntime started \(Date().formatted(.iso8601)) ---")
+            // Said into the sink that opened, not the one that did not: launchd gives the agent no
+            // stderr, so a reason reported before the redirect is a reason nobody can read.
+            for failure in rejected {
+                print("ContainerStackRuntime: \(failure)")
+            }
+            return
+        }
+
+        for failure in rejected {
+            fputs("ContainerStackRuntime: \(failure)\n", stderr)
+        }
+        fputs("ContainerStackRuntime: no writable log destination, running unredirected\n", stderr)
+    }
+
+    /// `nil` once stdout and stderr point at `url`, otherwise why they do not.
+    private static func redirectOutput(to url: URL) -> String? {
+        let directory = url.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            return "cannot create \(directory.path): \(error)"
+        }
+
+        let descriptor = open(url.path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
+        guard descriptor >= 0 else {
+            return "cannot open \(url.path): \(String(cString: strerror(errno)))"
+        }
         defer { close(descriptor) }
 
-        dup2(descriptor, STDOUT_FILENO)
-        dup2(descriptor, STDERR_FILENO)
+        // A failed dup2 leaves the descriptor open but the stream unredirected, which is the same
+        // blindness this function exists to prevent — so it fails the candidate rather than lying.
+        guard dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else {
+            return "cannot redirect output to \(url.path): \(String(cString: strerror(errno)))"
+        }
         setvbuf(stdout, nil, _IOLBF, 0)
-        print("--- ContainerStackRuntime started \(Date().formatted(.iso8601)) ---")
+        return nil
     }
 
     private static func socktainerPath() -> String {

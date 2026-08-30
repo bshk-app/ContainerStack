@@ -214,6 +214,9 @@ final class RuntimeViewModel {
         }
 
         isStarting = true
+        // Cleared as the attempt begins, matching the launch path and the manual restart: now that an
+        // explicit failure outranks `.starting`, a leftover reason would surface as offline here.
+        runtimeFailure = nil
         applyState(socketResponds: false)
 
         Task { [weak self] in

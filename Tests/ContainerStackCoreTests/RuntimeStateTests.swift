@@ -99,6 +99,21 @@ struct RuntimeStateTests {
         #expect(state.detail == "Runtime helper exited.")
     }
 
+    /// #44: the socket-wait loop only exits while the helper is still running, so `helperRunning`
+    /// is true at the moment it gives up. Reporting `.starting` then shows progress forever, and
+    /// because `.starting` is what disables the manual restart, it offers no way out.
+    @Test
+    func anExplicitFailureOutranksStarting() {
+        let state = RuntimeState.resolve(
+            socketResponds: false,
+            helperRunning: true,
+            isStarting: true,
+            failure: "Docker socket did not become ready within 60 seconds."
+        )
+
+        #expect(state == .offline("Docker socket did not become ready within 60 seconds."))
+        #expect(state.isHealthy == false)
+    }
     @Test
     func fallsBackToGenericOfflineReason() {
         let state = RuntimeState.resolve(

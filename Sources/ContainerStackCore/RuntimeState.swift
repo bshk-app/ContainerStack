@@ -50,6 +50,10 @@ public enum RuntimeState: Equatable, Sendable {
             return unroutableNetworks.isEmpty ? .running : .degraded(networks: unroutableNetworks)
         }
         if isStarting || helperRunning {
+            // An explicit failure outranks progress. The socket-wait loop gives up while the helper
+            // is still running, so `helperRunning` alone would report `.starting` forever — and
+            // `.starting` is what disables the manual restart, leaving no way out (#44).
+            if let failure { return .offline(failure) }
             return .starting
         }
         return .offline(failure ?? genericFailure)

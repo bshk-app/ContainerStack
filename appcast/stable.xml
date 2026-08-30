@@ -3,6 +3,54 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.5.1</title>
+            <pubDate>Sun, 30 Aug 2026 14:45:29 +0000</pubDate>
+            <sparkle:version>222</sparkle:version>
+            <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>A maintenance release about one thing: the app telling the truth about the runtime.<br>
+A single dropped connection no longer blanks every list, a runtime that died no longer<br>
+leaves its containers on screen, and <code class="notranslate">cstack doctor</code> stops calling a network unroutable<br>
+when it simply could not be checked.</p>
+<h3>Fixed</h3>
+<ul>
+<li>One unanswered probe no longer empties the app. The 3-second monitor needs two<br>
+consecutive silences before it calls a healthy runtime offline, and the ping it asks<br>
+now retries a dropped connection the way every other read already did. Declaring the<br>
+runtime dead clears containers, images, volumes and networks and throws away a refresh<br>
+in flight, so being wrong once was expensive. Stop still shows its effect immediately:<br>
+silence with a known cause does not wait for a second opinion.</li>
+<li>The dashboard no longer keeps showing a dead runtime's containers. A runtime that<br>
+fails clears the inventory it described, an explicit failure outranks a lingering<br>
+"Starting", and a refresh still in flight when the runtime was declared dead can no<br>
+longer resurrect what it published.</li>
+<li><code class="notranslate">cstack doctor</code> tells "nothing publishes a port" apart from "nothing could be<br>
+checked". A missing routing table, or a network whose subnet is empty, is reported as<br>
+uncheckable rather than NO ROUTE, and only the networks a published port actually<br>
+depends on are judged.</li>
+<li>Stopping the runtime asks the containers to exit before the service goes down.</li>
+<li>Images Run and <code class="notranslate">cstack run</code> no longer give up after five seconds while a micro-VM<br>
+boots: starting and cleaning up a container get the same 120-second window as every<br>
+other VM operation. Run still waits for the container to exit before returning.</li>
+<li>The runtime helper no longer runs blind. When it cannot open<br>
+<code class="notranslate">~/Library/Logs/ContainerStack/runtime.log</code> it falls back to a temporary file and<br>
+records why the first destination failed, instead of returning silently — which left<br>
+a crash-looping helper indistinguishable from one that never started.</li>
+<li>Editing a Compose file validates through a uniquely named temporary file, so two<br>
+saves of the same stack can no longer collide next to your compose file.</li>
+<li>An icon that fails to load is now visibly wrong rather than invisible: release builds<br>
+draw a placeholder where a missing asset used to render as a control with no icon.</li>
+</ul>
+<h3>Known limitations</h3>
+<p>Published ports still require a runtime restart if a bridge-created network's vmnet<br>
+helper dies; restarting only the containers does not repair the host route.</p>
+<h3>Internal</h3>
+<p>Style gates — swift-format, SwiftLint and the comment-length hook — and the CI wiring<br>
+that runs them on every pull request. No user-visible change.</p>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.5.1/ContainerStack-0.5.1.dmg" length="22485713" type="application/octet-stream" sparkle:edSignature="rMNE4Ue4kR//GMJmrHYCdUnbKcVO4QTaardhMKPUMMFXLXSWTbt8LVnAxXWQuZtmETCTbYT317bQQvbdhfbSDA=="/>
+        </item>
+        <item>
             <title>0.5.0</title>
             <pubDate>Thu, 27 Aug 2026 16:33:09 +0000</pubDate>
             <sparkle:version>174</sparkle:version>

@@ -21,4 +21,14 @@ public enum RuntimePaths {
             .standardizedFileURL
             .path
     }
+
+    /// Log destinations for the runtime helper, in the order it should try them. launchd gives the
+    /// agent no output destination, so the helper's own file is the only sink; when it cannot be
+    /// opened, a temporary-directory fallback is what keeps the process from running blind.
+    public static func runtimeLogCandidates(home: URL, temporaryDirectory: URL) -> [URL] {
+        [
+            home.appending(path: "Library/Logs/ContainerStack/runtime.log"),
+            temporaryDirectory.appending(path: "containerstack-runtime.log"),
+        ]
+    }
 }

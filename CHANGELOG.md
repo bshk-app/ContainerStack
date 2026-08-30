@@ -14,42 +14,49 @@ releases belong in that section — move them there while reviewing.
 
 ## [0.5.1](https://github.com/bshk-app/ContainerStack/compare/v0.5.0...v0.5.1) (2026-08-30)
 
+A maintenance release about one thing: the app telling the truth about the runtime.
+A single dropped connection no longer blanks every list, a runtime that died no longer
+leaves its containers on screen, and `cstack doctor` stops calling a network unroutable
+when it simply could not be checked.
 
 ### Fixed
 
-* **app:** clear the liveness filter whenever health is published ([1708051](https://github.com/bshk-app/ContainerStack/commit/1708051b80ed9e5a3e1a458860701e6fa80490ff))
-* **app:** drop the inventory a failed runtime described ([6055e63](https://github.com/bshk-app/ContainerStack/commit/6055e632110a36c29562c78a3fd1d2bb07071540))
-* **app:** drop the inventory a failed runtime described ([ac76c13](https://github.com/bshk-app/ContainerStack/commit/ac76c13c5cfddc212c632ad74b2a8f631112b362)), closes [#39](https://github.com/bshk-app/ContainerStack/issues/39)
-* **app:** finish the class — stack statuses and the startup probes ([d32a26e](https://github.com/bshk-app/ContainerStack/commit/d32a26e6c138932912de663efb9cf4ee7d43cc90))
-* **app:** let an explicit runtime failure outrank Starting ([897744b](https://github.com/bshk-app/ContainerStack/commit/897744b38fc11fa7ffe8dc36c0b48c622bc564ae))
-* **app:** let an explicit runtime failure outrank Starting ([965d945](https://github.com/bshk-app/ContainerStack/commit/965d945c075367ffcdeae4b3100da601a070219d)), closes [#44](https://github.com/bshk-app/ContainerStack/issues/44)
-* **app:** make an unresolved Lucide asset loud instead of blank ([0df025a](https://github.com/bshk-app/ContainerStack/commit/0df025a4415406833d9606e9bfa8f5f579fec3d4))
-* **app:** make an unresolved Lucide asset loud instead of blank ([bd52beb](https://github.com/bshk-app/ContainerStack/commit/bd52beb2512eb9ad57fe0b9d0e597b53b840a285)), closes [#14](https://github.com/bshk-app/ContainerStack/issues/14)
-* **app:** one unanswered probe no longer declares the runtime dead ([7b046b0](https://github.com/bshk-app/ContainerStack/commit/7b046b006938a94dc9166efab71d8be4a1b11789))
-* **app:** one unanswered probe no longer declares the runtime dead ([d26cd66](https://github.com/bshk-app/ContainerStack/commit/d26cd66a4311a7f16c7a755afd1358b679d7f85f))
-* **app:** re-check the epoch before publishing a socket as responding ([0b423d8](https://github.com/bshk-app/ContainerStack/commit/0b423d80e3d243a8c5b69ae7383dd45825330c94))
-* **app:** stop a dead runtime's inventory and health surviving its death ([cc45b09](https://github.com/bshk-app/ContainerStack/commit/cc45b0960a270e504187176acacefbc83675343d))
-* **app:** stop an in-flight refresh resurrecting cleared inventory ([3b27ecc](https://github.com/bshk-app/ContainerStack/commit/3b27eccb8ae9f386d6190aa7e19633e4c357ede9)), closes [#43](https://github.com/bshk-app/ContainerStack/issues/43)
-* **cli:** do not treat a missing routing table as NO ROUTE ([740ab2d](https://github.com/bshk-app/ContainerStack/commit/740ab2df7765d64f1928e7a3bb7d3027e454a0e6))
-* **cli:** do not treat a missing routing table as NO ROUTE ([9c59866](https://github.com/bshk-app/ContainerStack/commit/9c598665099e9bc70d5ea61fc3e12715d2c21c2f))
-* **cli:** judge only the networks a published port depends on ([6d06092](https://github.com/bshk-app/ContainerStack/commit/6d06092df70872f64967b4d5a325244442bfbf19))
-* **cli:** judge only the networks a published port depends on ([5a5202e](https://github.com/bshk-app/ContainerStack/commit/5a5202e3afc0a61e7cb4e6bbe2d048c8409862c8)), closes [#36](https://github.com/bshk-app/ContainerStack/issues/36)
-* **cli:** tell "nothing publishes" apart from "nothing could be checked" ([31a02f0](https://github.com/bshk-app/ContainerStack/commit/31a02f00955e282823614977943d5a1b56ecbed5))
-* **cli:** tell "nothing publishes" apart from "nothing could be checked" ([bd89318](https://github.com/bshk-app/ContainerStack/commit/bd893182d98186c17ac4bf8c3a61efa93f3ee739)), closes [#45](https://github.com/bshk-app/ContainerStack/issues/45)
-* **compose:** give the validation temp file a unique name ([40f6f2e](https://github.com/bshk-app/ContainerStack/commit/40f6f2e3071bb62bb97829c6f76cb95daed3573d))
-* **compose:** give the validation temp file a unique name ([2fa9a29](https://github.com/bshk-app/ContainerStack/commit/2fa9a29faaacf94cea7ad6bd8b1d9211d8bad80c)), closes [#63](https://github.com/bshk-app/ContainerStack/issues/63)
-* **compose:** keep the validation temp name within the filename limit ([6b31c68](https://github.com/bshk-app/ContainerStack/commit/6b31c6820fcedeb316271a7ceb099e04987b99bb))
-* **core:** treat an empty subnet as uncheckable, not unroutable ([4c8f91e](https://github.com/bshk-app/ContainerStack/commit/4c8f91e7a88b0ad80cdc6c443f19f242a643795f))
-* **hooks:** close five holes cross-model review found in the comment gate ([a265ead](https://github.com/bshk-app/ContainerStack/commit/a265eade3d181b94f94416d18212219205d0d884))
-* **hooks:** make the gate path-safe and stop it from looping on a bad payload ([574f36e](https://github.com/bshk-app/ContainerStack/commit/574f36e7737b866e36a2de607501fbb36b77439a))
-* **http:** bound failed run cleanup ([8084343](https://github.com/bshk-app/ContainerStack/commit/808434364caa8c1e8dfec39ef073501f85828708))
-* **http:** give run() the same VM lifecycle timeout as start and delete ([15c4a23](https://github.com/bshk-app/ContainerStack/commit/15c4a2301614bab6e3734c13e54330e210641c44))
-* **http:** give run() the same VM lifecycle timeout as start and delete ([7f7e29c](https://github.com/bshk-app/ContainerStack/commit/7f7e29c94e776fb22bc0ff9695702b0eaa0c0565))
-* **runtime:** ask the containers to exit before stopping the service ([0b55d3a](https://github.com/bshk-app/ContainerStack/commit/0b55d3ab914758e18c70e14342fc160a0dfbc10b))
-* **runtime:** ask the containers to exit before stopping the service ([8bd9910](https://github.com/bshk-app/ContainerStack/commit/8bd9910526b9edca8ade440162767a1d9af19541)), closes [#55](https://github.com/bshk-app/ContainerStack/issues/55)
-* **runtime:** fail the candidate when dup2 does not redirect ([615f6f3](https://github.com/bshk-app/ContainerStack/commit/615f6f32f654f957bd27888e5c1a6b29ddd3822f))
-* **runtime:** stop the helper running blind when its log cannot be opened ([5690ea8](https://github.com/bshk-app/ContainerStack/commit/5690ea8d5d8055dc4b884f1f03877233ffef06e9))
-* **runtime:** stop the helper running blind when its log cannot be opened ([108a922](https://github.com/bshk-app/ContainerStack/commit/108a922516736812546b4457652220d616e62124)), closes [#10](https://github.com/bshk-app/ContainerStack/issues/10)
+- One unanswered probe no longer empties the app. The 3-second monitor needs two
+  consecutive silences before it calls a healthy runtime offline, and the ping it asks
+  now retries a dropped connection the way every other read already did. Declaring the
+  runtime dead clears containers, images, volumes and networks and throws away a refresh
+  in flight, so being wrong once was expensive. Stop still shows its effect immediately:
+  silence with a known cause does not wait for a second opinion.
+- The dashboard no longer keeps showing a dead runtime's containers. A runtime that
+  fails clears the inventory it described, an explicit failure outranks a lingering
+  "Starting", and a refresh still in flight when the runtime was declared dead can no
+  longer resurrect what it published.
+- `cstack doctor` tells "nothing publishes a port" apart from "nothing could be
+  checked". A missing routing table, or a network whose subnet is empty, is reported as
+  uncheckable rather than NO ROUTE, and only the networks a published port actually
+  depends on are judged.
+- Stopping the runtime asks the containers to exit before the service goes down.
+- Images Run and `cstack run` no longer give up after five seconds while a micro-VM
+  boots: starting and cleaning up a container get the same 120-second window as every
+  other VM operation. Run still waits for the container to exit before returning.
+- The runtime helper no longer runs blind. When it cannot open
+  `~/Library/Logs/ContainerStack/runtime.log` it falls back to a temporary file and
+  records why the first destination failed, instead of returning silently — which left
+  a crash-looping helper indistinguishable from one that never started.
+- Editing a Compose file validates through a uniquely named temporary file, so two
+  saves of the same stack can no longer collide next to your compose file.
+- An icon that fails to load is now visibly wrong rather than invisible: release builds
+  draw a placeholder where a missing asset used to render as a control with no icon.
+
+### Known limitations
+
+Published ports still require a runtime restart if a bridge-created network's vmnet
+helper dies; restarting only the containers does not repair the host route.
+
+### Internal
+
+Style gates — swift-format, SwiftLint and the comment-length hook — and the CI wiring
+that runs them on every pull request. No user-visible change.
 
 ## [0.5.0](https://github.com/bshk-app/ContainerStack/compare/v0.4.2...v0.5.0) (2026-08-27)
 

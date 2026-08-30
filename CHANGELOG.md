@@ -12,6 +12,52 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.5.1](https://github.com/bshk-app/ContainerStack/compare/v0.5.0...v0.5.1) (2026-08-30)
+
+A maintenance release about one thing: the app telling the truth about the runtime.
+A single dropped connection no longer blanks every list, a runtime that died no longer
+leaves its containers on screen, and `cstack doctor` stops calling a network unroutable
+when it simply could not be checked.
+
+### Fixed
+
+- One unanswered probe no longer empties the app. The 3-second monitor needs two
+  consecutive silences before it calls a healthy runtime offline, and the ping it asks
+  now retries a dropped connection the way every other read already did. Declaring the
+  runtime dead clears containers, images, volumes and networks and throws away a refresh
+  in flight, so being wrong once was expensive. Stop still shows its effect immediately:
+  silence with a known cause does not wait for a second opinion.
+- The dashboard no longer keeps showing a dead runtime's containers. A runtime that
+  fails clears the inventory it described, an explicit failure outranks a lingering
+  "Starting", and a refresh still in flight when the runtime was declared dead can no
+  longer resurrect what it published.
+- `cstack doctor` tells "nothing publishes a port" apart from "nothing could be
+  checked". A missing routing table, or a network whose subnet is empty, is reported as
+  uncheckable rather than NO ROUTE, and only the networks a published port actually
+  depends on are judged.
+- Stopping the runtime asks the containers to exit before the service goes down.
+- Images Run and `cstack run` no longer give up after five seconds while a micro-VM
+  boots: starting and cleaning up a container get the same 120-second window as every
+  other VM operation. Run still waits for the container to exit before returning.
+- The runtime helper no longer runs blind. When it cannot open
+  `~/Library/Logs/ContainerStack/runtime.log` it falls back to a temporary file and
+  records why the first destination failed, instead of returning silently — which left
+  a crash-looping helper indistinguishable from one that never started.
+- Editing a Compose file validates through a uniquely named temporary file, so two
+  saves of the same stack can no longer collide next to your compose file.
+- An icon that fails to load is now visibly wrong rather than invisible: release builds
+  draw a placeholder where a missing asset used to render as a control with no icon.
+
+### Known limitations
+
+Published ports still require a runtime restart if a bridge-created network's vmnet
+helper dies; restarting only the containers does not repair the host route.
+
+### Internal
+
+Style gates — swift-format, SwiftLint and the comment-length hook — and the CI wiring
+that runs them on every pull request. No user-visible change.
+
 ## [0.5.0](https://github.com/bshk-app/ContainerStack/compare/v0.4.2...v0.5.0) (2026-08-27)
 
 Containers can be sized now, and a stop that loses the runtime's XPC service no

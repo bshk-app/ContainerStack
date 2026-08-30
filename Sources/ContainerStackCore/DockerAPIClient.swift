@@ -156,16 +156,6 @@ private struct ContainerCreateRequest: Encodable {
     }
 }
 
-public struct DockerRetryPolicy: Equatable, Sendable {
-    public let maxAttempts: Int
-    public let delay: Duration
-
-    public init(maxAttempts: Int = 3, delay: Duration = .milliseconds(250)) {
-        self.maxAttempts = max(1, maxAttempts)
-        self.delay = delay
-    }
-}
-
 public struct DockerPort: Codable, Equatable, Sendable {
     public let ip: String?
     public let privatePort: Int?
@@ -453,13 +443,25 @@ public actor DockerAPIClient {
     }
 
     private func requestWithRetry(path: String) async throws -> DockerHTTPResponse {
+        try await requestRetrying(path: path, while: Self.isRetryable)
+    }
+
+    /// The retry budget for a caller on a clock: see `failsImmediately`.
+    func requestRetryingImmediateFailures(path: String) async throws -> DockerHTTPResponse {
+        try await requestRetrying(path: path, while: Self.failsImmediately)
+    }
+
+    private func requestRetrying(
+        path: String,
+        while shouldRetry: (Error) -> Bool
+    ) async throws -> DockerHTTPResponse {
         var attempts = 0
         while true {
             do {
                 return try await request(path: path)
             } catch {
                 attempts += 1
-                guard attempts < retryPolicy.maxAttempts, Self.isRetryable(error) else {
+                guard attempts < retryPolicy.maxAttempts, shouldRetry(error) else {
                     throw error
                 }
                 try await Task.sleep(for: retryPolicy.delay)
@@ -505,20 +507,6 @@ public actor DockerAPIClient {
         }
         let text = String(decoding: body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty || text.count > 500 ? nil : text
-    }
-
-    private static func isRetryable(_ error: Error) -> Bool {
-        guard let socketError = error as? UnixSocketError else {
-            return false
-        }
-        switch socketError {
-        case .timedOut:
-            return true
-        case .systemCallFailed(let code):
-            return [EAGAIN, EINTR, ECONNREFUSED, ECONNRESET, ENOTCONN, EPIPE].contains(code)
-        case .pathTooLong:
-            return false
-        }
     }
 
     static func decodeLogs(_ body: Data) -> String {

@@ -28,4 +28,11 @@ struct RuntimeLivenessFilter: Sendable {
         consecutiveFailures += 1
         return consecutiveFailures >= tolerance
     }
+
+    /// Forgets accumulated silence. A healthy verdict reaches the app from paths that never probe
+    /// — adopting a socket, a successful refresh, the wait after a start — and silence counted
+    /// before one of those is silence about a runtime that is now answering.
+    mutating func reset() {
+        consecutiveFailures = 0
+    }
 }

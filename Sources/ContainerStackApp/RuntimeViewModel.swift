@@ -25,7 +25,8 @@ final class RuntimeViewModel {
     private var bridgeOwnerCadence = DiagnosticCadence(interval: .seconds(30))
     private var lastForeignBridge: String?
     /// Weighs consecutive probe answers, so one unanswered ping cannot condemn the runtime.
-    private var livenessFilter = RuntimeLivenessFilter()
+    /// Internal so a test can seed the silence a stopped runtime accumulates.
+    var livenessFilter = RuntimeLivenessFilter()
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
     let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
@@ -515,6 +516,10 @@ final class RuntimeViewModel {
         if socketResponds {
             runtimeFailure = nil
             errorMessage = nil
+            // Every healthy verdict lands here, including the ones that never probe. Without this
+            // the silence counted while the runtime was stopped survives the restart, and the
+            // first dropped connection after it clears the inventory on a single sample.
+            livenessFilter.reset()
         }
     }
 

@@ -28,4 +28,19 @@ final class LucideResourceTests: XCTestCase {
         XCTAssertEqual(bundle.bundleURL.standardizedFileURL, bundleURL.standardizedFileURL)
         XCTAssertNotNil(bundle.url(forResource: "activity", withExtension: "svg", subdirectory: "Lucide"))
     }
+
+    /// The reported symptom was a toolbar control with no icon. Every case resolving in the
+    /// bundle is what turns a renamed or unstaged asset into a test failure instead.
+    func testEveryIconResolvesInTheAppResourceBundle() throws {
+        let bundle = Lucide.resourceBundle
+        let unresolved = Lucide.allCases.filter { $0.assetURL(in: bundle) == nil }
+
+        XCTAssertEqual(unresolved.map(\.rawValue), [], "missing Lucide assets in \(bundle.bundleURL.path)")
+    }
+
+    func testAssetLookupFailsInABundleThatCarriesNoIcons() throws {
+        let bundle = try XCTUnwrap(Bundle(url: FileManager.default.temporaryDirectory))
+
+        XCTAssertNil(Lucide.container.assetURL(in: bundle))
+    }
 }

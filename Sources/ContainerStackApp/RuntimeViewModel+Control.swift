@@ -107,6 +107,9 @@ extension RuntimeViewModel {
             try? await perform(step)
         }
         clearInventoryForStop()
+        // Said here rather than left to the probe: a stop is the one silence with a known cause,
+        // and `RuntimeLivenessFilter` makes the probe wait for a second opinion it does not need.
+        applyState(socketResponds: false)
         runtimeMessage = "Docker bridge stopped."
         await probeAfterControlChange()
     }

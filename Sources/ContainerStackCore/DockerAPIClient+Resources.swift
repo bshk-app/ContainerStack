@@ -179,8 +179,12 @@ public struct DockerImageReference: Equatable, Sendable {
 
 extension DockerAPIClient {
     /// Cheap liveness probe for status polling: one request, no version or info lookups.
+    ///
+    /// It retries what costs nothing to re-ask, so a refused or reset connection stops reading as
+    /// a dead runtime while the caller keeps its tick. Deciding what sustained silence means is
+    /// not this method's job — the monitor weighs consecutive answers in `RuntimeLivenessFilter`.
     public func ping() async throws -> Bool {
-        let response = try await request(path: "/_ping")
+        let response = try await requestRetryingImmediateFailures(path: "/_ping")
         return String(decoding: response.body, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines) == "OK"
     }

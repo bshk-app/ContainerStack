@@ -24,6 +24,8 @@ final class RuntimeViewModel {
     /// an `lsof` and a `ps`, which is too much for a 3-second poll.
     private var bridgeOwnerCadence = DiagnosticCadence(interval: .seconds(30))
     private var lastForeignBridge: String?
+    /// Weighs consecutive probe answers, so one unanswered ping cannot condemn the runtime.
+    private var livenessFilter = RuntimeLivenessFilter()
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
     let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
@@ -320,6 +322,7 @@ final class RuntimeViewModel {
             probeError = error
         }
         let wasHealthy = runtimeState.isHealthy
+        let hasGoneQuiet = livenessFilter.recordProbe(responds: responds)
 
         if responds, runtimeRecoveryRequested {
             runtimeRecoveryRequested = false
@@ -354,6 +357,10 @@ final class RuntimeViewModel {
             await refresh()
             await adoptDockerContextIfEnabled()
         } else if !responds, wasHealthy {
+            // One unanswered probe is not proof: this branch also clears the inventory and bumps
+            // the epoch, discarding a refresh in flight. Let the next tick agree first. Silence
+            // with a cause does not wait here — the restart above already returned.
+            guard hasGoneQuiet else { return }
             applyState(socketResponds: false)
             clearInventory()
         } else if responds {

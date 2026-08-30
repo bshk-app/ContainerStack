@@ -2,7 +2,7 @@ import AppKit
 import ContainerStackCore
 import SwiftUI
 
-enum Lucide: String, Equatable, Sendable {
+enum Lucide: String, Equatable, Sendable, CaseIterable {
     case activity
     case arrowRight = "arrow-right"
     case chevronDown = "chevron-down"
@@ -74,17 +74,38 @@ extension Lucide {
         )
     }
 
-    var templateImage: NSImage {
-        let bundle = Self.stagedResourceBundle(mainResourceURL: Bundle.main.resourceURL) ?? Bundle.module
-        let url =
-            bundle.url(forResource: rawValue, withExtension: "svg", subdirectory: "Lucide")
+    /// The bundle icons are loaded from: the staged app's own resource bundle when running from
+    /// `Contents/Resources`, and the SwiftPM one otherwise.
+    static var resourceBundle: Bundle {
+        stagedResourceBundle(mainResourceURL: Bundle.main.resourceURL) ?? .module
+    }
+
+    func assetURL(in bundle: Bundle) -> URL? {
+        bundle.url(forResource: rawValue, withExtension: "svg", subdirectory: "Lucide")
             ?? bundle.url(forResource: rawValue, withExtension: "svg")
-        guard let url, let image = NSImage(contentsOf: url) else {
-            return NSImage(size: NSSize(width: 24, height: 24))
+    }
+
+    /// A blank image reads as a control that has no icon, which is how an unstaged asset used to
+    /// pass for a design choice. Debug builds stop; release builds draw something visibly wrong.
+    var templateImage: NSImage {
+        let bundle = Self.resourceBundle
+        guard let url = assetURL(in: bundle), let image = NSImage(contentsOf: url) else {
+            assertionFailure("Lucide asset \(rawValue).svg did not resolve in \(bundle.bundleURL.path)")
+            return Self.unresolvedPlaceholder
         }
         image.isTemplate = true
         return image
     }
+
+    private static let unresolvedPlaceholder: NSImage = {
+        let image =
+            NSImage(
+                systemSymbolName: "questionmark.square.dashed",
+                accessibilityDescription: "Icon failed to load"
+            ) ?? NSImage(size: NSSize(width: 24, height: 24))
+        image.isTemplate = true
+        return image
+    }()
 }
 
 extension RuntimeState {

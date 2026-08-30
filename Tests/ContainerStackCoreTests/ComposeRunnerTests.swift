@@ -203,4 +203,24 @@ struct ComposeRunnerTests {
         #expect(ComposeRunner.parseStatus("") == [])
         #expect(ComposeRunner.parseStatus("   \n  ") == [])
     }
+
+    // MARK: - validation temp file
+
+    @Test
+    func validationTempNameIsUniquePerCall() {
+        let first = ComposeRunner.validationTempName(for: stack)
+        let second = ComposeRunner.validationTempName(for: stack)
+
+        #expect(first != second)
+    }
+
+    @Test
+    func validationTempNameIsHiddenYamlCarryingTheStackName() {
+        let name = ComposeRunner.validationTempName(for: stack)
+
+        #expect(name.hasPrefix(".demo.containerstack-validate."))
+        #expect(name.hasSuffix(".yaml"))
+        // The compose file itself must never be the target of the validation write.
+        #expect(name != stack.fileURL.lastPathComponent)
+    }
 }

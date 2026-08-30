@@ -119,6 +119,7 @@ extension RuntimeViewModel {
         guard !candidates.isEmpty else { return [] }
 
         let routes = await Task.detached { RuntimeShell.routingTable() }.value
+        guard NetworkRouteHealth.canJudgeRoutes(routes) else { return [] }
         return NetworkRouteHealth.unroutableNetworks(candidates, routes: routes)
     }
 

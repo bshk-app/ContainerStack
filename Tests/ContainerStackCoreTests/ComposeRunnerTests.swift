@@ -203,4 +203,31 @@ struct ComposeRunnerTests {
         #expect(ComposeRunner.parseStatus("") == [])
         #expect(ComposeRunner.parseStatus("   \n  ") == [])
     }
+
+    // MARK: - validation temp file
+
+    @Test
+    func validationTempNameIsUniquePerCall() {
+        let first = ComposeRunner.validationTempName()
+        let second = ComposeRunner.validationTempName()
+
+        #expect(first != second)
+    }
+
+    @Test
+    func validationTempNameIsHiddenYaml() {
+        let name = ComposeRunner.validationTempName()
+
+        #expect(name.hasPrefix(".containerstack-validate."))
+        #expect(name.hasSuffix(".yaml"))
+        // The compose file itself must never be the target of the validation write.
+        #expect(name != stack.fileURL.lastPathComponent)
+    }
+
+    /// A project name is unbounded, so carrying it here would let a long one breach the 255-byte
+    /// filename limit and fail a save that used to work.
+    @Test
+    func validationTempNameLengthDoesNotDependOnTheProjectName() {
+        #expect(ComposeRunner.validationTempName().utf8.count < 255)
+    }
 }

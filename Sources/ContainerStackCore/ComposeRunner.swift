@@ -101,7 +101,7 @@ public struct ComposeRunner: Sendable {
     /// The temp file is always removed, including on failure.
     public func saveValidated(text: String, to stack: ComposeStack) async throws {
         let directory = stack.projectDirectory
-        let tempURL = directory.appending(path: ".\(stack.name).containerstack-validate.yaml")
+        let tempURL = directory.appending(path: Self.validationTempName())
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
         try Data(text.utf8).write(to: tempURL, options: .atomic)
@@ -135,6 +135,14 @@ public struct ComposeRunner: Sendable {
 
     // MARK: - Testable builders/parsers
 
+    /// A per-call name for the validation temp file. `StackRegistry.save` already carries a UUID
+    /// for the same reason: two saves of one stack, or a crash mid-`config -q`, must not share a
+    /// file sitting next to the user's compose file. The stack name is deliberately left out —
+    /// it is unbounded, and a long project name would push the whole thing past the 255-byte
+    /// filename limit. Leading dot hides it, `.yaml` keeps compose reading it as one.
+    internal static func validationTempName() -> String {
+        ".containerstack-validate.\(UUID().uuidString).yaml"
+    }
     /// The arguments that follow the `compose` subcommand: global flags first (compose parses
     /// `--file`/`--project-name`/`--project-directory` as top-level options, before the verb), then
     /// the verb and its options. Kept internal so tests can assert exact flag order without docker.

@@ -79,8 +79,11 @@ struct ContainerStackRuntime {
         }
         defer { close(descriptor) }
 
-        dup2(descriptor, STDOUT_FILENO)
-        dup2(descriptor, STDERR_FILENO)
+        // A failed dup2 leaves the descriptor open but the stream unredirected, which is the same
+        // blindness this function exists to prevent — so it fails the candidate rather than lying.
+        guard dup2(descriptor, STDOUT_FILENO) >= 0, dup2(descriptor, STDERR_FILENO) >= 0 else {
+            return "cannot redirect output to \(url.path): \(String(cString: strerror(errno)))"
+        }
         setvbuf(stdout, nil, _IOLBF, 0)
         return nil
     }

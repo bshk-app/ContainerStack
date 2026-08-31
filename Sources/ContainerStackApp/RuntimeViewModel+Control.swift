@@ -164,7 +164,7 @@ extension RuntimeViewModel {
                 try RuntimeShell.run(executablePath: executablePath, arguments: arguments)
             }.value
         case .startBridge:
-            launchRuntimeHelperForRestart()
+            await launchRuntimeHelperForRestart()
         case .kickstartAgent(let label):
             try await Task.detached {
                 try RuntimeShell.run(

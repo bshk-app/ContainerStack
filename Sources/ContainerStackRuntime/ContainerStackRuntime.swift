@@ -18,12 +18,10 @@ struct ContainerStackRuntime {
         )
 
         do {
-            let version = try output(
-                executablePath: configuration.containerPath,
-                arguments: ["--version"]
-            )
-            guard version.contains(configuration.expectedContainerVersion) else {
-                fputs("ContainerStackRuntime: unsupported Apple Container version: \(version)\n", stderr)
+            // Shared with the app, which refuses to launch this helper on the same verdict.
+            let verdict = ContainerVersionCheck.run(configuration)
+            if let complaint = verdict.diagnosticMessage {
+                fputs("ContainerStackRuntime: \(complaint)\n", stderr)
                 exit(EXIT_FAILURE)
             }
 

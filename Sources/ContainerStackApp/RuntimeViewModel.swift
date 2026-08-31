@@ -281,6 +281,15 @@ final class RuntimeViewModel {
             return
         }
 
+        // Asked before the helper is spawned rather than read out of its log afterwards. The
+        // helper reaches the same verdict and exits, which the app could only report as
+        // "helper exited" - a sentence that names neither version nor remedy.
+        if let complaint = ContainerVersionCheck.run(runtimeConfiguration()).userFacingMessage {
+            isStarting = false
+            failRuntime(complaint)
+            return
+        }
+
         do {
             let logURL = try runtimeLogURL()
             let logHandle = try FileHandle(forWritingTo: logURL)

@@ -9,7 +9,7 @@ set -euo pipefail
 # The install step needs sudo, so run this yourself — it is the only interactive part.
 # ContainerStack itself ships socktainer inside the app bundle, so nothing is built here.
 
-readonly CONTAINER_VERSION="1.2.2"
+readonly CONTAINER_VERSION="1.3.1"
 readonly PKG_URL="https://github.com/apple/container/releases/download/${CONTAINER_VERSION}/container-${CONTAINER_VERSION}-installer-signed.pkg"
 readonly APP_SOURCE="${APP_SOURCE:-/tmp/ContainerStack.app}"
 

@@ -5,25 +5,26 @@ set -euo pipefail
 # This script deliberately stops the existing Apple Container service and moves
 # its data directory aside. It never deletes data or starts a daemon for you.
 
-readonly TARGET_CONTAINER_VERSION="1.2.2"
+readonly TARGET_CONTAINER_VERSION="1.3.1"
 readonly TARGET_RELEASE_URL="https://github.com/apple/container/releases/tag/${TARGET_CONTAINER_VERSION}"
 # Apple Container reports its own data directory as `appRoot`, and the path has moved between
-# versions — 1.2.2 uses com.apple.container, while com.apple.containerization is a leftover from
-# earlier builds. Asking the runtime instead of hardcoding is what keeps "moved the old data aside"
-# from silently moving nothing, which is worse than failing: the next run starts against data the
-# operator believes was reset. The fallback is only for a runtime too broken to answer.
+# versions — 1.2.2 and later use com.apple.container, while com.apple.containerization is a
+# leftover from earlier builds. Asking the runtime instead of hardcoding is what keeps "moved the
+# old data aside" from silently moving nothing, which is worse than failing: the next run starts
+# against data the operator believes was reset. The fallback is only for a runtime too broken to
+# answer.
 readonly DATA_ROOT_FALLBACK="${HOME}/Library/Application Support/com.apple.container"
-# Pinned to our fork. Do not unpin on socktainer/socktainer#358 alone — the branch carries three
-# changes the app depends on, and dropping any of them regresses a shipped feature:
-#   * die events for attach-bootstrapped containers (#358), without which `compose up
-#     --abort-on-container-exit` hangs forever;
+# Pinned to our fork. #358 has since landed upstream, but do not unpin on that alone — the branch
+# carries changes the app depends on, and dropping any of them regresses a shipped feature:
 #   * POST /containers/{id}/rename, without which `compose up` fails on any edited service, so the
 #     app's ports/volumes editing cannot be applied;
 #   * a fix for an inspect trap that killed the daemon when two host ports publish one container
 #     port — exactly what adding a second port produces.
+#   * the port to Apple Container 1.3.1 / Containerization 0.42.0, which upstream has not made.
+# Each was exercised against a live 1.3.1 runtime before this pin moved.
 # Unpin only once every one of them is upstream.
 readonly SOCKTAINER_REPO_URL="https://github.com/beshkenadze/socktainer.git"
-readonly SOCKTAINER_REV="17bf70dcd327b95570014a784ae2315d511c4d72"
+readonly SOCKTAINER_REV="6cedf5e45f745c7f945babdb1f8a00a5de8d696e"
 readonly SOCKTAINER_SOURCE_ROOT="${HOME}/Library/Application Support/ContainerStack/socktainer"
 readonly SOCKTAINER_BIN_DIR="${HOME}/.local/bin"
 readonly SOCKTAINER_BIN="${SOCKTAINER_BIN_DIR}/socktainer"
@@ -62,12 +63,12 @@ Usage:
   ./scripts/prepare-v1-runtime.sh pin              # print SOCKTAINER_REV
 
 prepare:
-  - downloads the signed Apple Container 1.2.2 installer
+  - downloads the signed Apple Container 1.3.1 installer
   - verifies its SHA-256 digest and package signature
   - stops the old runtime before changing its files
   - installs Apple Container and moves the old data directory aside
   - clones pinned Socktainer source
-- rebuilds Socktainer against Container 1.2.2 / Containerization 0.40.1
+- rebuilds Socktainer against Container 1.3.1 / Containerization 0.42.0
   - installs Socktainer at ~/.local/bin/socktainer
   - does NOT start either daemon
 
@@ -104,19 +105,16 @@ install_socktainer() {
     git -C "$SOCKTAINER_SOURCE_ROOT" fetch --depth 1 origin "$SOCKTAINER_REV"
     git -C "$SOCKTAINER_SOURCE_ROOT" checkout --detach "$SOCKTAINER_REV"
 
-    local package_file="$SOCKTAINER_SOURCE_ROOT/Package.swift"
-    perl -0pi -e 's/exact: "1\.2\.0"/exact: "1.2.2"/; s/exact: "0\.40\.2"/exact: "0.40.1"/' "$package_file"
-
-    # Container 1.2.2 adds the ssh field to Builder.BuildConfig.
-    local build_route="$SOCKTAINER_SOURCE_ROOT/Sources/socktainer/Routes/Images/BuildRoute.swift"
-    perl -0pi -e 's/secrets: \[:\],\n(\s+)contextDir:/secrets: [:],\n$1ssh: "",\n$1contextDir:/' "$build_route"
-
+    # The pinned revision declares Container 1.3.1 and Containerization 0.42.0 itself, and
+    # carries the `ssh` field Builder.BuildConfig gained. Both used to be patched in here; a
+    # rewrite that silently matches nothing is worse than no rewrite, so the resolution check
+    # below is what guards the versions now.
     swift package --package-path "$SOCKTAINER_SOURCE_ROOT" resolve
 
     local resolved_container resolved_containerization
     resolved_container="$(jq -r '.pins[] | select(.identity == "container") | .state.version' "$SOCKTAINER_SOURCE_ROOT/Package.resolved")"
     resolved_containerization="$(jq -r '.pins[] | select(.identity == "containerization") | .state.version' "$SOCKTAINER_SOURCE_ROOT/Package.resolved")"
-    [[ "$resolved_container" == "1.2.2" && "$resolved_containerization" == "0.40.1" ]] || {
+    [[ "$resolved_container" == "1.3.1" && "$resolved_containerization" == "0.42.0" ]] || {
         printf 'Unexpected Socktainer dependency resolution: container=%s containerization=%s\n' \
             "$resolved_container" "$resolved_containerization" >&2
         exit 1

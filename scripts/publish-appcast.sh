@@ -63,14 +63,18 @@ trap cleanup EXIT
 if [[ -n "${SPARKLE_PRIVATE_ED_KEY:-}" ]]; then
     (umask 077; printf '%s' "$SPARKLE_PRIVATE_ED_KEY" > "$work/ed-key")
 else
-    generate_keys="$(
-        for r in /opt/homebrew/Caskroom/sparkle /usr/local/Caskroom/sparkle; do
-            [[ -d "$r" ]] || continue
-            find "$r" -maxdepth 3 -name generate_keys -type f | sort -V | tail -1
-        done | tail -1
-    )"
+    if [[ -x "${SPARKLE_BIN:-}/generate_keys" ]]; then
+        generate_keys="$SPARKLE_BIN/generate_keys"
+    else
+        generate_keys="$(
+            for r in /opt/homebrew/Caskroom/sparkle /usr/local/Caskroom/sparkle; do
+                [[ -d "$r" ]] || continue
+                find "$r" -maxdepth 3 -name generate_keys -type f | sort -V | tail -1
+            done | tail -1
+        )"
+    fi
     [[ -n "$generate_keys" ]] \
-        || die "no SPARKLE_PRIVATE_ED_KEY and no generate_keys. Install: brew install --cask sparkle"
+        || die "no SPARKLE_PRIVATE_ED_KEY and no generate_keys. Set SPARKLE_BIN to a directory holding Sparkle's tools (https://github.com/sparkle-project/Sparkle/releases)."
     (umask 077; "$generate_keys" --account "$KEYCHAIN_ACCOUNT" -x "$work/ed-key" >/dev/null) \
         || die "could not export the '$KEYCHAIN_ACCOUNT' Sparkle key from the keychain"
 fi
@@ -101,6 +105,11 @@ else
     note "note: no release notes given — the update panel will be empty."
 fi
 
+# zamokctl discovers generate_appcast from the Homebrew cask by default. CI has
+# no cask -- Homebrew disabled it -- so the directory is named explicitly there.
+sparkle_bin_args=()
+[[ -n "${SPARKLE_BIN:-}" ]] && sparkle_bin_args=(--sparkle-bin "$SPARKLE_BIN")
+
 note "== signing $(basename "$DMG") into $feed =="
 zamokctl appcast \
     --input "$DMG" \
@@ -108,6 +117,7 @@ zamokctl appcast \
     --download-url-prefix "$DOWNLOAD_URL_PREFIX" \
     --appcast "$worktree/$feed" \
     "${notes_args[@]}" \
+    "${sparkle_bin_args[@]}" \
     --maximum-versions 10
 [[ -f "$worktree/$feed" ]] || die "zamokctl appcast wrote no feed"
 # An unsigned item is worse than no item: Sparkle would reject the update while

@@ -3,6 +3,50 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.6.0</title>
+            <pubDate>Thu, 03 Sep 2026 18:26:39 +0000</pubDate>
+            <sparkle:version>237</sparkle:version>
+            <sparkle:shortVersionString>0.6.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>Apple Container moves to 1.3.1, which closes six security advisories in the layer<br>
+that pulls and unpacks images. Updating the app updates the runtime with it:<br>
+<code class="notranslate">brew upgrade --cask containerstack</code> pulls both.</p>
+<h3>Security</h3>
+<ul>
+<li>The pinned runtime moves from Apple Container 1.2.2 to 1.3.1. All six advisories<br>
+fixed in containerization 0.42.0 covered the 0.40.1 that 1.2.2 carried. Four are<br>
+reached by pulling an image from a registry you do not control; one of those,<br>
+CVE-2026-65388, could hand your registry credentials to whatever host the<br>
+registry names in its authentication challenge — over plain HTTP if it asks, and<br>
+on a login that fails, because the client sends them before it stores them.<br>
+The other two are reached by creating a container and by loading an image layout.</li>
+<li>The Docker bridge was ported to that runtime. A tarball whose index carries one<br>
+entry the runtime now refuses to read still loads the images beside it, rather<br>
+than failing whole.</li>
+</ul>
+<h3>Added</h3>
+<ul>
+<li>A runtime this build was not tested against is now stated plainly, naming the<br>
+version found, the version required, and the command that fixes it. Until now the<br>
+helper exited, launchd restarted it every ten seconds, and the app could only say<br>
+the helper had exited — the same sentence it shows when a socket never opens.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Image pushes and registry inspection now always use <code class="notranslate">https</code>. Apple Container 1.3.0<br>
+removed the scheme detection that downgraded internal hosts to plain HTTP, and<br>
+Docker's own default is the same. A registry served over plain HTTP is no longer<br>
+reachable through those two paths.</li>
+</ul>
+<h3>Known limitations</h3>
+<p>Published ports still require a runtime restart if a bridge-created network's vmnet<br>
+helper dies; restarting only the containers does not repair the host route. Running<br>
+an image from the Images screen still waits for the container to exit before it<br>
+returns.</p>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.6.0/ContainerStack-0.6.0.dmg" length="22411815" type="application/octet-stream" sparkle:edSignature="K7hMPMh35N+LzcUSMm7150wICbPSW3Kb/XI6pAdupdh3htppOBOdycWHlkmdaZqr7Xoi0dgvEa8URthy1CAMDQ=="/>
+        </item>
+        <item>
             <title>0.5.1</title>
             <pubDate>Sun, 30 Aug 2026 14:45:29 +0000</pubDate>
             <sparkle:version>222</sparkle:version>

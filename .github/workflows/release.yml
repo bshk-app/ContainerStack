@@ -105,10 +105,37 @@ jobs:
             echo "release body updated from CHANGELOG"
           fi
 
+      # Sparkle's CLI tools come from the project's own release tarball, pinned.
+      # This was `brew install --cask sparkle` until Homebrew disabled that cask
+      # on 2026-09-01 for failing the Gatekeeper check, which took the release
+      # pipeline down with it mid-release. The version matches the Sparkle the
+      # app links, so the signer and the framework cannot drift apart.
       - name: Install zamokctl and the Sparkle tools
+        env:
+          SPARKLE_VERSION: "2.9.6"
+          SPARKLE_SHA256: "52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192"
         run: |
           brew install bshk-app/tap/zamokctl
-          brew install --cask sparkle
+          # The pin has to follow the Sparkle the app links: a signer from a
+          # different major writes an appcast the framework may not accept, and
+          # that failure would surface as "no update available" in the panel,
+          # long after the release looked successful.
+          linked="$(jq -r '.pins[] | select(.identity=="sparkle") | .state.version' Package.resolved)"
+          if [[ "$linked" != "$SPARKLE_VERSION" ]]; then
+            echo "Sparkle pin drift: the app links $linked, this job pins $SPARKLE_VERSION."
+            echo "Bump SPARKLE_VERSION and SPARKLE_SHA256 together -- the digest is per-version."
+            exit 1
+          fi
+          curl -fsSL -o "$RUNNER_TEMP/sparkle.tar.xz" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          echo "${SPARKLE_SHA256}  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          # A tarball that unpacked into a different shape must fail here, not
+          # later inside zamokctl with a path it cannot explain.
+          [[ -x "$RUNNER_TEMP/sparkle/bin/generate_appcast" ]] \
+            || { echo "no generate_appcast in the Sparkle tarball"; exit 1; }
+          echo "SPARKLE_BIN=$RUNNER_TEMP/sparkle/bin" >> "$GITHUB_ENV"
 
       # Key on the pinned revision, not the file's hash: the pin is the only
       # thing that decides which binary comes out, and hashing the whole script

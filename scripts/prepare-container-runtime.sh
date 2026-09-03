@@ -24,8 +24,8 @@ set -euo pipefail
 # Unlike prepare-v1-runtime.sh this touches no running service and moves no
 # data: it only writes inside its own cache directory.
 
-readonly CONTAINER_VERSION="1.2.2"
-readonly CONTAINER_PKG_SHA256="f4c7e73f7203725a3512676dfd9ec6c6a98a37093b6fd4a1b0fdcfcb227e2118"
+readonly CONTAINER_VERSION="1.3.1"
+readonly CONTAINER_PKG_SHA256="a7c1b9d7927d30875f2f6c7bd1d0cb06c2daa6ca57ce9e90a5144e898fdf54a8"
 readonly CONTAINER_PKG="container-${CONTAINER_VERSION}-installer-signed.pkg"
 readonly CONTAINER_URL="https://github.com/apple/container/releases/download/${CONTAINER_VERSION}/${CONTAINER_PKG}"
 

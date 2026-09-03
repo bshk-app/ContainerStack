@@ -270,16 +270,34 @@ final class RuntimeViewModel {
             return
         }
 
-        launchRuntimeHelper()
+        await launchRuntimeHelper()
     }
 
-    private func launchRuntimeHelper() {
+    private func launchRuntimeHelper() async {
         let launchPlan = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL)
         guard FileManager.default.isExecutableFile(atPath: launchPlan.executablePath) else {
             isStarting = false
             failRuntime("Runtime helper is missing: \(launchPlan.executablePath)")
             return
         }
+
+        // Asked before the helper is spawned rather than read out of its log afterwards. The
+        // helper reaches the same verdict and exits, which the app could only report as
+        // "helper exited" - a sentence that names neither version nor remedy.
+        //
+        // Detached because this waits on `container --version` and the diagnostic deadline is
+        // ten seconds: run on the main actor, a wedged binary freezes the window for all of it.
+        let configuration = runtimeConfiguration()
+        let verdict = await Task.detached { ContainerVersionCheck.run(configuration) }.value
+        if let complaint = verdict.userFacingMessage {
+            isStarting = false
+            failRuntime(complaint)
+            return
+        }
+
+        // The await above is a window: something else may have started the helper while the
+        // version was being read, and a second one would fight the first for the socket.
+        guard runtimeProcess?.isRunning != true else { return }
 
         do {
             let logURL = try runtimeLogURL()
@@ -447,8 +465,8 @@ final class RuntimeViewModel {
         await socketResponds()
     }
 
-    func launchRuntimeHelperForRestart() {
-        launchRuntimeHelper()
+    func launchRuntimeHelperForRestart() async {
+        await launchRuntimeHelper()
     }
 
     var isAgentRegistered: Bool {

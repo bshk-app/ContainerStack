@@ -9,7 +9,7 @@ The pin lives in two places that must agree:
 | | |
 |---|---|
 | `scripts/prepare-v1-runtime.sh` | `SOCKTAINER_REV` — the bridge |
-| `RuntimeProcessConfiguration.pinnedContainerVersion` | Apple Container, currently `1.2.2` |
+| `RuntimeProcessConfiguration.pinnedContainerVersion` | Apple Container, currently `1.3.1` |
 
 ## Why a plain Homebrew dependency is not enough
 
@@ -26,16 +26,17 @@ There are exactly two ways to make the pin reach a user.
 ## Channel 1 — Homebrew, via a versioned formula (current default)
 
 Homebrew's own answer to pinning is to put the version in the formula's **name**:
-`node@20`, `postgresql@16`. So the tap carries `container@1.2.2`.
+`node@20`, `postgresql@16`. So the tap carries `container@1.3.1`.
 
-The formula lives in `bshk-app/homebrew-tap` as `Formula/container@1.2.2.rb` and
+The formula lives in `bshk-app/homebrew-tap` as `Formula/container@1.3.1.rb` and
 **only** there — a second copy in this repo would be one more pin to drift out of
 sync, which is the failure this whole page exists to prevent. The link back to
 the source is `RuntimeProcessConfiguration.pinnedContainerVersion`, which must
 name the same version.
 
-Note what is and is not generated. Zamok renders the **cask** for this product
-from its `CaskConfig`, so nothing about the cask belongs in this repo. The
+Note what is and is not generated. `zamokctl cask` renders and pushes the **cask**
+from `Packaging/Homebrew/cask-containerstack.json`, which `scripts/publish-cask.sh`
+hands it — so the cask's inputs live here even though the cask itself does not. The
 formula is a third-party dependency Zamok knows nothing about, so it is written
 by hand. Two properties of it matter:
 
@@ -47,10 +48,11 @@ by hand. Two properties of it matter:
   app do not have.
 
 The dependency is declared on the Zamok product, not in a file here: set
-`CaskConfig.dependsOnFormulae` to `["bshk-app/tap/container@1.2.2"]` and the
+`dependsOnFormulae` in `Packaging/Homebrew/cask-containerstack.json` to
+`["bshk-app/tap/container@1.3.1"]` and the
 generated cask carries `depends_on formula:` on the next regeneration. The app
 finds the formula at the stable
-`/opt/homebrew/opt/container@1.2.2/bin/container`, which is first in
+`/opt/homebrew/opt/container@1.3.1/bin/container`, which is first in
 `RuntimeProcessConfiguration.containerSearchPaths`.
 
 Bumping the version means a new formula file, a new `pinnedContainerVersion`, and

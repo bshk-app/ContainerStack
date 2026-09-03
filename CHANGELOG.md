@@ -12,6 +12,46 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.6.0](https://github.com/bshk-app/ContainerStack/compare/v0.5.1...v0.6.0) (2026-09-03)
+
+Apple Container moves to 1.3.1, which closes six security advisories in the layer
+that pulls and unpacks images. Updating the app updates the runtime with it:
+`brew upgrade --cask containerstack` pulls both.
+
+### Security
+
+- The pinned runtime moves from Apple Container 1.2.2 to 1.3.1. All six advisories
+  fixed in containerization 0.42.0 covered the 0.40.1 that 1.2.2 carried. Four are
+  reached by pulling an image from a registry you do not control; one of those,
+  CVE-2026-65388, could hand your registry credentials to whatever host the
+  registry names in its authentication challenge — over plain HTTP if it asks, and
+  on a login that fails, because the client sends them before it stores them.
+  The other two are reached by creating a container and by loading an image layout.
+- The Docker bridge was ported to that runtime. A tarball whose index carries one
+  entry the runtime now refuses to read still loads the images beside it, rather
+  than failing whole.
+
+### Added
+
+- A runtime this build was not tested against is now stated plainly, naming the
+  version found, the version required, and the command that fixes it. Until now the
+  helper exited, launchd restarted it every ten seconds, and the app could only say
+  the helper had exited — the same sentence it shows when a socket never opens.
+
+### Changed
+
+- Image pushes and registry inspection now always use `https`. Apple Container 1.3.0
+  removed the scheme detection that downgraded internal hosts to plain HTTP, and
+  Docker's own default is the same. A registry served over plain HTTP is no longer
+  reachable through those two paths.
+
+### Known limitations
+
+Published ports still require a runtime restart if a bridge-created network's vmnet
+helper dies; restarting only the containers does not repair the host route. Running
+an image from the Images screen still waits for the container to exit before it
+returns.
+
 ## [0.5.1](https://github.com/bshk-app/ContainerStack/compare/v0.5.0...v0.5.1) (2026-08-30)
 
 A maintenance release about one thing: the app telling the truth about the runtime.

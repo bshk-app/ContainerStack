@@ -10,7 +10,7 @@ readonly SOCKTAINER_BINARY="${SOCKTAINER_BINARY:-${HOME}/.local/bin/socktainer}"
 readonly SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 
 # Vendoring the Apple Container runtime into the bundle. Off by default: the
-# Homebrew channel pins the version through a keg-only `container@1.2.2`
+# Homebrew channel pins the version through a keg-only `container@1.3.1`
 # formula, which costs ~30 MB instead of ~500 MB. Turn it on for a standalone
 # .app handed out outside Homebrew, where nothing else can guarantee the
 # version. See docs/vendoring-apple-container.md.

@@ -7,7 +7,7 @@ Every milestone below maps to a GitHub milestone in `bshk-app/ContainerStack`.
 
 Working today, verified end to end:
 
-- Apple Container 1.2.2 supervised by a bundled runtime helper, socktainer shipped as a sidecar in `Contents/Helpers`.
+- Apple Container 1.3.1 supervised by a bundled runtime helper, socktainer shipped as a sidecar in `Contents/Helpers`.
 - Docker-compatible socket at `~/.containerstack/docker.sock`, registered as the active `containerstack` Docker context by default. Opting out restores the previous context; `/var/run/docker.sock` is never changed.
 - `docker` and `docker compose` work unmodified: networks, volumes, published ports, `exec`, `down -v`.
 - `cstack`: ps, inspect, logs, start/stop/restart/rm, run, images, pull, rmi, volumes, networks, df, prune, context, compose.

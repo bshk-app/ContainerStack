@@ -9,7 +9,7 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
     /// version constraint, so the pin is carried by the *name* of a keg-only
     /// formula — the `container@x.y.z` convention Homebrew itself uses for
     /// `node@20` and friends.
-    public static let pinnedContainerVersion = "1.2.2"
+    public static let pinnedContainerVersion = "1.3.1"
 
     /// Ordered by how much they guarantee about the version.
     ///
@@ -106,7 +106,7 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         containerPath: String,
         socktainerPath: String,
         socketPath: String = RuntimeProcessConfiguration.defaultSocketPath,
-        expectedContainerVersion: String = "1.2.2",
+        expectedContainerVersion: String = RuntimeProcessConfiguration.pinnedContainerVersion,
         containerInstallRoot: String? = nil
     ) {
         self.containerInstallRoot = containerInstallRoot

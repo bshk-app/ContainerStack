@@ -116,6 +116,16 @@ jobs:
           SPARKLE_SHA256: "52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192"
         run: |
           brew install bshk-app/tap/zamokctl
+          # The pin has to follow the Sparkle the app links: a signer from a
+          # different major writes an appcast the framework may not accept, and
+          # that failure would surface as "no update available" in the panel,
+          # long after the release looked successful.
+          linked="$(jq -r '.pins[] | select(.identity=="sparkle") | .state.version' Package.resolved)"
+          if [[ "$linked" != "$SPARKLE_VERSION" ]]; then
+            echo "Sparkle pin drift: the app links $linked, this job pins $SPARKLE_VERSION."
+            echo "Bump SPARKLE_VERSION and SPARKLE_SHA256 together -- the digest is per-version."
+            exit 1
+          fi
           curl -fsSL -o "$RUNNER_TEMP/sparkle.tar.xz" \
             "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
           echo "${SPARKLE_SHA256}  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 -c -

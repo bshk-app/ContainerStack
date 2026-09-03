@@ -12,6 +12,19 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.6.0](https://github.com/bshk-app/ContainerStack/compare/v0.5.1...v0.6.0) (2026-09-03)
+
+
+### Added
+
+* **runtime:** say which Apple Container version is wrong, before starting ([8e0bf43](https://github.com/bshk-app/ContainerStack/commit/8e0bf4356d29781cf9bc93f55228b6f90d0fec5a))
+* **runtime:** say which Apple Container version is wrong, before starting ([93cd193](https://github.com/bshk-app/ContainerStack/commit/93cd1938283bc7b103876b8a187b16a04d17a9f6))
+
+
+### Fixed
+
+* **app:** read the container version off the main actor ([ab2b119](https://github.com/bshk-app/ContainerStack/commit/ab2b119326f63cc660e8a6a5d37f24f0cf90308e))
+
 ## [0.5.1](https://github.com/bshk-app/ContainerStack/compare/v0.5.0...v0.5.1) (2026-08-30)
 
 A maintenance release about one thing: the app telling the truth about the runtime.

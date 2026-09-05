@@ -147,9 +147,45 @@ extension RuntimeViewModel {
                 installed: isDockerContextInstalled,
                 takeoverEnabled: takesOverDockerContext
             )
-        else { return }
+        else {
+            await repairStaleContextRecordIfNeeded()
+            return
+        }
         guard let initialState = dockerContextPreferenceSequencer.request(true) else { return }
         await applyDockerContextPreference(startingWith: initialState)
+    }
+
+    /// `shouldAdopt`'s "no" for an installed-but-inactive context is deliberate -- activating it
+    /// would reclaim a choice made in another product. That says nothing about whether the record
+    /// it declines to touch still names a socket this app would ever serve at. Rewriting a
+    /// mismatched record never runs `context use`, so it cannot do what `shouldAdopt` is
+    /// declining to do.
+    private func repairStaleContextRecordIfNeeded() async {
+        guard takesOverDockerContext, isDockerContextInstalled == true,
+            activeDockerContext != DockerContext.name
+        else { return }
+        let currentSocketPath = socketPath
+        let recorded = await Task.detached {
+            try? DockerCLI.recordedSocketPath(for: DockerContext.name)
+        }.value
+        guard
+            DockerContext.shouldRepairStaleRecord(
+                activeContext: activeDockerContext,
+                installed: isDockerContextInstalled,
+                takeoverEnabled: takesOverDockerContext,
+                recordedSocketPath: recorded,
+                currentSocketPath: currentSocketPath
+            )
+        else { return }
+        do {
+            try await Task.detached { try DockerCLI.repairRecord(socketPath: currentSocketPath) }.value
+            serviceMessage =
+                "Docker context '\(DockerContext.name)' pointed at a retired socket; repaired the record without switching to it."
+        } catch {
+            // Best-effort: a failed repair leaves the record exactly where adoptDockerContextIfEnabled
+            // already left it -- worth trying again next launch, not worth surfacing as an error for
+            // a context nothing is currently using.
+        }
     }
 
     func useDockerContext() async {

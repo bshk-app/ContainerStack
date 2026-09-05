@@ -659,7 +659,6 @@ struct DockerContextTests {
                     removeContextOnUninstall: true
                 ))
     }
-
 }
 
 private func makeListeningUnixSocket(atPath path: String) throws -> Int32 {

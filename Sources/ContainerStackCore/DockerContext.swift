@@ -9,15 +9,20 @@ public enum DockerContext {
     public static let description = "ContainerStack"
     public static let fallbackName = "default"
 
-    public static func installCommands(socketPath: String, exists: Bool) -> [[String]] {
+    /// Just the `context update`/`create` half of `installCommands`, without switching to it.
+    /// Rewriting what a dormant record points at is safe regardless of who is active: the
+    /// client's *current* context does not change, only what this name resolves to the next time
+    /// anyone switches to it.
+    public static func recordCommand(socketPath: String, exists: Bool) -> [String] {
         [
-            [
-                "context", exists ? "update" : "create", name,
-                "--description", description,
-                "--docker", "host=unix://\(socketPath)",
-            ],
-            ["context", "use", name],
+            "context", exists ? "update" : "create", name,
+            "--description", description,
+            "--docker", "host=unix://\(socketPath)",
         ]
+    }
+
+    public static func installCommands(socketPath: String, exists: Bool) -> [[String]] {
+        [recordCommand(socketPath: socketPath, exists: exists), ["context", "use", name]]
     }
 
     public static func uninstallCommands(
@@ -56,6 +61,26 @@ public enum DockerContext {
         takeoverEnabled && (installed == false || activeContext == name)
     }
 
+    /// True when our own context exists, is inactive, and its recorded socket does not match the
+    /// one this app currently serves -- the *recorded* endpoint against the *current* pin, not
+    /// reachability: a retired path can still answer, and the current one can be legitimately down
+    /// while the runtime starts. `shouldAdopt`'s "no" for installed-but-inactive is deliberate --
+    /// it never reclaims a context chosen elsewhere -- and says nothing about the record's
+    /// content; this only ever rewrites what a dormant name points to, never what is active.
+    public static func shouldRepairStaleRecord(
+        activeContext: String?,
+        installed: Bool?,
+        takeoverEnabled: Bool,
+        recordedSocketPath: String?,
+        currentSocketPath: String
+    ) -> Bool {
+        takeoverEnabled
+            && installed == true
+            && activeContext != name
+            && recordedSocketPath != nil
+            && recordedSocketPath != currentSocketPath
+    }
+
     public static func socketStatus(atPath path: String) -> DockerSocketStatus {
         let fileManager = FileManager.default
         guard let destination = try? fileManager.destinationOfSymbolicLink(atPath: path) else {
@@ -92,6 +117,24 @@ public enum DockerContext {
 
     public static func contextExists(in listing: String) -> Bool {
         contextNames(in: listing).contains(name)
+    }
+
+    /// The `unix://` socket path a *specific* context records, from `docker context ls --format
+    /// {{.Name}}\t{{.DockerEndpoint}}` output. Not the active context -- the caller names which
+    /// one. A WARNING line (printed when the client config itself is unreadable) has no tab and
+    /// never matches; a non-`unix://` endpoint (`tcp://`, `npipe://`) returns `nil` rather than a
+    /// path that was never a filesystem path to begin with.
+    public static func recordedSocketPath(for contextName: String, in output: String) -> String? {
+        for line in output.split(whereSeparator: \.isNewline) {
+            let fields = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+            guard fields.count == 2,
+                fields[0].trimmingCharacters(in: .whitespaces) == contextName
+            else { continue }
+            let endpoint = fields[1].trimmingCharacters(in: .whitespaces)
+            guard endpoint.hasPrefix("unix://") else { return nil }
+            return String(endpoint.dropFirst("unix://".count))
+        }
+        return nil
     }
 
     private static func parsedContextNames(in output: String) -> [String] {

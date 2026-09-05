@@ -12,6 +12,15 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.6.1](https://github.com/bshk-app/ContainerStack/compare/v0.6.0...v0.6.1) (2026-09-05)
+
+
+### Fixed
+
+* **runtime:** repair a dead docker context record without activating it ([737807f](https://github.com/bshk-app/ContainerStack/commit/737807f192c9f355c0d90362063e059d9761779e))
+* **runtime:** repair a dead docker context record without activating it ([36659bf](https://github.com/bshk-app/ContainerStack/commit/36659bfe31b7967cad4e77b6bcb468e69bd72ccf))
+* **runtime:** replace the mutation-slot poll with a continuation queue ([c8186ba](https://github.com/bshk-app/ContainerStack/commit/c8186bae3dca7ae0d134a962359f055bd3cbe14b))
+
 ## [0.6.0](https://github.com/bshk-app/ContainerStack/compare/v0.5.1...v0.6.0) (2026-09-03)
 
 Apple Container moves to 1.3.1, which closes six security advisories in the layer

@@ -29,6 +29,15 @@ final class RuntimeViewModel {
     var livenessFilter = RuntimeLivenessFilter()
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
+    /// True exactly while a Docker context CLI mutation -- install, uninstall, or a stale-record
+    /// repair -- is running. Orthogonal to `dockerContextPreferenceSequencer`, which tracks which
+    /// boolean value to converge on: this only tracks whether the CLI is being touched right now,
+    /// so a background repair and an explicit install/uninstall can never write to the same
+    /// context store at the same time.
+    var isMutatingDockerContext = false
+    /// Queued in slot-acquisition order behind `isMutatingDockerContext`, so a caller waiting for a
+    /// turn is resumed rather than polled -- see `acquireDockerContextMutationSlot`.
+    var dockerContextMutationWaiters: [CheckedContinuation<Void, Never>] = []
     let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
     internal(set) var runtimeFailure: String?
     internal(set) var isRestarting = false

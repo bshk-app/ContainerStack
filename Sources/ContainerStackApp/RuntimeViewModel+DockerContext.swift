@@ -147,9 +147,49 @@ extension RuntimeViewModel {
                 installed: isDockerContextInstalled,
                 takeoverEnabled: takesOverDockerContext
             )
-        else { return }
+        else {
+            await repairStaleContextRecordIfNeeded()
+            return
+        }
         guard let initialState = dockerContextPreferenceSequencer.request(true) else { return }
         await applyDockerContextPreference(startingWith: initialState)
+    }
+
+    /// `shouldAdopt` deliberately never activates an installed-but-inactive context; this repairs
+    /// its record anyway, without ever running `context use`.
+    private func repairStaleContextRecordIfNeeded() async {
+        guard takesOverDockerContext, isDockerContextInstalled == true,
+            activeDockerContext != DockerContext.name
+        else { return }
+        let currentSocketPath = socketPath
+        let recorded = await Task.detached {
+            try? DockerCLI.recordedSocketPath(for: DockerContext.name)
+        }.value
+        guard
+            DockerContext.shouldRepairStaleRecord(
+                activeContext: activeDockerContext,
+                installed: isDockerContextInstalled,
+                takeoverEnabled: takesOverDockerContext,
+                recordedSocketPath: recorded,
+                currentSocketPath: currentSocketPath
+            )
+        else { return }
+        // Shares install/uninstall's mutation slot so the two never write to the context store at
+        // the same time; never touches dockerContextPreferenceSequencer itself.
+        await acquireDockerContextMutationSlot()
+        defer { releaseDockerContextMutationSlot() }
+        // Re-checked after the slot is granted: an uninstall could have run first and cleared
+        // ownership.
+        guard activeDockerContext != DockerContext.name, isDockerContextInstalled == true,
+            takesOverDockerContext
+        else { return }
+        do {
+            try await Task.detached { try DockerCLI.repairRecord(socketPath: currentSocketPath) }.value
+            serviceMessage =
+                "Docker context '\(DockerContext.name)' pointed at a retired socket; repaired the record without switching to it."
+        } catch {
+            // Best-effort: retried on the next launch, not worth surfacing as an error.
+        }
     }
 
     func useDockerContext() async {
@@ -158,14 +198,36 @@ extension RuntimeViewModel {
         await applyDockerContextPreference(startingWith: initialState)
     }
 
+    /// Grants the slot immediately if free, otherwise queues rather than polls -- a cancelled
+    /// waiter simply waits its turn instead of spinning on a repeatedly-thrown cancellation.
+    private func acquireDockerContextMutationSlot() async {
+        guard isMutatingDockerContext else {
+            isMutatingDockerContext = true
+            return
+        }
+        await withCheckedContinuation { dockerContextMutationWaiters.append($0) }
+    }
+
+    /// Hands the slot directly to the next waiter instead of clearing it first, so a third caller
+    /// cannot slip in between.
+    private func releaseDockerContextMutationSlot() {
+        guard dockerContextMutationWaiters.isEmpty else {
+            dockerContextMutationWaiters.removeFirst().resume()
+            return
+        }
+        isMutatingDockerContext = false
+    }
+
     private func applyDockerContextPreference(startingWith initialState: Bool) async {
         var nextState = initialState
         while true {
+            await acquireDockerContextMutationSlot()
             if nextState {
                 await installDockerContext()
             } else {
                 await uninstallDockerContext()
             }
+            releaseDockerContextMutationSlot()
             guard let pendingState = dockerContextPreferenceSequencer.completed(nextState) else { return }
             nextState = pendingState
         }

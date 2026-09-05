@@ -147,6 +147,31 @@ public enum DockerCLI {
         try installedContexts(using: runContextCommand)
     }
 
+    /// The socket a *specific* context records, regardless of whether it is active. Distinct from
+    /// `activeContext()`, which only ever names the active one.
+    public static func recordedSocketPath(for contextName: String) throws -> String? {
+        try recordedSocketPath(for: contextName, using: runContextCommand)
+    }
+
+    static func recordedSocketPath(
+        for contextName: String,
+        using commandRunner: ([String]) throws -> String
+    ) throws -> String? {
+        DockerContext.recordedSocketPath(
+            for: contextName,
+            in: try commandRunner(["context", "ls", "--format", "{{.Name}}\t{{.DockerEndpoint}}"])
+        )
+    }
+
+    /// Rewrites the context's record without switching to it -- never appends `context use`.
+    public static func repairRecord(socketPath: String) throws {
+        try repairRecord(socketPath: socketPath, runContextCommand)
+    }
+
+    static func repairRecord(socketPath: String, _ commandRunner: ([String]) throws -> String) throws {
+        _ = try commandRunner(DockerContext.recordCommand(socketPath: socketPath, exists: true))
+    }
+
     public static func activeContext() -> String? {
         activeContext(environment: ProcessInfo.processInfo.environment) { arguments, environment in
             try run(arguments: arguments, environment: environment)

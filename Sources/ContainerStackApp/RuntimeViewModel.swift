@@ -29,6 +29,10 @@ final class RuntimeViewModel {
     var livenessFilter = RuntimeLivenessFilter()
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
+    /// Held while a Docker context CLI mutation is running; see `acquireDockerContextMutationSlot`.
+    var isMutatingDockerContext = false
+    /// FIFO queue for callers waiting on `isMutatingDockerContext`.
+    var dockerContextMutationWaiters: [CheckedContinuation<Void, Never>] = []
     let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
     internal(set) var runtimeFailure: String?
     internal(set) var isRestarting = false

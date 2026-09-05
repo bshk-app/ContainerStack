@@ -3,12 +3,8 @@ import Testing
 
 @testable import ContainerStackCore
 
-/// A registered context can be ours by name and yet name a socket this app retired long ago --
-/// `shouldAdopt` deliberately never touches an installed-but-inactive context (see
-/// `DockerContextTests`), because activating it would reclaim a choice made in another product.
-/// These tests cover the separate, narrower repair that exists precisely because that "no" says
-/// nothing about whether the record it declines to touch is even worth keeping as-is: rewriting a
-/// mismatched record, without ever running `context use`.
+/// Covers the stale-record repair: rewriting a mismatched record without ever running
+/// `context use`, kept separate from `DockerContextTests`'s `shouldAdopt` coverage.
 struct DockerContextStaleRecordTests {
     @Test
     func splitsTheRecordFromTheSwitchInInstallCommands() {

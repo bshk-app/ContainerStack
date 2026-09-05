@@ -163,9 +163,7 @@ public enum DockerCLI {
         )
     }
 
-    /// Rewrites what the context's own record points at, without switching to it. The
-    /// activation-vs-repair split this exists for is why this never appends `context use` --
-    /// `installContext` is the only path that does.
+    /// Rewrites the context's record without switching to it -- never appends `context use`.
     public static func repairRecord(socketPath: String) throws {
         try repairRecord(socketPath: socketPath, runContextCommand)
     }

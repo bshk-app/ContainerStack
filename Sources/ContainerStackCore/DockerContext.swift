@@ -10,9 +10,6 @@ public enum DockerContext {
     public static let fallbackName = "default"
 
     /// Just the `context update`/`create` half of `installCommands`, without switching to it.
-    /// Rewriting what a dormant record points at is safe regardless of who is active: the
-    /// client's *current* context does not change, only what this name resolves to the next time
-    /// anyone switches to it.
     public static func recordCommand(socketPath: String, exists: Bool) -> [String] {
         [
             "context", exists ? "update" : "create", name,
@@ -61,12 +58,8 @@ public enum DockerContext {
         takeoverEnabled && (installed == false || activeContext == name)
     }
 
-    /// True when our own context exists, is inactive, and its recorded socket does not match the
-    /// one this app currently serves -- the *recorded* endpoint against the *current* pin, not
-    /// reachability: a retired path can still answer, and the current one can be legitimately down
-    /// while the runtime starts. `shouldAdopt`'s "no" for installed-but-inactive is deliberate --
-    /// it never reclaims a context chosen elsewhere -- and says nothing about the record's
-    /// content; this only ever rewrites what a dormant name points to, never what is active.
+    /// True when our own context is inactive and its recorded endpoint no longer matches the
+    /// current socket path -- not a reachability check.
     public static func shouldRepairStaleRecord(
         activeContext: String?,
         installed: Bool?,

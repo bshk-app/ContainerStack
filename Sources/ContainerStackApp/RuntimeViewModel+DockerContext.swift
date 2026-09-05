@@ -155,11 +155,8 @@ extension RuntimeViewModel {
         await applyDockerContextPreference(startingWith: initialState)
     }
 
-    /// `shouldAdopt`'s "no" for an installed-but-inactive context is deliberate -- activating it
-    /// would reclaim a choice made in another product. That says nothing about whether the record
-    /// it declines to touch still names a socket this app would ever serve at. Rewriting a
-    /// mismatched record never runs `context use`, so it cannot do what `shouldAdopt` is
-    /// declining to do.
+    /// `shouldAdopt` deliberately never activates an installed-but-inactive context; this repairs
+    /// its record anyway, without ever running `context use`.
     private func repairStaleContextRecordIfNeeded() async {
         guard takesOverDockerContext, isDockerContextInstalled == true,
             activeDockerContext != DockerContext.name
@@ -177,16 +174,12 @@ extension RuntimeViewModel {
                 currentSocketPath: currentSocketPath
             )
         else { return }
-        // A background write: never touches dockerContextPreferenceSequencer's own bookkeeping, so
-        // it cannot swallow an explicit activation the way borrowing that lock directly once did (a
-        // same-value request racing this would have released the lock without ever running
-        // installDockerContext). It shares the mutation slot install/uninstall use instead, so the
-        // two can never write to the context store at the same time in either order.
+        // Shares install/uninstall's mutation slot so the two never write to the context store at
+        // the same time; never touches dockerContextPreferenceSequencer itself.
         await acquireDockerContextMutationSlot()
         defer { releaseDockerContextMutationSlot() }
-        // Re-checked immediately after the slot is granted: everything above ran before that, and an
-        // uninstall that ran first would have cleared ownership -- writing over that now would
-        // resurrect an orphaned record.
+        // Re-checked after the slot is granted: an uninstall could have run first and cleared
+        // ownership.
         guard activeDockerContext != DockerContext.name, isDockerContextInstalled == true,
             takesOverDockerContext
         else { return }
@@ -195,9 +188,7 @@ extension RuntimeViewModel {
             serviceMessage =
                 "Docker context '\(DockerContext.name)' pointed at a retired socket; repaired the record without switching to it."
         } catch {
-            // Best-effort: a failed repair leaves the record exactly where adoptDockerContextIfEnabled
-            // already left it -- worth trying again next launch, not worth surfacing as an error for
-            // a context nothing is currently using.
+            // Best-effort: retried on the next launch, not worth surfacing as an error.
         }
     }
 
@@ -207,13 +198,8 @@ extension RuntimeViewModel {
         await applyDockerContextPreference(startingWith: initialState)
     }
 
-    /// Grants the mutation slot immediately if free, otherwise queues a continuation rather than
-    /// polling. A cancelled caller is not woken early by this -- it waits its turn like any other
-    /// caller and the CLI mutation it is about to run completes normally once granted, matching how
-    /// `installDockerContext`/`uninstallDockerContext` already ignore cancellation of whatever task
-    /// invoked them. Polling with `Task.sleep` was rejected here for exactly that reason: a
-    /// cancelled sleep throws immediately, and swallowing that error would have looped as fast as
-    /// the scheduler allowed instead of actually waiting.
+    /// Grants the slot immediately if free, otherwise queues rather than polls -- a cancelled
+    /// waiter simply waits its turn instead of spinning on a repeatedly-thrown cancellation.
     private func acquireDockerContextMutationSlot() async {
         guard isMutatingDockerContext else {
             isMutatingDockerContext = true
@@ -222,9 +208,8 @@ extension RuntimeViewModel {
         await withCheckedContinuation { dockerContextMutationWaiters.append($0) }
     }
 
-    /// Hands the slot directly to the next waiter, if any, instead of clearing the flag first --
-    /// closing the window a third caller could otherwise slip through between a clear and the
-    /// waiter's own claim.
+    /// Hands the slot directly to the next waiter instead of clearing it first, so a third caller
+    /// cannot slip in between.
     private func releaseDockerContextMutationSlot() {
         guard dockerContextMutationWaiters.isEmpty else {
             dockerContextMutationWaiters.removeFirst().resume()

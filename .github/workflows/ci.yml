@@ -23,6 +23,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Restores .build's downloaded checkouts and compiled artifacts so `swift build`
+      # below only recompiles what actually changed -- SPM's own incremental tracking
+      # decides that; this just gives it a starting point instead of nothing. Keyed on
+      # Package.resolved, not on source, because the point is to survive across commits:
+      # a key that changed with every push would never hit. A toolchain change that made
+      # a restored .build genuinely incompatible is SPM's own state check to catch, not
+      # this key's job -- it rebuilds clean rather than trusting a stale cache silently.
+      - name: Cache SPM build
+        uses: actions/cache@v6
+        with:
+          path: .build
+          key: spm-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            spm-build-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Report toolchain
         run: |
           swift --version
@@ -125,6 +140,18 @@ jobs:
       # An invalid workflow file is not a parse error YAML can see: putting the
       # `runner` context in a job-level `env:` produced a run whose only symptom
       # was a failure named after the file. actionlint knows the context rules.
+      #
+      # Keyed on the pinned version below, same reasoning as the socktainer cache in
+      # release.yml: that pin is the only thing that decides what `go install` fetches
+      # and builds, so it is the only thing that should invalidate this cache.
+      - name: Cache Go modules for actionlint
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: actionlint-${{ runner.os }}-v1.7.12
+
       - name: Lint the workflows
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12

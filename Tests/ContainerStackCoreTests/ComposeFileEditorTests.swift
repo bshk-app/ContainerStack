@@ -296,6 +296,42 @@ struct ComposeFileEditorVolumeTests {
         }
     }
 
+    @Test func addingTheSameMountAgainIsANoOp() throws {
+        let input = """
+            services:
+              web:
+                image: nginx
+                volumes:
+                  - ./static:/home/static
+            """
+        let result = try ComposeFileEditor.addVolume(
+            ComposeVolumeMount(source: "./static", target: "/home/static", isReadOnly: false),
+            toService: "web",
+            in: input
+        )
+        #expect(result == input)
+    }
+
+    @Test func addingADifferentSourceOntoAnOccupiedTargetThrowsConflictingEntry() {
+        let input = """
+            services:
+              web:
+                image: nginx
+                volumes:
+                  - ./static:/home/static
+            """
+        #expect(
+            throws: ComposeFileEditor.EditError.conflictingEntry(
+                existing: "./static:/home/static", new: "/new:/home/static")
+        ) {
+            try ComposeFileEditor.addVolume(
+                ComposeVolumeMount(source: "/new", target: "/home/static", isReadOnly: false),
+                toService: "web",
+                in: input
+            )
+        }
+    }
+
     // MARK: structural fidelity & errors
 
     @Test func unknownServiceThrowsServiceNotFound() {

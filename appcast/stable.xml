@@ -3,6 +3,21 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.6.1</title>
+            <pubDate>Sun, 06 Sep 2026 13:34:59 +0000</pubDate>
+            <sparkle:version>245</sparkle:version>
+            <sparkle:shortVersionString>0.6.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<h3>Fixed</h3>
+<ul>
+<li><strong>runtime:</strong> repair a dead docker context record without activating it (<a href="https://github.com/bshk-app/ContainerStack/commit/737807f192c9f355c0d90362063e059d9761779e">737807f</a>)</li>
+<li><strong>runtime:</strong> repair a dead docker context record without activating it (<a href="https://github.com/bshk-app/ContainerStack/commit/36659bfe31b7967cad4e77b6bcb468e69bd72ccf">36659bf</a>)</li>
+<li><strong>runtime:</strong> replace the mutation-slot poll with a continuation queue (<a href="https://github.com/bshk-app/ContainerStack/commit/c8186bae3dca7ae0d134a962359f055bd3cbe14b">c8186ba</a>)</li>
+</ul>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.6.1/ContainerStack-0.6.1.dmg" length="22393927" type="application/octet-stream" sparkle:edSignature="sOxY4HZ+3VuNCFxhySuWk9u+Ok/m00afn9mEKfxw4+vTXIjdMOHIymPCDDBPBpq/OKghK8pyyPWgD+SluK2YCA=="/>
+        </item>
+        <item>
             <title>0.6.0</title>
             <pubDate>Thu, 03 Sep 2026 18:26:39 +0000</pubDate>
             <sparkle:version>237</sparkle:version>

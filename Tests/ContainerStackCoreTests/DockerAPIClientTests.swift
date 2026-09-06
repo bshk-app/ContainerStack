@@ -285,6 +285,29 @@ struct DockerAPIClientTests {
 
 }
 
+/// EINTR costs nothing to ask again; a real timeout already spent its whole deadline (#78).
+@Suite("Classifying a failed connect poll")
+struct ConnectPollFailureTests {
+    @Test
+    func zeroResultIsARealTimeout() {
+        #expect(UnixSocketTransport.connectPollFailure(pollResult: 0, errno: 0) == .timedOut)
+    }
+
+    @Test
+    func eintrIsRetryableNotATimeout() {
+        #expect(
+            UnixSocketTransport.connectPollFailure(pollResult: -1, errno: EINTR)
+                == .systemCallFailed(EINTR))
+    }
+
+    @Test
+    func otherNegativeResultKeepsItsOwnErrno() {
+        #expect(
+            UnixSocketTransport.connectPollFailure(pollResult: -1, errno: EBADF)
+                == .systemCallFailed(EBADF))
+    }
+}
+
 private actor RunningContainerTimeoutTransport: DockerAPITransport {
     private(set) var paths: [String] = []
     private(set) var timeouts: [Duration?] = []

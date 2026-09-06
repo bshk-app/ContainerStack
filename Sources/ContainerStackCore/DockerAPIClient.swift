@@ -586,8 +586,9 @@ public struct UnixSocketTransport: DockerAPITransport, Sendable {
             }
 
             var descriptorState = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
-            guard Darwin.poll(&descriptorState, 1, 5_000) > 0 else {
-                throw UnixSocketError.timedOut
+            let pollResult = Darwin.poll(&descriptorState, 1, 5_000)
+            guard pollResult > 0 else {
+                throw connectPollFailure(pollResult: pollResult, errno: errno)
             }
 
             var socketError: Int32 = 0
@@ -666,6 +667,17 @@ public struct UnixSocketTransport: DockerAPITransport, Sendable {
             return .timedOut
         }
         return .systemCallFailed(code)
+    }
+
+    /// `poll` returning 0 spent the whole deadline: a real timeout, worth reporting as one. Any
+    /// negative result is a syscall failure that spent no time at all -- EINTR among them, which is
+    /// why it was worth splitting out (#78) -- so every negative result keeps its own errno instead
+    /// of being folded into a timeout it never was.
+    static func connectPollFailure(pollResult: Int32, errno: Int32) -> UnixSocketError {
+        guard pollResult == 0 else {
+            return .systemCallFailed(errno)
+        }
+        return .timedOut
     }
 }
 

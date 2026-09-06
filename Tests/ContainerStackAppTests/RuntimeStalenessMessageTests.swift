@@ -373,6 +373,38 @@ struct RuntimeStalenessMessageTests {
         #expect(model.containerMessage?.contains("Container action failed") == true)
     }
 
+    /// Group stop and stack down bypassed this hook entirely until now -- the row toggle above had
+    /// it, these two did not (#64). Pins the helper's own behavior given the flag, not that
+    /// `stop(group:)`/`downStack` supply it -- RuntimeViewModel builds `client`/`stackRunner`
+    /// internally from a socket path with no seam to inject a failing one, the same gap #70
+    /// documents. Verified by reading the call sites instead.
+    @Test("A group stop that loses the XPC connection asks the monitor to check the runtime")
+    func groupStopConnectionLossRaisesRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.withResource("web", message: "Stopping web…", recoversRuntime: true) {
+            throw DockerAPIError.httpStatus(500, message: "XPC connection error: Connection invalid")
+        }
+
+        #expect(model.runtimeRecoveryRequested)
+    }
+
+    @Test("A stack down that loses the XPC connection asks the monitor to check the runtime")
+    func stackDownConnectionLossRaisesRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        let stack = ComposeStack(name: "web", fileURL: URL(fileURLWithPath: "/tmp/compose.yaml"))
+
+        await model.runStackAction(
+            stack, verb: "Taking down", pastTense: "is down", recoversRuntime: true
+        ) {
+            throw DockerAPIError.httpStatus(500, message: "XPC connection error: Connection invalid")
+        }
+
+        #expect(model.runtimeRecoveryRequested)
+    }
+
     private static func container() throws -> DockerContainerSummary {
         try JSONDecoder().decode(
             DockerContainerSummary.self,

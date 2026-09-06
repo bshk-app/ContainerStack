@@ -125,6 +125,18 @@ jobs:
       # An invalid workflow file is not a parse error YAML can see: putting the
       # `runner` context in a job-level `env:` produced a run whose only symptom
       # was a failure named after the file. actionlint knows the context rules.
+      #
+      # Keyed on the pinned version below, same reasoning as the socktainer cache in
+      # release.yml: that pin is the only thing that decides what `go install` fetches
+      # and builds, so it is the only thing that should invalidate this cache.
+      - name: Cache Go modules for actionlint
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: actionlint-${{ runner.os }}-v1.7.12
+
       - name: Lint the workflows
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12

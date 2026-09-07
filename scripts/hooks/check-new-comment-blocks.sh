@@ -13,10 +13,11 @@
 # renamed file with an old long comment would then block the gate.
 #
 # Threshold note: MAX_NEW_COMMENT_LINES can only raise the bar. SwiftLint never
-# offers a candidate block shorter than the bound in .swiftlint-comments.yml.
+# offers a candidate block shorter than the bound in .swiftlint-comments.yml, which
+# is 1 -- every new comment is a candidate; there is no floor left to raise from.
 set -euo pipefail
 
-readonly THRESHOLD="${MAX_NEW_COMMENT_LINES:-8}"
+readonly THRESHOLD="${MAX_NEW_COMMENT_LINES:-1}"
 readonly WARN_ONLY="${COMMENT_BLOCK_WARN_ONLY:-0}"
 ROOT="$(git rev-parse --show-toplevel)"
 readonly ROOT
@@ -45,7 +46,7 @@ usage: check-new-comment-blocks.sh [FILE...]
   FILE...        only these files
 
 env:
-  MAX_NEW_COMMENT_LINES     new lines in one block before it reports (default 8,
+  MAX_NEW_COMMENT_LINES     new lines in one block before it reports (default 1,
                             cannot go below the bound in .swiftlint-comments.yml)
   COMMENT_BLOCK_WARN_ONLY   1 reports without failing
   COMMENT_BLOCK_DIFF_BASE   ref the added lines are measured against (default HEAD,
@@ -124,9 +125,10 @@ repo_relative() {
 
 # The detector has to be proven alive, not assumed: an invalid custom rule makes
 # SwiftLint warn and fall back to its default rules, exit 0, and report nothing
-# our rule would have caught. So a canary block it must flag is the cheapest
-# proof - and the canary ends without a trailing newline, which exercises the
-# end-of-file branch of the regex at the same time.
+# our rule would have caught. So a canary line it must flag is the cheapest
+# proof, sized to the actual floor (1 line) rather than padded -- and it ends
+# without a trailing newline, which exercises the end-of-file branch of the
+# regex at the same time.
 #
 # The rule id has to appear in the output: any other finding would mean the
 # fallback rules ran, which is precisely the failure being ruled out.
@@ -136,7 +138,6 @@ detector_alive() {
     canary="$dir/Canary.swift"
     {
         printf 'let canary = 1\n'
-        for _ in 1 2 3 4 5 6 7 8 9; do printf '// canary\n'; done
         printf '// canary'
     } >"$canary" || alive=0
 

@@ -11,9 +11,9 @@
 #   * It runs under /bin/bash, which on macOS is still 3.2: no mapfile, no
 #     associative arrays. File lists live in the positional parameters.
 #
-# Formatting and lint block. The comment-length check only warns: measured over
-# the last 60 commits it would have stopped four hand-written forensic blocks,
-# and a human staging those has already made that call.
+# Formatting and lint block. The comment gate only warns here: it now flags
+# every new comment, so blocking on it would fail a commit that legitimately
+# comments new code.
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
@@ -58,10 +58,11 @@ else
     printf 'pre-commit: swiftlint not installed, skipping (brew install swiftlint)\n' >&2
 fi
 
-# Working tree rather than the staged snapshot, deliberately: this one only
-# warns, and a human who staged part of a comment block wants to hear about the
-# block they are looking at.
-COMMENT_BLOCK_WARN_ONLY=1 MAX_NEW_COMMENT_LINES=10 \
+# Working tree rather than the staged snapshot, deliberately: warn-only, and a
+# human who staged part of a comment wants to hear about the one they are
+# looking at. No MAX_NEW_COMMENT_LINES override: the default (1) already
+# reports everything.
+COMMENT_BLOCK_WARN_ONLY=1 \
     "$ROOT/scripts/hooks/check-new-comment-blocks.sh" || true
 
 exit "$status"

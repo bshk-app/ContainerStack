@@ -285,7 +285,9 @@ struct DockerAPIClientTests {
 
 }
 
-/// EINTR costs nothing to ask again; a real timeout already spent its whole deadline (#78).
+/// A real timeout already spent its whole deadline; EINTR can too, so it keeps its own errno
+/// instead of collapsing into `.timedOut` (#78). Whether it is cheap enough to retry immediately
+/// is DockerRetryPolicy's call, not this classifier's -- see ConnectFailureRetryPolicyTests below.
 @Suite("Classifying a failed connect poll")
 struct ConnectPollFailureTests {
     @Test
@@ -305,6 +307,33 @@ struct ConnectPollFailureTests {
         #expect(
             UnixSocketTransport.connectPollFailure(pollResult: -1, errno: EBADF)
                 == .systemCallFailed(EBADF))
+    }
+}
+
+/// EINTR's own poll can already have spent most of a 5s deadline before the signal lands, so it
+/// must not be treated as free to retry on ping()'s tick-bounded path -- only isRetryable's
+/// unbounded one. Regression coverage for a bug caught before #78 merged: the first version of
+/// that fix put EINTR in the one list both `isRetryable` and `failsImmediately` shared.
+@Suite("What DockerRetryPolicy will retry, and how urgently")
+struct ConnectFailureRetryPolicyTests {
+    @Test
+    func eintrIsRetryableButNotImmediately() {
+        let error = UnixSocketError.systemCallFailed(EINTR)
+        #expect(DockerAPIClient.isRetryable(error))
+        #expect(!DockerAPIClient.failsImmediately(error))
+    }
+
+    @Test
+    func connectionRefusedIsRetryableAndImmediate() {
+        let error = UnixSocketError.systemCallFailed(ECONNREFUSED)
+        #expect(DockerAPIClient.isRetryable(error))
+        #expect(DockerAPIClient.failsImmediately(error))
+    }
+
+    @Test
+    func aRealTimeoutIsRetryableButNotImmediate() {
+        #expect(DockerAPIClient.isRetryable(UnixSocketError.timedOut))
+        #expect(!DockerAPIClient.failsImmediately(UnixSocketError.timedOut))
     }
 }
 

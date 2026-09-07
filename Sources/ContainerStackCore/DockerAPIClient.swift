@@ -669,10 +669,12 @@ public struct UnixSocketTransport: DockerAPITransport, Sendable {
         return .systemCallFailed(code)
     }
 
-    /// `poll` returning 0 spent the whole deadline: a real timeout, worth reporting as one. Any
-    /// negative result is a syscall failure that spent no time at all -- EINTR among them, which is
-    /// why it was worth splitting out (#78) -- so every negative result keeps its own errno instead
-    /// of being folded into a timeout it never was.
+    /// `poll` returning 0 spent the whole deadline: a real timeout, worth reporting as one. A
+    /// negative result is a syscall failure instead, EINTR among them -- which is why it was worth
+    /// splitting out (#78): EINTR can fire after most of that same deadline has already elapsed
+    /// (see the retry-cost split in DockerRetryPolicy.swift), so folding it into `.timedOut` was
+    /// accidentally correct about the cost and wrong about the cause. Every negative result now
+    /// keeps its own errno instead.
     static func connectPollFailure(pollResult: Int32, errno: Int32) -> UnixSocketError {
         guard pollResult == 0 else {
             return .systemCallFailed(errno)

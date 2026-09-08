@@ -118,7 +118,9 @@ extension RuntimeViewModel {
 
     func downStack(_ stack: ComposeStack, removeVolumes: Bool) async {
         let runner = stackRunner
-        await runStackAction(stack, verb: "Taking down", pastTense: "is down") {
+        await runStackAction(
+            stack, verb: "Taking down", pastTense: "is down", recoversRuntime: true
+        ) {
             try await runner.down(stack: stack, removeVolumes: removeVolumes)
         }
     }
@@ -143,10 +145,11 @@ extension RuntimeViewModel {
         }
     }
 
-    private func runStackAction(
+    func runStackAction(
         _ stack: ComposeStack,
         verb: String,
         pastTense: String,
+        recoversRuntime: Bool = false,
         operation: () async throws -> String
     ) async {
         guard canMutate, busyStackID == nil else { return }
@@ -157,6 +160,11 @@ extension RuntimeViewModel {
             let output = try await operation()
             stackMessage = output.isEmpty ? "\(stack.name) \(pastTense)." : output
             await refreshStackStatus(stack)
+        } catch let error
+            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
+        {
+            runtimeRecoveryRequested = true
+            stackMessage = "Runtime connection lost. Checking the runtime…"
         } catch {
             stackMessage = "\(stack.name) failed: \(error)"
         }

@@ -49,6 +49,7 @@ extension RuntimeViewModel {
     func completeAutomaticRuntimeRecovery(restart: () async -> Bool) async {
         if await restart() {
             containerMessage = "Runtime recovered."
+            resourceMessage = "Runtime recovered."
             return
         }
         clearInventoryForStop()

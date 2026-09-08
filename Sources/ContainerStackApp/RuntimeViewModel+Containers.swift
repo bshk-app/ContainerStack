@@ -130,11 +130,20 @@ enum RuntimeConnectionRecovery {
     }
 
     private static func isDeadXPC(_ error: Error) -> Bool {
-        guard let apiError = error as? DockerAPIError,
+        if let apiError = error as? DockerAPIError,
             case .httpStatus(500, message: let message?) = apiError
-        else {
-            return false
+        {
+            return isDeadXPCMessage(message)
         }
+        if let runnerError = error as? ComposeRunner.RunnerError,
+            case .commandFailed(let output) = runnerError
+        {
+            return isDeadXPCMessage(output)
+        }
+        return false
+    }
+
+    private static func isDeadXPCMessage(_ message: String) -> Bool {
         let normalized = message.lowercased()
         return normalized.contains("xpc connection error")
             && (normalized.contains("connection interrupted")

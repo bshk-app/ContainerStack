@@ -18,7 +18,7 @@ extension RuntimeViewModel {
     }
 
     func stop(group: ContainerGroup) async {
-        await withResource(group.id, message: "Stopping \(group.title)…") {
+        await withResource(group.id, message: "Stopping \(group.title)…", recoversRuntime: true) {
             for container in group.containers where container.isRunning {
                 try await self.client.stopContainer(id: container.id)
             }
@@ -247,9 +247,10 @@ extension RuntimeViewModel {
         }
     }
 
-    private func withResource(
+    func withResource(
         _ id: String,
         message: String,
+        recoversRuntime: Bool = false,
         _ body: @escaping () async throws -> Void
     ) async {
         guard canMutate, busyResource == nil else { return }
@@ -260,6 +261,11 @@ extension RuntimeViewModel {
 
         do {
             try await body()
+        } catch let error
+            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
+        {
+            runtimeRecoveryRequested = true
+            resourceMessage = "Runtime connection lost. Checking the runtime…"
         } catch {
             resourceMessage = "Action failed: \(error)"
         }

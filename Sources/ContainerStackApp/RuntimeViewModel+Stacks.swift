@@ -118,8 +118,6 @@ extension RuntimeViewModel {
 
     func downStack(_ stack: ComposeStack, removeVolumes: Bool) async {
         let runner = stackRunner
-        // Down stops every container in the stack, the same call measured hanging on a lost XPC
-        // connection (#64) -- up and restart do not take this path.
         await runStackAction(
             stack, verb: "Taking down", pastTense: "is down", recoversRuntime: true
         ) {
@@ -147,8 +145,6 @@ extension RuntimeViewModel {
         }
     }
 
-    // Not private: RuntimeStalenessMessageTests exercises the recovery hook directly, same as
-    // withContainer already does.
     func runStackAction(
         _ stack: ComposeStack,
         verb: String,

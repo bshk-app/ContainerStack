@@ -267,12 +267,6 @@ struct RuntimeStalenessMessageTests {
         #expect(model.canRestartRuntime)
     }
 
-    // Regression for #94: a successful recovery only ever resolved containerMessage, so a group
-    // stop or stack down that raised resourceMessage's "Checking the runtime…" stayed on screen
-    // until an unrelated resource action happened to overwrite it. There is no test here for
-    // probeRuntime's own recovery-completion branch (RuntimeViewModel.swift:350-353, the other spot
-    // with the same fix) -- it is `private` and calls the real client.ping(), which this test file
-    // has no seam to stub.
     @Test("A successful automatic recovery resolves both surfaces' messages")
     func successfulAutomaticRecoveryResolvesBothMessages() async throws {
         let model = makeModel()
@@ -389,11 +383,6 @@ struct RuntimeStalenessMessageTests {
         #expect(model.containerMessage?.contains("Container action failed") == true)
     }
 
-    /// Group stop and stack down bypassed this hook entirely until now -- the row toggle above had
-    /// it, these two did not (#64). Pins the helper's own behavior given the flag, not that
-    /// `stop(group:)`/`downStack` supply it -- RuntimeViewModel builds `client`/`stackRunner`
-    /// internally from a socket path with no seam to inject a failing one, the same gap #70
-    /// documents. Verified by reading the call sites instead.
     @Test("A group stop that loses the XPC connection asks the monitor to check the runtime")
     func groupStopConnectionLossRaisesRecoveryRequest() async throws {
         let model = makeModel()
@@ -406,12 +395,6 @@ struct RuntimeStalenessMessageTests {
         #expect(model.runtimeRecoveryRequested)
     }
 
-    // `runner.down` shells out to `docker compose`, which never throws DockerAPIError -- it wraps a
-    // 500 body as ComposeRunner.RunnerError.commandFailed("Error response from daemon: <message>"),
-    // verified against a real `docker compose down` pointed at a stub socket returning socktainer's
-    // own 500 body. The first version of this test injected DockerAPIError directly, which passed
-    // without exercising the classifier downStack's real failure actually needs (see
-    // isStopRecoveryError in RuntimeViewModel+Containers.swift).
     @Test("A stack down that loses the XPC connection asks the monitor to check the runtime")
     func stackDownConnectionLossRaisesRecoveryRequest() async throws {
         let model = makeModel()

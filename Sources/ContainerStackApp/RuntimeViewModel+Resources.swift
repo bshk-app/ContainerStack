@@ -18,8 +18,6 @@ extension RuntimeViewModel {
     }
 
     func stop(group: ContainerGroup) async {
-        // Only a stop escalates to runtime recovery, same reasoning as the row toggle in
-        // RuntimeViewModel+Containers.swift.
         await withResource(group.id, message: "Stopping \(group.title)…", recoversRuntime: true) {
             for container in group.containers where container.isRunning {
                 try await self.client.stopContainer(id: container.id)
@@ -249,8 +247,6 @@ extension RuntimeViewModel {
         }
     }
 
-    // Not private: RuntimeStalenessMessageTests exercises the recovery hook directly, same as
-    // withContainer already does.
     func withResource(
         _ id: String,
         message: String,
@@ -268,8 +264,6 @@ extension RuntimeViewModel {
         } catch let error
             where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
-            // Same reasoning as withContainer: raise the recovery request rather than reporting a
-            // group stop that lost the XPC connection as a container failure (#64).
             runtimeRecoveryRequested = true
             resourceMessage = "Runtime connection lost. Checking the runtime…"
         } catch {

@@ -19,7 +19,10 @@ trap 'rm -rf "$scratch"' EXIT
 git init -q "$scratch"
 cp "$ROOT/.swiftlint-comments.yml" "$scratch/"
 mkdir -p "$scratch/Sources"
-git -C "$scratch" -c user.email=ci@example.com -c user.name=ci commit -q --allow-empty -m base
+# Signing is irrelevant to what this commit tests and must not depend on the invoking user's own
+# key/agent being reachable -- a review run hit exactly this against a sandboxed 1Password agent.
+git -C "$scratch" -c user.email=ci@example.com -c user.name=ci -c commit.gpgsign=false \
+    commit -q --allow-empty -m base
 
 # The exact shape of the offending comment: four lines, plausible, wrong. Any
 # comment length above 0 has to trigger under the current floor.

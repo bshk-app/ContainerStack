@@ -1,16 +1,11 @@
 # Detection for the comment-block gate, kept out of .swiftlint.yml on purpose:
-# repo-wide this rule flags 14 existing blocks whose length is earned, so it is
-# only ever run through the diff filter in scripts/hooks/check-new-comment-blocks.sh.
+# repo-wide this rule flags every existing comment, so it is only ever run
+# through the diff filter in scripts/hooks/check-new-comment-blocks.sh, which
+# reports only what a change actually added.
 #
 # `match_kinds` is why this is a rule and not a hand-written scanner: SourceKit
 # token kinds exclude `//` lines inside a `"""` literal, which a regex over raw
 # text cannot do.
-#
-# The candidate bound is 8 lines, matching the gate's default for how many of a
-# block's lines may be new. Blocks in this tree run p50 2, p75 3, p90 4, p95 7,
-# p99 13, so 8 sits above what routine code needs and below the forensic ones.
-# The gate then decides: SwiftLint says "here is a comment block", the gate says
-# how much of it this change wrote.
 #
 # `^` is not anchored per line here: SwiftLint compiles custom rules without
 # anchorsMatchLines, so a leading `^` silently matches nothing.
@@ -20,12 +15,12 @@ only_rules:
 
 custom_rules:
   long_comment_block:
-    name: "Comment block too long"
-    # `(?:\n|$)` so an eight-line block that ends the file without a trailing
-    # newline is still a block.
-    regex: '(?:[ \t]*\/\/[^\n]*(?:\n|$)){8,}'
+    name: "New comment block"
+    # `(?:\n|$)` so a block that ends the file without a trailing newline is
+    # still a block.
+    regex: '(?:[ \t]*\/\/[^\n]*(?:\n|$)){1,}'
     match_kinds:
       - comment
       - doccomment
-    message: "State the invariant, not the history: what breaks if this is wrong, and what was measured."
+    message: "New comment: state a checkable invariant, not an assumption -- verify it against the code or the source it claims, don't just doubt it in review."
     severity: warning

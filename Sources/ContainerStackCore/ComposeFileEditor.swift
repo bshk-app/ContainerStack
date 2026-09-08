@@ -9,6 +9,10 @@ public enum ComposeFileEditor {
         case serviceNotFound(String)
         case entryNotFound(String)
         case malformedDocument(String)
+        /// Add found an entry occupying the same identity (volume target, port) as the one being
+        /// added, but the two are not equal -- a silent no-op here would report success and change
+        /// nothing (#62).
+        case conflictingEntry(existing: String, new: String)
     }
 
     public static func addPort(_ mapping: ComposePortMapping, toService service: String, in text: String) throws
@@ -120,7 +124,10 @@ public enum ComposeFileEditor {
 
         switch mode {
         case .add:
-            if items.contains(where: { matches(scalar: $0.scalar, entry: entry) }) {
+            if let occupied = items.first(where: { matches(scalar: $0.scalar, entry: entry) }) {
+                if let parsedOccupied = E.parse(occupied.scalar), entry.addConflicts(with: parsedOccupied) {
+                    throw EditError.conflictingEntry(existing: occupied.scalar, new: entry.raw)
+                }
                 return join(lines, trailingNewline: trailingNewline)
             }
             let line = String(repeating: " ", count: itemIndent) + "- " + entry.renderedScalar()
@@ -223,7 +230,10 @@ public enum ComposeFileEditor {
         var items = flow.items
         switch mode {
         case .add:
-            if items.contains(where: { matches(scalar: unquote($0), entry: entry) }) {
+            if let occupied = items.first(where: { matches(scalar: unquote($0), entry: entry) }) {
+                if let parsedOccupied = E.parse(unquote(occupied)), entry.addConflicts(with: parsedOccupied) {
+                    throw EditError.conflictingEntry(existing: occupied, new: entry.raw)
+                }
                 return join(lines, trailingNewline: trailingNewline)
             }
             items.append(entry.renderedScalar())
@@ -430,6 +440,15 @@ private protocol ComposeSequenceEntry: Equatable {
     /// True when `self` (parsed from a file entry) represents the same thing as `entry`
     /// (the value being added or removed).
     func matches(_ entry: Self) -> Bool
+    /// True when a `matches` this loose hides a real difference add must not silently discard (#62).
+    /// Defaults to false: for most kinds, `matches` already means "the same thing", so there is
+    /// nothing further to conflict on. Volumes override this, because their target-only fallback in
+    /// `matches` is deliberately loose for remove and becomes exactly the gap add must not accept.
+    func addConflicts(with entry: Self) -> Bool
+}
+
+extension ComposeSequenceEntry {
+    fileprivate func addConflicts(with entry: Self) -> Bool { false }
 }
 
 extension ComposePortMapping: ComposeSequenceEntry {
@@ -467,5 +486,9 @@ extension ComposeVolumeMount: ComposeSequenceEntry {
         // the source differs (config resolves bind sources to absolute paths). Fall back to a full
         // value match for anonymous volumes and any same-text duplicate.
         target == entry.target || self == entry
+    }
+
+    fileprivate func addConflicts(with entry: ComposeVolumeMount) -> Bool {
+        target == entry.target && self != entry
     }
 }

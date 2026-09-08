@@ -249,6 +249,22 @@ struct RuntimeStalenessMessageTests {
         #expect(model.isLoading == false)
     }
 
+    /// The plain, non-racing case: nothing else touched the epoch, so the failure must still
+    /// publish. Catches a real bug where the second epoch guard compared against the pre-catch
+    /// epoch after clearInventory() had already moved it, so this branch could never pass (#70).
+    @Test("A genuine health failure publishes offline state")
+    func genuineHealthFailurePublishesOfflineState() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.refresh(health: {
+            throw DockerAPIError.httpStatus(500, message: "boom")
+        })
+
+        #expect(model.runtimeState.isHealthy == false)
+        #expect(model.runtimeFailure != nil)
+    }
+
     @Test("A failed automatic recovery clears stale inventory and leaves a state the user can act on")
     func failedAutomaticRecoveryClearsInventory() async throws {
         let model = makeModel()

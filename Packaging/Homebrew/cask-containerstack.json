@@ -10,7 +10,10 @@
   "livecheck": true,
   "livecheckUrl": "https://bshk-app.github.io/ContainerStack/appcast/stable.xml",
   "livecheckStrategy": "sparkle",
-  "uninstall": { "quit": "app.bshk.containerstack" },
+  "uninstall": {
+    "launchctl": ["com.containerstack.runtime"],
+    "quit": "app.bshk.containerstack"
+  },
   "zapTrash": [
     "~/Library/Application Support/ContainerStack",
     "~/Library/Logs/ContainerStack",

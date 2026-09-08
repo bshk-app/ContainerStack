@@ -12,6 +12,21 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.6.2](https://github.com/bshk-app/ContainerStack/compare/v0.6.1...v0.6.2) (2026-09-08)
+
+
+### Fixed
+
+* **app:** apply the inventory epoch guard to two more stale-call races ([#70](https://github.com/bshk-app/ContainerStack/issues/70)) ([7ff94e7](https://github.com/bshk-app/ContainerStack/commit/7ff94e72d9af4b59a9334a16c060105dd8926cf8))
+* **app:** apply the inventory epoch guard to two more stale-call races ([#70](https://github.com/bshk-app/ContainerStack/issues/70)) ([56a6dcb](https://github.com/bshk-app/ContainerStack/commit/56a6dcb362c0f15e184b5815a34f0ae536c1dabf))
+* **cask:** boot out the runtime LaunchAgent on uninstall ([1e19b3f](https://github.com/bshk-app/ContainerStack/commit/1e19b3fb6028a6a86b7d46197d76feefb1f56c5c))
+* **cask:** boot out the runtime LaunchAgent on uninstall ([22b7c4e](https://github.com/bshk-app/ContainerStack/commit/22b7c4ed2f904ec9aef918f762e9a45f096c41ec))
+* **compose:** reject adding a volume onto an occupied target with a different source ([0112423](https://github.com/bshk-app/ContainerStack/commit/01124233744fbf57391e1d8fa09bea29c2580c1c))
+* **compose:** reject adding a volume onto an occupied target with a different source ([7f5cf1c](https://github.com/bshk-app/ContainerStack/commit/7f5cf1c81c80f9add7286b5f46486cf7173894c0))
+* **http:** distinguish EINTR from a real connect timeout ([117b0d9](https://github.com/bshk-app/ContainerStack/commit/117b0d9317621b3875ce8a6a652d905a6d13a49b))
+* **http:** distinguish EINTR from a real connect timeout ([126af85](https://github.com/bshk-app/ContainerStack/commit/126af8592482cfc5c12983202d6df8d7bb6d8184))
+* **http:** stop treating EINTR as free to retry on the tick-bounded ping path ([ca1cd7f](https://github.com/bshk-app/ContainerStack/commit/ca1cd7f31fba1c5fa1ac104094f076f5971ba9a8))
+
 ## [0.6.1](https://github.com/bshk-app/ContainerStack/compare/v0.6.0...v0.6.1) (2026-09-06)
 
 

@@ -11,10 +11,6 @@
 # a diff per path: restricting `git diff` to a rename's new path defeats rename
 # detection, so git calls the file new and every line in it counts as added. A
 # renamed file with an old long comment would then block the gate.
-#
-# Threshold note: MAX_NEW_COMMENT_LINES can only raise the bar. SwiftLint never
-# offers a candidate block shorter than the bound in .swiftlint-comments.yml, which
-# is 1 -- every new comment is a candidate; there is no floor left to raise from.
 set -euo pipefail
 
 readonly THRESHOLD="${MAX_NEW_COMMENT_LINES:-1}"
@@ -125,10 +121,7 @@ repo_relative() {
 
 # The detector has to be proven alive, not assumed: an invalid custom rule makes
 # SwiftLint warn and fall back to its default rules, exit 0, and report nothing
-# our rule would have caught. So a canary line it must flag is the cheapest
-# proof, sized to the actual floor (1 line) rather than padded -- and it ends
-# without a trailing newline, which exercises the end-of-file branch of the
-# regex at the same time.
+# our rule would have caught. So a canary it must flag is the cheapest proof.
 #
 # The rule id has to appear in the output: any other finding would mean the
 # fallback rules ran, which is precisely the failure being ruled out.

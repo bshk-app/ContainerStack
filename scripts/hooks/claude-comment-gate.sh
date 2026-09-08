@@ -66,11 +66,6 @@ if [[ "$MODE" == "--stop" ]]; then
         fi
     fi
 
-    # Warn-only, unlike --edit below: a Stop refusal actually blocks the agent from finishing,
-    # and the gate now flags virtually every new comment, not just outsized ones (#96). --edit's
-    # exit 2 stays as is -- PostToolUse can only report, it is the mechanism that puts a finding
-    # in front of the agent right after the edit, which the lowered threshold makes more useful,
-    # not less.
     COMMENT_BLOCK_WARN_ONLY=1 exec "$CHECKER"
 fi
 

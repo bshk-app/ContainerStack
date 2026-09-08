@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# Regression pin for the case that motivated lowering the candidate bound in
-# .swiftlint-comments.yml from 8 lines to 1: a short, wrong comment that the
-# old floor could never have surfaced no matter how MAX_NEW_COMMENT_LINES was
-# set (#78's connectPollFailure doc comment, 4 lines, claimed EINTR "spent no
-# time at all" -- see PR #91's follow-up commit for why that was false).
-#
-# Runs the real script and config against a scratch repo, not this project's
-# own tree: a check against this tree would stop meaning anything the day
-# every comment here happens to be long enough to dodge a coincidental floor.
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
@@ -19,13 +10,9 @@ trap 'rm -rf "$scratch"' EXIT
 git init -q "$scratch"
 cp "$ROOT/.swiftlint-comments.yml" "$scratch/"
 mkdir -p "$scratch/Sources"
-# Signing is irrelevant to what this commit tests and must not depend on the invoking user's own
-# key/agent being reachable -- a review run hit exactly this against a sandboxed 1Password agent.
 git -C "$scratch" -c user.email=ci@example.com -c user.name=ci -c commit.gpgsign=false \
     commit -q --allow-empty -m base
 
-# The exact shape of the offending comment: four lines, plausible, wrong. Any
-# comment length above 0 has to trigger under the current floor.
 cat >"$scratch/Sources/Short.swift" <<'EOF'
 // `poll` returning 0 spent the whole deadline: a real timeout, worth reporting as one. Any
 // negative result is a syscall failure that spent no time at all -- EINTR among them, which is

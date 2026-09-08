@@ -74,11 +74,6 @@ jobs:
       # `task hooks:install` has never run this gate — and every fork PR is that
       # case. The base ref is not optional: with the default the diff here is empty,
       # and the gate would pass without having checked anything.
-      #
-      # Warn-only: it now flags every new comment (#78's connectPollFailure doc
-      # comment was 4 lines and wrong, and the old 8-line floor never saw it), so
-      # blocking would fail every PR that adds a one-line comment. The findings
-      # still print either way — see check-new-comment-blocks.sh's own gate_file.
       - name: Comment gate
         if: github.event_name == 'pull_request'
         env:
@@ -86,9 +81,6 @@ jobs:
           COMMENT_BLOCK_WARN_ONLY: 1
         run: ./scripts/hooks/check-new-comment-blocks.sh
 
-      # Runs on every push, not just pull_request: it checks the gate mechanism
-      # itself against a scratch repo, not this PR's diff, so it has nothing to
-      # wait on origin/main for.
       - name: Comment gate regression
         run: ./scripts/hooks/test-comment-gate.sh
 

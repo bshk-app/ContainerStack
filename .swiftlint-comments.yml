@@ -7,14 +7,6 @@
 # token kinds exclude `//` lines inside a `"""` literal, which a regex over raw
 # text cannot do.
 #
-# The candidate bound used to be 8 lines, tuned to catch padding and leave
-# routine comments alone. That caught disproportionate length, not wrong
-# content, and a wrong comment is exactly as wrong at 2 lines as at 12 (#78's
-# connectPollFailure doc comment was 4). Lowered to 1: every new comment is a
-# candidate now, the gate is informational everywhere it runs, and what it
-# buys is a place every new comment shows up for someone to doubt, not a
-# length someone has to earn.
-#
 # `^` is not anchored per line here: SwiftLint compiles custom rules without
 # anchorsMatchLines, so a leading `^` silently matches nothing.
 

@@ -48,7 +48,10 @@ extension RuntimeViewModel {
     /// runtime is gone.
     func completeAutomaticRuntimeRecovery(restart: () async -> Bool) async {
         if await restart() {
+            // "Runtime recovered." already reads fine for either surface; only the timed-out-stop
+            // message above needed a resource-neutral copy (#94).
             containerMessage = "Runtime recovered."
+            resourceMessage = "Runtime recovered."
             return
         }
         clearInventoryForStop()

@@ -267,6 +267,22 @@ struct RuntimeStalenessMessageTests {
         #expect(model.canRestartRuntime)
     }
 
+    // Regression for #94: a successful recovery only ever resolved containerMessage, so a group
+    // stop or stack down that raised resourceMessage's "Checking the runtime…" stayed on screen
+    // until an unrelated resource action happened to overwrite it. There is no test here for
+    // probeRuntime's own recovery-completion branch (RuntimeViewModel.swift:350-353, the other spot
+    // with the same fix) -- it is `private` and calls the real client.ping(), which this test file
+    // has no seam to stub.
+    @Test("A successful automatic recovery resolves both surfaces' messages")
+    func successfulAutomaticRecoveryResolvesBothMessages() async throws {
+        let model = makeModel()
+
+        await model.completeAutomaticRuntimeRecovery(restart: { true })
+
+        #expect(model.containerMessage == "Runtime recovered.")
+        #expect(model.resourceMessage == "Runtime recovered.")
+    }
+
     /// #39: the manual restart had no equivalent of the automatic path's cleanup, so a restart the
     /// user asked for could fail and leave the dead runtime's containers on screen indefinitely.
     @Test("A failed manual restart clears the dead runtime's inventory")
@@ -390,6 +406,12 @@ struct RuntimeStalenessMessageTests {
         #expect(model.runtimeRecoveryRequested)
     }
 
+    // `runner.down` shells out to `docker compose`, which never throws DockerAPIError -- it wraps a
+    // 500 body as ComposeRunner.RunnerError.commandFailed("Error response from daemon: <message>"),
+    // verified against a real `docker compose down` pointed at a stub socket returning socktainer's
+    // own 500 body. The first version of this test injected DockerAPIError directly, which passed
+    // without exercising the classifier downStack's real failure actually needs (see
+    // isStopRecoveryError in RuntimeViewModel+Containers.swift).
     @Test("A stack down that loses the XPC connection asks the monitor to check the runtime")
     func stackDownConnectionLossRaisesRecoveryRequest() async throws {
         let model = makeModel()
@@ -399,10 +421,26 @@ struct RuntimeStalenessMessageTests {
         await model.runStackAction(
             stack, verb: "Taking down", pastTense: "is down", recoversRuntime: true
         ) {
-            throw DockerAPIError.httpStatus(500, message: "XPC connection error: Connection invalid")
+            throw ComposeRunner.RunnerError.commandFailed(
+                "Error response from daemon: XPC connection error: Connection invalid")
         }
 
         #expect(model.runtimeRecoveryRequested)
+    }
+
+    @Test("A stack down failure unrelated to the runtime does not ask for recovery")
+    func stackDownUnrelatedFailureDoesNotRaiseRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        let stack = ComposeStack(name: "web", fileURL: URL(fileURLWithPath: "/tmp/compose.yaml"))
+
+        await model.runStackAction(
+            stack, verb: "Taking down", pastTense: "is down", recoversRuntime: true
+        ) {
+            throw ComposeRunner.RunnerError.commandFailed("no configuration file provided")
+        }
+
+        #expect(!model.runtimeRecoveryRequested)
     }
 
     private static func container() throws -> DockerContainerSummary {

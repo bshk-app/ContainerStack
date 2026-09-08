@@ -129,12 +129,27 @@ enum RuntimeConnectionRecovery {
         return true
     }
 
+    // Two transports report the same daemon failure differently: DockerAPIClient parses it into a
+    // DockerAPIError message; ComposeRunner shells out to `docker compose`, whose CLI wraps a 500's
+    // body as "Error response from daemon: <message>" -- verified against a real `docker compose
+    // down` pointed at a stub socket returning socktainer's own 500 body, not assumed. `down` (#64)
+    // only ever fails through the second shape, so without it this recovery path was dead code that
+    // a test bypassing ComposeRunner entirely made look covered.
     private static func isDeadXPC(_ error: Error) -> Bool {
-        guard let apiError = error as? DockerAPIError,
+        if let apiError = error as? DockerAPIError,
             case .httpStatus(500, message: let message?) = apiError
-        else {
-            return false
+        {
+            return isDeadXPCMessage(message)
         }
+        if let runnerError = error as? ComposeRunner.RunnerError,
+            case .commandFailed(let output) = runnerError
+        {
+            return isDeadXPCMessage(output)
+        }
+        return false
+    }
+
+    private static func isDeadXPCMessage(_ message: String) -> Bool {
         let normalized = message.lowercased()
         return normalized.contains("xpc connection error")
             && (normalized.contains("connection interrupted")

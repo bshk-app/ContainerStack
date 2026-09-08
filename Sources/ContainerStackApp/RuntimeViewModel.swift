@@ -349,7 +349,12 @@ final class RuntimeViewModel {
 
         if responds, runtimeRecoveryRequested {
             runtimeRecoveryRequested = false
+            // Whichever surface actually raised the request -- the row toggle, a group stop, or a
+            // stack down -- all three share this one flag, so both messages resolve here rather
+            // than only the one the origin happened to touch (#94 left resourceMessage stuck on
+            // "Checking the runtime…" otherwise).
             containerMessage = "Container stop timed out; runtime remains available."
+            resourceMessage = "Stop timed out; runtime remains available."
         }
         let shouldCheckSystemStatus = RuntimeConnectionRecovery.shouldCheckSystemStatus(
             after: probeError,

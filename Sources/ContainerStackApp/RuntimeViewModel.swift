@@ -16,14 +16,11 @@ final class RuntimeViewModel {
     private var runtimeProcess: Process?
     private var runtimeLogHandle: FileHandle?
     private var monitorTask: Task<Void, Never>?
-    /// `container system status` costs a CLI spawn plus an XPC round trip, so the poll reuses
-    /// its last answer between checks instead of asking on every 3s tick.
-    private var appRootCadence = DiagnosticCadence(interval: .seconds(30))
-    private var lastMissingAppRoot: String?
-    /// Same cadence and the same reason: answering "who holds the socket" costs
-    /// an `lsof` and a `ps`, which is too much for a 3-second poll.
-    private var bridgeOwnerCadence = DiagnosticCadence(interval: .seconds(30))
-    private var lastForeignBridge: String?
+    /// Both cost far more than a socket read -- `container system status` is a CLI spawn plus an
+    /// XPC round trip, and answering "who holds the socket" is an `lsof` and a `ps` -- so the 3s
+    /// poll reuses the last answer. Wrappers live in RuntimeViewModel+Advisories.
+    let appRootAdvisory = CachedAdvisory(interval: .seconds(30))
+    let bridgeOwnerAdvisory = CachedAdvisory(interval: .seconds(30))
     /// Weighs consecutive probe answers, so one unanswered ping cannot condemn the runtime.
     /// Internal so a test can seed the silence a stopped runtime accumulates.
     var livenessFilter = RuntimeLivenessFilter()
@@ -415,49 +412,6 @@ final class RuntimeViewModel {
         let status = await systemStatusOutput()
         return status.isEmpty ? nil : RuntimeStatusParser.isRunning(status)
     }
-
-    /// The poll's view of the app root. Asks the CLI at most once per cadence and reuses the
-    /// last answer in between, so a 3s socket poll no longer implies a 3s process spawn.
-    ///
-    /// Latency is the whole trade: a deleted app root now surfaces within 30s rather than 3s.
-    /// Nothing else can see it — with its app root gone the runtime still answers `_ping` with
-    /// 200 — but reaching that state takes deliberate damage to the runtime's data directory,
-    /// and every user-initiated refresh still asks immediately.
-    private func throttledMissingAppRoot() async -> String? {
-        if appRootCadence.shouldRun() {
-            lastMissingAppRoot = await missingAppRoot()
-        }
-        return lastMissingAppRoot
-    }
-
-    /// The socket path when a bridge that is not ours holds it, otherwise nil.
-    /// Re-asked on the cadence so the banner clears by itself once the other
-    /// bridge is gone - the reported case sat there for hours with nothing to see.
-    private func throttledForeignBridge() -> String? {
-        if bridgeOwnerCadence.shouldRun() {
-            lastForeignBridge = servesOurBridge() ? nil : socketPath
-        }
-        return lastForeignBridge
-    }
-
-    /// Probes now and feeds the same cache, for the same reason `freshMissingAppRoot`
-    /// does: a refresh that answered from nothing would clear the banner the poll
-    /// had just raised.
-    private func freshForeignBridge() -> String? {
-        lastForeignBridge = servesOurBridge() ? nil : socketPath
-        bridgeOwnerCadence.recordRun()
-        return lastForeignBridge
-    }
-
-    /// Probes now and feeds the cache, so the next poll does not revert to a stale answer.
-    /// Without sharing the cache, a refresh that raised the banner would have it cleared again
-    /// on the following tick — the failure the comment in `refresh(health:)` already warns of.
-    private func freshMissingAppRoot() async -> String? {
-        lastMissingAppRoot = await missingAppRoot()
-        appRootCadence.recordRun()
-        return lastMissingAppRoot
-    }
-
     func probeAfterControlChange() async {
         await probeRuntime()
     }

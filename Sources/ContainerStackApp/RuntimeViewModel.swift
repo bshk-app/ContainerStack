@@ -382,8 +382,9 @@ final class RuntimeViewModel {
         } else if !responds, wasHealthy {
             // One unanswered probe is not proof: this branch also clears the inventory and bumps
             // the epoch, discarding a refresh in flight. Let the next tick agree first. Silence
-            // with a cause does not wait here — the restart above already returned.
-            guard hasGoneQuiet else { return }
+            // with a cause does not wait here — the restart above already returned. `responds`/
+            // `wasHealthy` predate those awaits too, so the same epoch check applies (#70).
+            guard hasGoneQuiet, inventoryEpochIsCurrent(epoch) else { return }
             applyState(socketResponds: false)
             clearInventory()
         } else if responds {
@@ -602,7 +603,11 @@ final class RuntimeViewModel {
         } catch is CancellationError {
             return
         } catch {
+            // Same hazard as the try path above (#70).
+            guard inventoryEpochIsCurrent(epoch) else { return }
             clearInventory()
+            // clearInventory() bumped the epoch; re-read it as the new baseline below.
+            let epochAfterClear = inventoryEpoch
             imagesErrorMessage = nil
             containersErrorMessage = nil
             volumesErrorMessage = nil
@@ -614,7 +619,10 @@ final class RuntimeViewModel {
             // `health()` is exactly what fails when the runtime's storage is gone, so this is the path
             // that state arrives on. Without the probe here the refresh reported the socket as not
             // responding while the poll reported the missing storage, and the two took turns.
-            applyState(socketResponds: false, missingAppRoot: await freshMissingAppRoot())
+            let missingAppRoot = await freshMissingAppRoot()
+            // Re-checked against the post-clear baseline (#70).
+            guard inventoryEpochIsCurrent(epochAfterClear) else { return }
+            applyState(socketResponds: false, missingAppRoot: missingAppRoot)
         }
     }
 

@@ -78,14 +78,26 @@ user asking "is my environment healthy?" before anything visibly breaks.
   disappears when `.doctor` is in `sidebarHiddenItems` and that the preference
   persists across a re-read of the storage.
 
-- **[F-007]** Opening the section starts a run subject to F-011's cadence.
-  Leaving the section discards the result of an in-flight run; it does **not**
-  stop the work. `ProcessRunner.run` is synchronous and waits on a
-  `DispatchSemaphore` (`ProcessRunner.swift:198`), so `Task.cancel()` cannot
-  interrupt a probe. At most one Doctor run is in flight at a time.
-  *Acceptance:* a gated probe fake (exposing a `CheckedContinuation` the test
-  resumes) suspends run A; run B starts and completes; resuming A publishes
-  nothing and the published report equals B's. No test asserts by sleeping.
+- **[F-007]** **Single-flight.** At most one Doctor run exists at a time. A
+  request arriving while a run is in flight does not start a second run and
+  does not queue one — it coalesces onto the running one (the section simply
+  shows `isRunning`). Leaving the section discards the *result* of the run in
+  flight; it does **not** stop the work, because `ProcessRunner.run` is
+  synchronous and waits on a `DispatchSemaphore` (`ProcessRunner.swift:198`),
+  so `Task.cancel()` cannot interrupt a probe. A generation counter decides
+  only whether a finished run publishes, never which of two runs wins — there
+  are never two.
+
+  Rationale: overlap would be worst exactly when it hurts most. A run costs
+  four uncancellable spawns (NFR-001) and can occupy the full 20s budget
+  (NFR-002) precisely when the runtime is wedged; letting a second start would
+  multiply spawns against an already-stuck system.
+  *Acceptance:* with a gated probe fake suspending run A, requesting another
+  run asserts (a) the probe call count does not increase, and (b) no second
+  report is produced; resuming A then publishes once if the section is still
+  open, and publishes nothing if it was left. A separate case asserts that a
+  run started after the previous one finished does execute. No test asserts by
+  sleeping.
 
 - **[F-008]** A check renders an action button only when its `remedy` is
   executable in-process (`.restartRuntime`, `.repairDockerContext`). `.manual`
@@ -230,7 +242,8 @@ DockerAPIClient (actor) ─────────────────┘  
     including `reportMemoryCommitment` (`:84` and below).
 
 - **`DoctorViewModel`** (new, `Sources/ContainerStackApp/DoctorViewModel.swift`)
-  - *Responsibility:* own `report`, `isRunning`, and the epoch counter; invoke
+  - *Responsibility:* own `report`, `isRunning`, the single-flight handle and
+    the generation counter (F-007); invoke
     existing repairs. Implements no repair itself.
   - *Depends on:* `RuntimeViewModel.restartRuntime()`
     (`RuntimeViewModel+Control.swift:14`) and the docker-context repair
@@ -322,7 +335,7 @@ repair is introduced.
 | Socket | held by a foreign bridge | `foreignBridge` check reports; dependent checks `.skipped`; no local-restart remedy offered. |
 | `lsof` / `ps` | spawn fails / times out | Bridge-ownership check `.failure`, and the checks it gates stay `.skipped` rather than running on an unknown owner — an unknown holder is not the same as "ours". |
 | Runtime | stopped, or `.starting` | All dependent checks `.skipped` with a reason; nothing red, nothing flashing. |
-| UI | section closed mid-run | Task cancelled; a late result from a superseded epoch is discarded. |
+| UI | section closed mid-run | The run continues to completion — probes are uncancellable — and its result is discarded on publish (F-007). Spawns are not orphaned: `ProcessRunner` bounds and reaps them. |
 
 `CommandShell.output` (`Sources/CStackCLI/CStackRuntimeControl.swift:29`) is the
 current source of the laundering: it wraps `ProcessRunner.run` in `try?` and
@@ -365,7 +378,7 @@ are part of the work, not preconditions someone else supplies:
 - **A recording `SystemProbe` fake** with a call log and per-call timeouts, so
   spawn counts (NFR-001) and the 10s timeout (NFR-002) are assertable.
 - **A gated `SystemProbe` fake** exposing a `CheckedContinuation`, so F-007's
-  supersede branch is reachable without `Task.sleep`.
+  coalescing and discard-on-leave branches are reachable without `Task.sleep`.
 - **An injected clock** for `ranAt`.
 
 ## 8. Open questions

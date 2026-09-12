@@ -35,13 +35,20 @@ user asking "is my environment healthy?" before anything visibly breaks.
   *Acceptance:* golden-output test over fixtures for healthy, missing-app-root,
   and unroutable-network states.
 
-- **[F-004]** `appRoot` is evaluated before every other check, and a positive
-  result marks the remaining checks `.skipped`.
-  *Acceptance:* test with a fixture where `container system status` reports a
-  non-existent root asserts ordering and the skip.
+- **[F-004]** Precedence follows `RuntimeState.resolve`
+  (`Sources/ContainerStackCore/RuntimeState.swift:47-48`): `foreignBridge`
+  first, then `appRoot`, then the socket-dependent checks. `appRoot` leads
+  **among the socket-dependent checks** — that is, once a foreign bridge is
+  excluded — and a positive app-root result marks the remaining
+  socket-dependent checks `.skipped`.
+  *Acceptance:* fixture where `container system status` reports a non-existent
+  root **and** no foreign bridge asserts the app-root verdict and the skip of
+  the rest; a second fixture with both conditions present asserts
+  `foreignBridge` wins and `appRoot` itself is `.skipped`.
 
 - **[F-005]** Under a foreign bridge the `appRoot` and socket-dependent checks
-  are `.skipped`, mirroring the precedence in `RuntimeState.resolve`.
+  are `.skipped`, because `missingAppRoot` describes the local runtime rather
+  than whoever serves the socket and would name the wrong remedy.
   *Acceptance:* test asserts `foreignBridge` wins and that no remedy naming a
   local runtime restart is emitted.
 
@@ -204,7 +211,7 @@ repair is introduced.
 |---|---|---|
 | `container system status` | spawn fails / times out | `.failed(reason:)` → app-root check `.failure`. **Must not** become `""`: `RuntimeStatusParser.missingAppRoot("")` returns `nil` because `isRunning("")` is false, which would render a broken probe as a healthy app root. |
 | `netstat -rn -f inet` | spawn fails / times out | `.failed` → routes check `.failure`. Today an empty string already lands on "could not read the routing table" via `NetworkRouteHealth.canJudgeRoutes` (`NetworkRouteHealth.swift:98`), so this is a tightening, not a change of verdict. |
-| Docker API | `/info` fails while `_ping` succeeds | The app-root check leads precisely because of this state; other checks are `.skipped`. |
+| Docker API | `/info` fails while `_ping` succeeds | The app-root check leads the socket-dependent checks precisely because of this state; the rest are `.skipped`. A foreign bridge still outranks it (F-004). |
 | Docker API | transport error on any call | That check is `.failure`; siblings still run. Today `try await client.health()` propagates and kills the whole command. |
 | Docker API | no running containers | Routes check `.skipped` with "nothing to check" — kept distinct from "could not check" (issue #45). |
 | Socket | held by a foreign bridge | `foreignBridge` check reports; dependent checks `.skipped`; no local-restart remedy offered. |

@@ -1,6 +1,6 @@
 # Spec: Doctor diagnostics section
 
-Version: 1.0
+Version: 1.1 (revised after spec-panel; 4 reviewers, 9 verified defects)
 Date: 2026-09-11
 Source brainstorm: docs/brainstorms/2026-09-11-doctor-diagnostics.md
 
@@ -25,83 +25,147 @@ user asking "is my environment healthy?" before anything visibly breaks.
   import SwiftUI (compiler-enforced).
 
 - **[F-002]** The caller passes the check set explicitly:
-  `DiagnosticRunner.run(checks: Set<CheckID>)`. The two sets differ in **both**
-  directions and neither is "all":
-  - CLI: `{appRoot, socket, versions, routes, memoryCommitment}` — exactly what
-    `cstack doctor` prints today.
-  - UI v1: `{foreignBridge, appRoot, socket, versions, routes, dockerContext}`
-    — no `memoryCommitment` (cost), plus two checks the CLI has never had.
+  `DiagnosticRunner.run(checks: Set<CheckID>)`. Neither set is "all":
+  - CLI: `{appRoot, socket, versions, routes, foreignBridge, memoryCommitment}`
+  - UI v1: `{appRoot, socket, versions, routes, foreignBridge, dockerContext}`
 
-  `foreignBridge` and `dockerContext` must **not** enter the CLI set: `cstack
-  doctor` contains no bridge-ownership check today (verified: no such code in
-  `Sources/CStackCLI/CStackCommands.swift`; `context` is a separate subcommand
-  at `:279`), so adding them would emit new lines and break F-003.
-  *Acceptance:* test asserts the UI set issues no `inspectContainer` request
-  against the stub transport while the CLI set does; and that the CLI set
-  produces no bridge or context line, byte-compared against the golden output.
+  `memoryCommitment` is CLI-only (cost — see NFR-001); `dockerContext` is
+  UI-only (the CLI has `cstack context` as a separate subcommand,
+  `CStackCommands.swift:279`). `foreignBridge` is **new to the CLI** and is a
+  deliberate scope addition, not an accident — see F-003.
+  *Acceptance:* assert exact set equality for both callers
+  (`cliChecks == [...]`, `uiChecks == [...]`), not merely the absence of an
+  `inspectContainer` request — an absence passes for a wrong set too.
 
-- **[F-003]** `cstack doctor` becomes a formatter over `DiagnosticReport` and
-  its stdout text is byte-identical to today's for the same runtime state.
-  *Acceptance:* golden-output test over fixtures for healthy, missing-app-root,
-  and unroutable-network states.
+- **[F-003]** `cstack doctor` becomes a formatter over `DiagnosticReport`. Its
+  stdout is byte-identical to today's for every state **except** a foreign
+  bridge, where it gains a bridge-ownership line and skips the checks that
+  become meaningless. That diff is sanctioned, being the point of adding
+  `foreignBridge` to the CLI set.
+  *Acceptance:* golden-output tests over fixtures for healthy,
+  missing-app-root, unroutable-network, **and foreign-bridge** states. The
+  first three goldens are pinned from today's binary before the refactor; the
+  fourth is new. Rendering is a pure function so no stdout capture is needed —
+  see F-012.
 
-- **[F-004]** Precedence follows `RuntimeState.resolve`
-  (`Sources/ContainerStackCore/RuntimeState.swift:47-48`): `foreignBridge`
-  first, then `appRoot`, then the socket-dependent checks. `appRoot` leads
-  **among the socket-dependent checks** — that is, once a foreign bridge is
-  excluded — and a positive app-root result marks the remaining
-  socket-dependent checks `.skipped`.
-  *Acceptance:* fixture where `container system status` reports a non-existent
-  root **and** no foreign bridge asserts the app-root verdict and the skip of
-  the rest; a second fixture with both conditions present asserts
-  `foreignBridge` wins and `appRoot` itself is `.skipped`.
+- **[F-004]** Precedence is **not re-derived**. The runner gathers the signals
+  for the requested checks, calls `RuntimeState.resolve`
+  (`Sources/ContainerStackCore/RuntimeState.swift:25-60`) **once**, and projects
+  the resulting `RuntimeState` onto per-check verdicts. The ordering
+  (`foreignBridge` → `detached`/appRoot → socket-dependent) therefore exists in
+  exactly one place, and a future change to `resolve` cannot leave Doctor
+  disagreeing with the rest of the app.
+  *Acceptance:* a test asserts the runner calls `resolve` and that no branch in
+  `DiagnosticRunner` compares `foreignBridge` against `missingAppRoot` itself;
+  plus fixtures for `.detached` alone and `.foreignBridge` + missing root
+  together, asserting the projected verdicts in both.
 
 - **[F-005]** Under a foreign bridge the `appRoot` and socket-dependent checks
   are `.skipped`, because `missingAppRoot` describes the local runtime rather
-  than whoever serves the socket and would name the wrong remedy.
+  than whoever serves the socket and would name the wrong remedy. This is a
+  consequence of the projection in F-004, not a second rule.
   *Acceptance:* test asserts `foreignBridge` wins and that no remedy naming a
-  local runtime restart is emitted.
+  local runtime restart is emitted — in **both** the CLI and UI check sets,
+  since the CLI now measures bridge ownership too.
 
-- **[F-006]** Doctor is a `DashboardDestination` case rendered in the sidebar
-  and hideable through the existing `sidebarHiddenItems` storage.
-  *Acceptance:* the case is `CaseIterable` and the existing hide toggle covers
-  it with no per-case special handling.
+- **[F-006]** Doctor is a new `DashboardDestination` case **added to
+  `DashboardDestination.dockerItems`** (`AppChrome.swift:95-97`). `CaseIterable`
+  alone renders nothing: the sidebar iterates the explicit `dockerItems` /
+  `generalItems` lists, and only `dockerItems` is filtered by `hidden`
+  (`AppChrome.swift:117` vs `:122`). Membership in `dockerItems` is what makes
+  the row both visible and hideable, with no change to `AppChrome`.
+  *Acceptance:* assert `dockerItems.contains(.doctor)`; assert the row
+  disappears when `.doctor` is in `sidebarHiddenItems` and that the preference
+  persists across a re-read of the storage.
 
-- **[F-007]** Opening the section starts a run automatically; leaving cancels
-  it; a result from a superseded run is discarded.
-  *Acceptance:* test drives two overlapping runs and asserts only the newer
-  epoch publishes.
+- **[F-007]** Opening the section starts a run subject to F-011's cadence.
+  Leaving the section discards the result of an in-flight run; it does **not**
+  stop the work. `ProcessRunner.run` is synchronous and waits on a
+  `DispatchSemaphore` (`ProcessRunner.swift:198`), so `Task.cancel()` cannot
+  interrupt a probe. At most one Doctor run is in flight at a time.
+  *Acceptance:* a gated probe fake (exposing a `CheckedContinuation` the test
+  resumes) suspends run A; run B starts and completes; resuming A publishes
+  nothing and the published report equals B's. No test asserts by sleeping.
 
 - **[F-008]** A check renders an action button only when its `remedy` is
   executable in-process (`.restartRuntime`, `.repairDockerContext`). `.manual`
-  renders as text.
-  *Acceptance:* view-model test asserts button presence per remedy case.
+  renders as text. The button is bound to `canRestartRuntime`
+  (`RuntimeViewModel+Control.swift:8`) and is disabled while `isRestarting`;
+  the report shows an in-progress state rather than a stale verdict, and the
+  automatic re-run is suppressed until the repair settles.
+  *Acceptance:* view-model test asserts button presence per remedy case, and
+  that invoking a repair twice performs one operation.
 
 - **[F-009]** A failing probe never presents as a passing check.
-  *Acceptance:* fixture where `runtimeStatus()` returns `.failed` asserts the
-  app-root check is `.failure`, not `.ok` and not `.skipped`.
+  *Acceptance:* a matrix test — for **each** probe and transport failure, assert
+  every check that depends on it is `.failure` or `.indeterminate` and never
+  `.ok`; a single-probe fixture is not sufficient, since another check could
+  return `.ok` and pass a narrow assertion.
 
-- **[F-010]** A stopped runtime yields `.skipped` checks with a reason, not
-  `.failure`.
-  *Acceptance:* fixture with a non-responding socket asserts zero `.failure`
-  verdicts.
+- **[F-010]** A **stopped** runtime yields `.skipped` checks with a reason, not
+  `.failure`. A **wedged** runtime — one that times out rather than refusing —
+  yields `.indeterminate`, never `.skipped`, because the two are
+  indistinguishable at the socket and "nothing red" on an unusable system reads
+  as healthy.
+  *Acceptance:* a fixture with a refusing socket asserts `.skipped` and zero
+  `.failure`; a fixture whose probes and transport time out asserts every
+  affected check is `.indeterminate` and that the report is not all-grey.
+
+- **[F-011]** The automatic run is throttled by `DiagnosticCadence`
+  (`Sources/ContainerStackApp/DiagnosticCadence.swift`) at 30s. Within the
+  window the section shows the cached report with its `ranAt` stamp and a
+  "Check again" button that bypasses the cadence. Rationale: spawning
+  `container system status` per tick was already a measured problem in this
+  codebase (~1200 spawns/hour), and section switching is unbounded.
+  *Acceptance:* two opens inside 30s issue one run's worth of spawns; the
+  explicit button issues a second.
+
+- **[F-012]** Rendering is a pure function in Core:
+  `DoctorTextRenderer.render(_ report: DiagnosticReport) -> String`; the CLI
+  becomes `print(render(report))`. Required because `Package.swift` declares
+  only `ContainerStackCoreTests` and `ContainerStackAppTests` — there is no CLI
+  test target — and stdout capture via `dup2` is unsafe under swift-testing's
+  in-process parallelism.
+  *Acceptance:* F-003's goldens compare the returned `String`; a separate
+  assertion proves `DiagnosticRunner` writes nothing to stdout/stderr.
 
 ### 2.2 Non-functional requirements
 
 - **[NFR-001] Performance.** Process spawns per run are fixed and independent of
-  container count:
-  - CLI set: two — `container system status`, `netstat -rn -f inet`.
-  - UI v1 set: four — those two plus `/usr/sbin/lsof -Fpcn -- <socketPath>` and
-    `/bin/ps -A -o pid=,command=`, which bridge ownership requires because the
-    Docker API cannot answer it (`RuntimeViewModel+Staleness.swift:110-112`).
+  container count. Both sets now spawn **four**: `container system status`,
+  `netstat -rn -f inet`, `/usr/sbin/lsof -Fpcn -- <socketPath>` and
+  `/bin/ps -A -o pid=,command=`. The last two are what bridge ownership costs,
+  because the Docker API cannot answer it
+  (`RuntimeViewModel+Staleness.swift:110-112`); the CLI pays them too now that
+  `foreignBridge` is in its set (F-002).
 
-  Docker API calls for both sets: two (`listContainers`, `listNetworks`); the
-  UI set adds no `inspectContainer` call.
-  *Acceptance:* stub counts requests and spawns and asserts neither count
-  changes between 0 and 20 running containers.
-- **[NFR-002] Latency bound.** Each probe inherits
-  `ProcessRunner.diagnosticTimeout` (10s, `ProcessRunner.swift:38`) rather than
-  `lifecycleTimeout` (120s), so a wedged binary cannot hang the section.
+  Docker API calls: `health()` plus `listContainers` and `listNetworks` for
+  both sets; the CLI set adds one `inspectContainer` **per running container**
+  for `memoryCommitment`, which is exactly why the UI omits it.
+  *Acceptance:* a recording `SystemProbe` fake counts spawns and the stub
+  counts request paths; assert exact counts (`spawns == 4`, and the UI set's
+  paths equal `["/_ping", "/version", "/info", "/containers/json?all=0",
+  "/networks"]` in order), and assert neither count changes between 0 and 20
+  running containers for the UI set.
+- **[NFR-002] Total time budget.** The whole run is bounded at **20s**, not per
+  probe. Three facts force this, all verified:
+  - `health()` is three retried calls, not one (`DockerAPIClient.swift:313,
+    321, 322`);
+  - `requestWithRetry` retries `.timedOut` (`DockerRetryPolicy.swift:31-32`)
+    with `maxAttempts: 3` and a 5s request timeout — 15.5s per call;
+  - four probes at `diagnosticTimeout` (10s, `ProcessRunner.swift:38`) are 40s
+    if run sequentially.
+
+  Worst case as originally specified was therefore ≈117s, not 10s. Required
+  measures: run the four probes **concurrently**; use
+  `requestRetryingImmediateFailures` (`DockerAPIClient.swift:450`) for
+  diagnostic calls, which deliberately excludes `.timedOut` — a diagnostic
+  exists to *report* a hang, not to outlast it three times; enforce an overall
+  deadline after which unfinished checks are `.indeterminate` (F-010).
+  *Acceptance:* a probe fake that never returns; assert the report is published
+  within 20s and that the timed-out checks are `.indeterminate`. Also assert
+  the probe fake recorded a 10s timeout, mirroring `StubDockerTransport`'s
+  existing `timeouts` log.
 - **[NFR-003] Line budget.** The change adds zero lines to
   `Sources/ContainerStackApp/RuntimeViewModel.swift`, which is at exactly 690
   lines against `file_length: warning: 690` under `--strict`.
@@ -109,7 +173,12 @@ user asking "is my environment healthy?" before anything visibly breaks.
 - **[NFR-004] Safety.** Doctor terminates no process. A foreign bridge is named,
   never evicted.
 - **[NFR-005] Observability.** `DiagnosticReport` is `Codable`, so a future
-  "copy report" affordance needs no re-modelling. No such UI in v1.
+  "copy report" affordance needs no re-modelling. No such UI in v1. Each
+  `DiagnosticCheck` carries a `duration`, so an incident can name which probe
+  consumed the budget, and a run where any check is `.indeterminate` logs one
+  line naming them.
+  *Acceptance:* a JSON round-trip test over a fixture report, with `ranAt`
+  supplied by an injected clock so the round-trip is deterministic.
 
 ## 3. Architecture
 
@@ -178,7 +247,17 @@ public enum CheckID: String, CaseIterable, Codable, Sendable {
     case appRoot, socket, versions, routes, foreignBridge, dockerContext, memoryCommitment
 }
 
-public enum Verdict: Codable, Sendable { case ok, warning, failure, skipped }
+public enum Verdict: Codable, Sendable {
+    case ok, warning, failure
+    /// Not applicable: the runtime is stopped, or a higher-precedence check
+    /// made this one meaningless. Rendered grey.
+    case skipped
+    /// Could not be measured: a probe or request timed out, or the overall
+    /// deadline expired. Rendered amber, never grey -- a wedged runtime is
+    /// indistinguishable from a stopped one at the socket, and "nothing red"
+    /// on an unusable system reads as healthy.
+    case indeterminate
+}
 
 public enum Remedy: Codable, Sendable {
     case restartRuntime
@@ -192,11 +271,12 @@ public struct DiagnosticCheck: Codable, Sendable {
     public let summary: String     // non-empty
     public let detail: String?
     public let remedy: Remedy?     // nil when verdict == .ok
+    public let duration: Duration  // NFR-005: which probe ate the budget
 }
 
 public struct DiagnosticReport: Codable, Sendable {
     public let checks: [DiagnosticCheck]   // ordered by precedence, one per requested CheckID
-    public let ranAt: Date
+    public let ranAt: Date                 // from an injected clock, not Date()
 }
 
 public enum ProbeResult: Sendable {
@@ -268,6 +348,26 @@ returns `""`. The Core probe does not reuse it.
 - Background/scheduled runs, notifications, or a sidebar badge.
 - Touching `RuntimeViewModel.swift` at all.
 
+## 7a. Test infrastructure this feature requires
+
+Half the acceptance criteria above are unwritable against today's doubles. These
+are part of the work, not preconditions someone else supplies:
+
+- **`StubDockerTransport` must be able to fail.** `send` always returns
+  `responses.removeFirst()` (`Tests/ContainerStackCoreTests/TestSupport.swift:19-25`);
+  no path throws, so F-009, F-010 and §5's "transport error on any call" cannot
+  be expressed. Change to `init(responses: [Result<Data, Error>])`. An exhausted
+  queue must `throw`, not trap — today it crashes the test process, which is the
+  worst possible way to report an NFR-001 regression.
+- **Responses must be keyed by path.** The queue is path-blind, so swapping two
+  calls silently feeds `/networks` JSON to `listContainers` and the test still
+  passes.
+- **A recording `SystemProbe` fake** with a call log and per-call timeouts, so
+  spawn counts (NFR-001) and the 10s timeout (NFR-002) are assertable.
+- **A gated `SystemProbe` fake** exposing a `CheckedContinuation`, so F-007's
+  supersede branch is reachable without `Task.sleep`.
+- **An injected clock** for `ranAt`.
+
 ## 8. Open questions
 
 1. Does `DiagnosticReport` need an aggregate verdict for a sidebar badge, or is
@@ -286,6 +386,18 @@ returns `""`. The Core probe does not reuse it.
 5. Exact `CheckID` granularity for "versions": today the CLI prints API version,
    engine version, container count and image count as one block. One check or
    several?
+6. What does the sidebar row show while a repair is running — the stale report
+   greyed, or a dedicated in-progress state? F-008 requires "not a stale
+   verdict" but does not pick the presentation.
+7. `repairStaleContextRecordIfNeeded()` is `private` and swallows its error in
+   an empty `catch` (`RuntimeViewModel+DockerContext.swift:186-188`, comment:
+   "Best-effort: retried on the next launch"). Doctor's button needs an outcome,
+   so it must be extracted as something like
+   `repairDockerContextRecord() async -> Bool`. Confirm that widening it is
+   acceptable, since the empty catch was deliberate for the polled path.
+8. Does the 20s total budget (NFR-002) apply to the CLI too? The CLI has no
+   section to block and a human waiting at a prompt may prefer completeness
+   over a deadline.
 
 ## 9. Success criteria
 

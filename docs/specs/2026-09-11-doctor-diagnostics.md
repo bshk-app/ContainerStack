@@ -25,10 +25,20 @@ user asking "is my environment healthy?" before anything visibly breaks.
   import SwiftUI (compiler-enforced).
 
 - **[F-002]** The caller passes the check set explicitly:
-  `DiagnosticRunner.run(checks: Set<CheckID>)`. `cstack doctor` passes the full
-  set including `.memoryCommitment`; the UI v1 passes the set without it.
-  *Acceptance:* test asserts the UI check set issues no `inspectContainer`
-  request against the stub transport, while the CLI set does.
+  `DiagnosticRunner.run(checks: Set<CheckID>)`. The two sets differ in **both**
+  directions and neither is "all":
+  - CLI: `{appRoot, socket, versions, routes, memoryCommitment}` — exactly what
+    `cstack doctor` prints today.
+  - UI v1: `{foreignBridge, appRoot, socket, versions, routes, dockerContext}`
+    — no `memoryCommitment` (cost), plus two checks the CLI has never had.
+
+  `foreignBridge` and `dockerContext` must **not** enter the CLI set: `cstack
+  doctor` contains no bridge-ownership check today (verified: no such code in
+  `Sources/CStackCLI/CStackCommands.swift`; `context` is a separate subcommand
+  at `:279`), so adding them would emit new lines and break F-003.
+  *Acceptance:* test asserts the UI set issues no `inspectContainer` request
+  against the stub transport while the CLI set does; and that the CLI set
+  produces no bridge or context line, byte-compared against the golden output.
 
 - **[F-003]** `cstack doctor` becomes a formatter over `DiagnosticReport` and
   its stdout text is byte-identical to today's for the same runtime state.
@@ -78,11 +88,17 @@ user asking "is my environment healthy?" before anything visibly breaks.
 
 ### 2.2 Non-functional requirements
 
-- **[NFR-001] Performance.** A UI v1 run issues exactly two process spawns
-  (`container system status`, `netstat -rn -f inet`) and two Docker API calls
-  (`listContainers`, `listNetworks`), independent of container count. No
-  `inspectContainer` call. *Acceptance:* stub counts requests and asserts the
-  count does not change between 0 and 20 running containers.
+- **[NFR-001] Performance.** Process spawns per run are fixed and independent of
+  container count:
+  - CLI set: two — `container system status`, `netstat -rn -f inet`.
+  - UI v1 set: four — those two plus `/usr/sbin/lsof -Fpcn -- <socketPath>` and
+    `/bin/ps -A -o pid=,command=`, which bridge ownership requires because the
+    Docker API cannot answer it (`RuntimeViewModel+Staleness.swift:110-112`).
+
+  Docker API calls for both sets: two (`listContainers`, `listNetworks`); the
+  UI set adds no `inspectContainer` call.
+  *Acceptance:* stub counts requests and spawns and asserts neither count
+  changes between 0 and 20 running containers.
 - **[NFR-002] Latency bound.** Each probe inherits
   `ProcessRunner.diagnosticTimeout` (10s, `ProcessRunner.swift:38`) rather than
   `lifecycleTimeout` (120s), so a wedged binary cannot hang the section.
@@ -127,10 +143,18 @@ DockerAPIClient (actor) ─────────────────┘  
 
 - **`SystemProbe`** (new protocol, Core; production impl over
   `ProcessRunner.run`, `ProcessRunner.swift:104`)
-  - *Responsibility:* run the two external commands and report success or
-    failure without laundering failure into empty output.
+  - *Responsibility:* run the external commands and report success or failure
+    without laundering failure into empty output.
   - *Interface:* `func runtimeStatus() async -> ProbeResult`,
-    `func routingTable() async -> ProbeResult`
+    `func routingTable() async -> ProbeResult`,
+    `func socketHolder(socketPath: String) async -> ProbeResult` (`lsof`),
+    `func processTable() async -> ProbeResult` (`ps`)
+  - *Note:* the last two are required only by the `foreignBridge` check, so the
+    CLI set never invokes them. The parsing they feed already lives in Core —
+    `BridgeOwnership` (`BridgeOwnership.swift:11`) and `ProcessTable`
+    (`RuntimeControl.swift:5`); only the two spawns are new to Core. The
+    app-side `RuntimeShell` (`RuntimeViewModel+Control.swift:191`) is not
+    reused, for the same laundering reason as `CommandShell`.
 
 - **`CStackCLI.doctor`** (changed, `Sources/CStackCLI/CStackCommands.swift:8`)
   - *Responsibility:* format a report. All check logic leaves this function,
@@ -196,7 +220,8 @@ silently dropped; not-run is expressed as `.skipped`.
 - *Idempotency:* pure with respect to the system; running twice changes nothing
   and may return different verdicts if the system changed.
 
-**`SystemProbe.runtimeStatus() / .routingTable() async -> ProbeResult`**
+**`SystemProbe.runtimeStatus() / .routingTable() / .socketHolder(socketPath:) /
+.processTable() async -> ProbeResult`**
 - *Errors:* a non-zero exit, a spawn failure, or a timeout must surface as
   `.failed(reason:)`. Returning `.output("")` for a failed process is
   forbidden — see section 5.
@@ -215,6 +240,7 @@ repair is introduced.
 | Docker API | transport error on any call | That check is `.failure`; siblings still run. Today `try await client.health()` propagates and kills the whole command. |
 | Docker API | no running containers | Routes check `.skipped` with "nothing to check" — kept distinct from "could not check" (issue #45). |
 | Socket | held by a foreign bridge | `foreignBridge` check reports; dependent checks `.skipped`; no local-restart remedy offered. |
+| `lsof` / `ps` | spawn fails / times out | Bridge-ownership check `.failure`, and the checks it gates stay `.skipped` rather than running on an unknown owner — an unknown holder is not the same as "ours". |
 | Runtime | stopped, or `.starting` | All dependent checks `.skipped` with a reason; nothing red, nothing flashing. |
 | UI | section closed mid-run | Task cancelled; a late result from a superseded epoch is discarded. |
 

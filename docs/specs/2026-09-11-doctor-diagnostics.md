@@ -89,7 +89,7 @@ user asking "is my environment healthy?" before anything visibly breaks.
   are never two.
 
   Rationale: overlap would be worst exactly when it hurts most. A run costs
-  four uncancellable spawns (NFR-001) and can occupy the full 20s budget
+  five uncancellable spawns in the UI set (NFR-001) and can occupy the full 20s
   (NFR-002) precisely when the runtime is wedged; letting a second start would
   multiply spawns against an already-stuck system.
   *Acceptance:* with a gated probe fake suspending run A, requesting another
@@ -144,21 +144,26 @@ user asking "is my environment healthy?" before anything visibly breaks.
 ### 2.2 Non-functional requirements
 
 - **[NFR-001] Performance.** Process spawns per run are fixed and independent of
-  container count. Both sets now spawn **four**: `container system status`,
-  `netstat -rn -f inet`, `/usr/sbin/lsof -Fpcn -- <socketPath>` and
-  `/bin/ps -A -o pid=,command=`. The last two are what bridge ownership costs,
-  because the Docker API cannot answer it
-  (`RuntimeViewModel+Staleness.swift:110-112`); the CLI pays them too now that
-  `foreignBridge` is in its set (F-002).
+  container count:
+  - CLI set: **four** — `container system status`, `netstat -rn -f inet`,
+    `/usr/sbin/lsof -Fpcn -- <socketPath>`, `/bin/ps -A -o pid=,command=`.
+  - UI set: **five** — those four plus `docker context ls --format ...`, which
+    `DockerCLI.recordedSocketPath(for:)` (`DockerCLI.swift:152`) shells for the
+    `dockerContext` check.
+
+  The `lsof`/`ps` pair is what bridge ownership costs, because the Docker API
+  cannot answer it (`RuntimeViewModel+Staleness.swift:110-112`); the CLI pays
+  them too now that `foreignBridge` is in its set (F-002).
 
   Docker API calls: `health()` plus `listContainers` and `listNetworks` for
   both sets; the CLI set adds one `inspectContainer` **per running container**
   for `memoryCommitment`, which is exactly why the UI omits it.
   *Acceptance:* a recording `SystemProbe` fake counts spawns and the stub
-  counts request paths; assert exact counts (`spawns == 4`, and the UI set's
-  paths equal `["/_ping", "/version", "/info", "/containers/json?all=0",
-  "/networks"]` in order), and assert neither count changes between 0 and 20
-  running containers for the UI set.
+  counts request paths; assert exact counts (`spawns == 4` for the CLI set and
+  `== 5` for the UI set, and the UI set's API paths equal
+  `["/_ping", "/version", "/info", "/containers/json?all=0", "/networks"]` in
+  order), and assert neither count changes between 0 and 20 running containers
+  for the UI set.
 - **[NFR-002] Total time budget.** The whole run is bounded at **20s**, not per
   probe. Three facts force this, all verified:
   - `health()` is three retried calls, not one (`DockerAPIClient.swift:313,
@@ -386,10 +391,15 @@ are part of the work, not preconditions someone else supplies:
 1. Does `DiagnosticReport` need an aggregate verdict for a sidebar badge, or is
    the row list enough for v1? (Brainstorm left open; a badge implies background
    runs, which are a non-goal — likely defer.)
-2. The docker-context check currently has no on-demand entry point:
-   `repairStaleContextRecordIfNeeded()` runs as a side effect of polling
-   (`RuntimeViewModel+DockerContext.swift:160`). Does Doctor need a read-only
-   context check extracted from it, or does it reuse the polled result?
+2. ~~Docker-context check seam.~~ **Resolved.** Doctor gets its own read-only
+   check, built from pieces that already exist and already are pure:
+   `DockerCLI.recordedSocketPath(for:)` (`DockerCLI.swift:152`, with an
+   injectable `using:` variant at `:156` for tests) and
+   `DockerContext.shouldRepairStaleRecord(...)` (`DockerContext.swift:63-75`,
+   whose own comment states it is "not a reachability check"). Doctor must not
+   reach `repairStaleContextRecordIfNeeded()`, which repairs as a side effect —
+   a diagnostic that mutates while reporting is not a diagnostic. Cost: the
+   fifth spawn in NFR-001.
 3. Should v2's memory-commitment check sit behind its own button in the section
    rather than joining the automatic run?
 4. `MemoryCommitment` verdicts (`.within` / `.approaching` / `.exceeding`) map

@@ -46,9 +46,7 @@ actor StubDockerTransport: DockerAPITransport {
         return try results.removeFirst().get()
     }
 
-    // A request without a path token is recorded, not fatal: the exhaustion guard below
-    // has to be the thing that reports an over-consumed queue, and `paths` has to keep
-    // describing every attempt for the call-count assertions that read it.
+    // Every attempt yields a path: an unparseable request records `<malformed>` rather than trapping.
     private static func path(ofRequestText requestText: String) -> String {
         let fields = requestText.split(separator: " ")
         guard fields.count > 1 else { return "<malformed>" }

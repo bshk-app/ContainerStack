@@ -60,7 +60,7 @@ actor GatedSystemProbe: SystemProbe {
     private let result: ProbeResult
     private var isOpen = false
     private var gateWaiters: [CheckedContinuation<Void, Never>] = []
-    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var entryWaiters: [(threshold: Int, continuation: CheckedContinuation<Void, Never>)] = []
     private(set) var callCount = 0
     private(set) var completedCallCount = 0
 
@@ -75,11 +75,11 @@ actor GatedSystemProbe: SystemProbe {
         for waiter in waiting { waiter.resume() }
     }
 
-    /// Returns once a call has entered the probe, so a test can act on a
-    /// suspended run without sleeping.
-    func waitUntilCalled() async {
-        guard callCount == 0 else { return }
-        await withCheckedContinuation { entryWaiters.append($0) }
+    /// Returns once `count` calls have entered, so a test can act on a suspended
+    /// run — including a second, coalescing one — without sleeping.
+    func waitUntilCalled(count: Int = 1) async {
+        guard callCount < count else { return }
+        await withCheckedContinuation { entryWaiters.append((count, $0)) }
     }
 
     func runtimeStatus() async -> ProbeResult { await gate() }
@@ -92,9 +92,9 @@ actor GatedSystemProbe: SystemProbe {
 
     private func gate() async -> ProbeResult {
         callCount += 1
-        let entered = entryWaiters
-        entryWaiters = []
-        for waiter in entered { waiter.resume() }
+        let entered = entryWaiters.filter { $0.threshold <= callCount }
+        entryWaiters.removeAll { $0.threshold <= callCount }
+        for waiter in entered { waiter.continuation.resume() }
         if !isOpen {
             await withCheckedContinuation { gateWaiters.append($0) }
         }
@@ -173,6 +173,21 @@ struct GatedSystemProbeTests {
         #expect(await probe.routingTable() == .failed(reason: "no runtime"))
         #expect(await probe.processTable() == .failed(reason: "no runtime"))
         #expect(await probe.callCount == 2)
+        #expect(await probe.completedCallCount == 2)
+    }
+
+    @Test("a second caller arriving while the first is parked is awaitable")
+    func gatedProbeAwaitsASecondConcurrentCaller() async {
+        let probe = GatedSystemProbe(result: .output("status"))
+        let first = Task { await probe.runtimeStatus() }
+        await probe.waitUntilCalled()
+        let second = Task { await probe.routingTable() }
+        await probe.waitUntilCalled(count: 2)
+        #expect(await probe.callCount == 2)
+        #expect(await probe.completedCallCount == 0)
+        await probe.open()
+        #expect(await first.value == .output("status"))
+        #expect(await second.value == .output("status"))
         #expect(await probe.completedCallCount == 2)
     }
 }

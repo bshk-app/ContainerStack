@@ -58,6 +58,16 @@ func respondingSocket() -> StubDockerTransport {
     StubDockerTransport(byPath: ["/_ping": .success(jsonResponse("OK"))])
 }
 
+/// A runtime that answers every call the socket and versions checks make. `respondingSocket`
+/// answers only the ping, which leaves the versions check unmeasurable.
+func respondingRuntime() -> StubDockerTransport {
+    StubDockerTransport(byPath: [
+        "/_ping": .success(jsonResponse("OK")),
+        "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
+        "/info": .success(jsonResponse(#"{"Containers":3,"Images":11}"#)),
+    ])
+}
+
 @Suite("A run answers every requested check and nothing else")
 struct DiagnosticRunnerTests {
     @Test("one check per requested id, in a fixed order")
@@ -232,17 +242,20 @@ struct DiagnosticRunnerPrecedenceTests {
         #expect(report.checks.allSatisfy { $0.remedy == nil })
     }
 
-    // F-010 also splits stopped from wedged: a socket that times out must be `.indeterminate`,
-    // never `.skipped`. `resolve` has no wedged case yet, so today's answer is pinned as wrong.
-    @Test("a wedged socket is still grey, which F-010 forbids")
-    func aWedgedSocketIsNotYetToldApartFromAStoppedOne() async {
+    // F-010 splits stopped from wedged, and the split is made here rather than in `resolve`:
+    // both are `.offline`, and only the transport knows which of them happened.
+    @Test("a wedged socket is amber, never the grey of a stopped one")
+    func aWedgedSocketIsToldApartFromAStoppedOne() async {
         let report = await makeRunner(
             transport: StubDockerTransport(byPath: ["/_ping": .failure(UnixSocketError.timedOut)])
         ).run(checks: CheckID.uiSet)
-        #expect(report.checks.allSatisfy { $0.verdict == .skipped })
-        withKnownIssue("a wedged socket reads as a stopped one until resolve can tell them apart") {
-            #expect(report.checks.contains { $0.verdict == .indeterminate })
-        }
+        #expect(report.check(.socket)?.verdict == .indeterminate)
+        #expect(report.check(.versions)?.verdict == .indeterminate)
+        #expect(report.checks.contains { $0.verdict == .indeterminate })
+        #expect(report.checks.allSatisfy { $0.verdict != .skipped } == false)
+        #expect(report.check(.appRoot)?.verdict == .skipped)
+        #expect(report.checks.allSatisfy { $0.remedy == nil })
+        #expect(report.checks.allSatisfy { !$0.summary.isEmpty })
     }
 
     // A launchd-started bridge answering something other than `OK`: `ping` returns false without
@@ -312,7 +325,10 @@ struct DiagnosticRunnerProbeFailureTests {
                 transport: respondingSocket(),
                 checks: checks
             )
-            #expect(report.checks.allSatisfy { $0.verdict != .ok })
+            // Exact rather than `allSatisfy`: F-009 governs the checks that depend on the dead
+            // probe, and the socket answered for itself while `/version` did not.
+            #expect(report.checks.filter { $0.verdict == .ok }.map(\.id) == [.socket])
+            #expect(report.check(.versions)?.verdict == .indeterminate)
             #expect(report.check(.appRoot)?.verdict == .indeterminate)
             #expect(report.checks.allSatisfy { !$0.summary.isEmpty })
         }
@@ -371,5 +387,85 @@ struct DiagnosticRunnerProbeFailureTests {
         )
         #expect(report.checks.allSatisfy { $0.verdict == .skipped })
         #expect(report.check(.appRoot)?.summary.isEmpty == false)
+    }
+}
+
+/// NFR-002: `health()` is three retried calls and `.timedOut` is retryable on the general
+/// path, so a wedged socket costs ~46s there — more than twice the whole run's 20s budget.
+@Suite("The socket and versions checks report a hang instead of outlasting it")
+struct DiagnosticRunnerSocketTests {
+    private let refused = UnixSocketError.systemCallFailed(ECONNREFUSED)
+
+    @Test("a socket that hangs is asked once, and nothing is asked after it")
+    func aWedgedSocketIsAskedOnceNotThreeTimes() async {
+        let transport = StubDockerTransport(byPath: ["/_ping": .failure(UnixSocketError.timedOut)])
+        _ = await makeRunner(transport: transport).run(checks: CheckID.uiSet)
+        #expect(await transport.paths.filter { $0 == "/_ping" }.count == 1)
+        #expect(await transport.paths == ["/_ping"])
+    }
+
+    // The other side of the split: a refused connection costs a syscall to re-ask, so it is
+    // retried, and it stays the grey of a runtime that is genuinely not there.
+    @Test("a refused socket is retried and still reads as a stopped runtime")
+    func aRefusedSocketIsRetriedAndStaysGrey() async {
+        let transport = StubDockerTransport(byPath: ["/_ping": .failure(refused)])
+        let report = await makeRunner(transport: transport).run(checks: CheckID.uiSet)
+        #expect(await transport.paths == ["/_ping", "/_ping", "/_ping"])
+        #expect(report.checks.allSatisfy { $0.verdict == .skipped })
+        #expect(report.check(.socket)?.verdict != .indeterminate)
+    }
+
+    // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:32-36`), copied
+    // rather than reworded, because T-016 renders these back out.
+    @Test("a healthy socket and its versions carry the CLI's own wording")
+    func aHealthyRuntimeCarriesTheCLIsOwnWording() async {
+        let report = await makeRunner(transport: respondingRuntime()).run(checks: CheckID.cliSet)
+        #expect(report.check(.socket)?.verdict == .ok)
+        #expect(report.check(.socket)?.summary == "Docker socket: healthy")
+        #expect(report.check(.versions)?.verdict == .ok)
+        #expect(report.check(.versions)?.summary == "API version: 1.43")
+        #expect(
+            report.check(.versions)?.detail
+                == """
+                Engine: 1.7.0
+                Containers: 3
+                Images: 11
+                """
+        )
+        #expect(report.check(.versions)?.remedy == nil)
+    }
+
+    @Test("a field the daemon did not report is the CLI's `unknown`, not an empty line")
+    func anUnreportedVersionFieldReadsAsUnknown() async {
+        let report = await makeRunner(
+            transport: StubDockerTransport(byPath: [
+                "/_ping": .success(jsonResponse("OK")),
+                "/version": .success(jsonResponse("{}")),
+                "/info": .success(jsonResponse("{}")),
+            ])
+        ).run(checks: CheckID.cliSet)
+        #expect(report.check(.versions)?.summary == "API version: unknown")
+        #expect(report.check(.versions)?.detail?.contains("Containers: unknown") == true)
+    }
+
+    @Test("a versions call that hangs is amber, asked once, on a socket that answered")
+    func aWedgedVersionsCallIsAmberAndAskedOnce() async {
+        let transport = StubDockerTransport(byPath: [
+            "/_ping": .success(jsonResponse("OK")),
+            "/version": .failure(UnixSocketError.timedOut),
+        ])
+        let report = await makeRunner(transport: transport).run(checks: CheckID.uiSet)
+        #expect(await transport.paths.filter { $0 == "/version" }.count == 1)
+        #expect(report.check(.socket)?.verdict == .ok)
+        #expect(report.check(.versions)?.verdict == .indeterminate)
+        #expect(report.check(.versions)?.verdict != .ok)
+    }
+
+    // NFR-001: the versions check reads `/version` and `/info`, and the ping is not paid twice.
+    @Test("a healthy run asks each endpoint exactly once, in order")
+    func aHealthyRunAsksEachEndpointOnce() async {
+        let transport = respondingRuntime()
+        _ = await makeRunner(transport: transport).run(checks: CheckID.uiSet)
+        #expect(await transport.paths == ["/_ping", "/version", "/info"])
     }
 }

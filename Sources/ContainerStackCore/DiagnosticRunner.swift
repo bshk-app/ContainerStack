@@ -30,13 +30,35 @@ public struct DiagnosticRunner: Sendable {
     /// `.skipped` with no remedy, never dropped from the report.
     public func run(checks: Set<CheckID>) async -> DiagnosticReport {
         let ordered = CheckID.allCases.filter(checks.contains)
-        let state = await resolvedState(for: checks)
-        return DiagnosticReport(checks: ordered.map { Self.project(state, onto: $0) }, ranAt: now())
+        let signals = await signals(for: checks)
+        return DiagnosticReport(checks: ordered.map { Self.project(signals, onto: $0) }, ranAt: now())
+    }
+
+    /// What `resolve` ranked, plus the one thing it cannot express: that a check was
+    /// attempted and could not be measured.
+    private struct Signals {
+        let state: RuntimeState
+        let appRoot: AppRootMeasurement
+    }
+
+    /// Three-valued because two values is the bug: `nil` from a probe that never ran is
+    /// read as "no missing root", which is a healthy runtime (F-009).
+    private enum AppRootMeasurement {
+        case missing(String)
+        case intact
+        case unmeasurable(reason: String)
+
+        /// Only a root the probe actually reported: `resolve` ranks states, and a
+        /// measurement failure is not one of them.
+        var missingRoot: String? {
+            if case .missing(let root) = self { return root }
+            return nil
+        }
     }
 
     /// Gathers what `RuntimeState.resolve` takes and calls it once. Which failure
     /// outranks which is decided there and nowhere else, so nothing here compares two.
-    private func resolvedState(for checks: Set<CheckID>) async -> RuntimeState {
+    private func signals(for checks: Set<CheckID>) async -> Signals {
         var failure: String?
         var socketResponds = false
         do {
@@ -45,9 +67,9 @@ public struct DiagnosticRunner: Sendable {
             failure = error.localizedDescription
         }
 
-        let missingAppRoot = checks.contains(.appRoot) ? await missingAppRoot() : nil
+        let appRoot = checks.contains(.appRoot) ? await appRootMeasurement() : .intact
         let bridge = checks.contains(.foreignBridge) ? await bridgeOwnership() : nil
-        return RuntimeState.resolve(
+        let state = RuntimeState.resolve(
             socketResponds: socketResponds,
             // Means "a helper this caller launched", as it does in the app. A report launches
             // nothing, so a bridge started by launchd is `.offline`, never `.starting` (#44).
@@ -56,14 +78,22 @@ public struct DiagnosticRunner: Sendable {
             failure: failure,
             // Gated exactly as `RuntimeViewModel.applyState` gates them, so both callers hand
             // `resolve` the same inputs. The app's call convention, not a second ranking.
-            missingAppRoot: socketResponds ? missingAppRoot : nil,
+            missingAppRoot: socketResponds ? appRoot.missingRoot : nil,
             foreignBridge: socketResponds ? bridge?.foreignSocketPath : nil
         )
+        return Signals(state: state, appRoot: appRoot)
     }
 
-    private func missingAppRoot() async -> String? {
-        guard case .output(let status) = await probe.runtimeStatus() else { return nil }
-        return RuntimeStatusParser.missingAppRoot(status)
+    /// Empty output is still a measurement — the parser looked and found no missing root.
+    /// A probe that could not run is not, and the two never collapse into one answer.
+    private func appRootMeasurement() async -> AppRootMeasurement {
+        switch await probe.runtimeStatus() {
+        case .output(let status):
+            guard let root = RuntimeStatusParser.missingAppRoot(status) else { return .intact }
+            return .missing(root)
+        case .failed(let reason):
+            return .unmeasurable(reason: reason)
+        }
     }
 
     /// An unheld socket is not a foreign one: with no holder there is nothing to outrank
@@ -81,7 +111,8 @@ public struct DiagnosticRunner: Sendable {
 
     /// Exhaustive by construction: a new `RuntimeState` has to be given a projection here
     /// rather than silently inheriting one.
-    private static func project(_ state: RuntimeState, onto id: CheckID) -> DiagnosticCheck {
+    private static func project(_ signals: Signals, onto id: CheckID) -> DiagnosticCheck {
+        let state = signals.state
         switch state {
         case .foreignBridge(let socketPath):
             guard id == .foreignBridge else {
@@ -106,6 +137,15 @@ public struct DiagnosticRunner: Sendable {
         case .offline, .starting, .unknown:
             return skipped(id, because: state.detail ?? state.title)
         case .running, .degraded:
+            // Nothing outranked this check, so a probe that could not run is its own answer:
+            // amber, never the grey of a check something else made moot.
+            if id == .appRoot, case .unmeasurable(let reason) = signals.appRoot {
+                return indeterminate(
+                    id,
+                    summary: "Runtime storage: UNKNOWN — the runtime status could not be read.",
+                    detail: reason
+                )
+            }
             return notRun(id)
         }
     }
@@ -122,6 +162,20 @@ public struct DiagnosticRunner: Sendable {
             summary: summary,
             detail: detail,
             remedy: remedy,
+            duration: .zero
+        )
+    }
+
+    /// Amber, and the reason the measurement failed travels with it: "could not tell" is
+    /// only actionable when the report names what did not answer.
+    private static func indeterminate(_ id: CheckID, summary: String, detail: String?) -> DiagnosticCheck {
+        DiagnosticCheck(
+            id: id,
+            verdict: .indeterminate,
+            summary: summary,
+            detail: detail,
+            // No repair: an unmeasured root gives no grounds to restart anything.
+            remedy: nil,
             duration: .zero
         )
     }

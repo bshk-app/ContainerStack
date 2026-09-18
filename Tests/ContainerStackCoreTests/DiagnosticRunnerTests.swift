@@ -260,3 +260,116 @@ struct DiagnosticRunnerPrecedenceTests {
         #expect(report.check(.appRoot)?.summary == RuntimeState.genericFailure)
     }
 }
+
+/// F-009. The chain this suite pins shut: `CommandShell.output` returns `""` for a command
+/// that never ran, and `RuntimeStatusParser.missingAppRoot("")` is nil — "no missing root".
+@Suite("A probe that could not run never reads as a healthy app root")
+struct DiagnosticRunnerProbeFailureTests {
+    private let ourLsofOutput = "p777\ncsocktainer\nn/tmp/containerstack-doctor-tests.sock"
+    private let foreignLsofOutput = "p4242\ncsocktainer\nn/tmp/containerstack-doctor-tests.sock"
+    private let processTable = """
+            1 /sbin/launchd
+          777 \(diagnosticBridgePath) --socket /tmp/containerstack-doctor-tests.sock
+        """
+    private let spawnFailure = ProbeResult.failed(reason: "/usr/local/bin/container could not be run: ENOENT")
+
+    private func report(
+        runtimeStatus: ProbeResult,
+        socketHolder: String,
+        transport: StubDockerTransport,
+        checks: Set<CheckID>
+    ) async -> DiagnosticReport {
+        await makeRunner(
+            runtimeStatus: runtimeStatus,
+            socketHolder: .output(socketHolder),
+            processTable: .output(processTable),
+            transport: transport
+        ).run(checks: checks)
+    }
+
+    @Test("the app-root check is amber, not grey and never green")
+    func aFailedStatusProbeLeavesTheAppRootCheckIndeterminate() async {
+        let report = await report(
+            runtimeStatus: spawnFailure,
+            socketHolder: ourLsofOutput,
+            transport: respondingSocket(),
+            checks: CheckID.uiSet
+        )
+        #expect(report.check(.appRoot)?.verdict == .indeterminate)
+        #expect(report.check(.appRoot)?.verdict != .skipped)
+        #expect(report.check(.appRoot)?.verdict != .ok)
+        #expect(report.check(.appRoot)?.remedy == nil)
+    }
+
+    // F-009 asks for a matrix rather than one fixture: a narrow assertion passes while a
+    // neighbouring check answers `.ok` off the same dead probe.
+    @Test("no check in either set reads as passing while the status probe is dead")
+    func aFailedStatusProbeLeavesNoCheckLookingPassed() async {
+        for checks in [CheckID.uiSet, CheckID.cliSet] {
+            let report = await report(
+                runtimeStatus: spawnFailure,
+                socketHolder: ourLsofOutput,
+                transport: respondingSocket(),
+                checks: checks
+            )
+            #expect(report.checks.allSatisfy { $0.verdict != .ok })
+            #expect(report.check(.appRoot)?.verdict == .indeterminate)
+            #expect(report.checks.allSatisfy { !$0.summary.isEmpty })
+        }
+    }
+
+    @Test("the reason the probe gave is what the report says")
+    func theProbeFailureReasonReachesTheReport() async {
+        let report = await report(
+            runtimeStatus: .failed(reason: "/usr/local/bin/container exited with status 127"),
+            socketHolder: ourLsofOutput,
+            transport: respondingSocket(),
+            checks: CheckID.uiSet
+        )
+        #expect(report.check(.appRoot)?.detail?.contains("exited with status 127") == true)
+    }
+
+    // Empty output is a measurement: the parser looked and found no missing root. A failed
+    // probe is not, and the two must not project onto the same verdict.
+    @Test("a status that parsed clean stays grey, which is what makes amber mean something")
+    func aMeasuredStatusIsToldApartFromAnUnmeasurableOne() async {
+        let measured = await report(
+            runtimeStatus: .output(""),
+            socketHolder: ourLsofOutput,
+            transport: respondingSocket(),
+            checks: CheckID.uiSet
+        )
+        #expect(measured.check(.appRoot)?.verdict == .skipped)
+        #expect(measured.check(.appRoot)?.verdict != .indeterminate)
+    }
+
+    // T-008: `RuntimeState.resolve` ranks failures and a measurement failure is not one of
+    // its inputs, so a foreign bridge still decides and the app root stays grey beneath it.
+    @Test("a foreign bridge still outranks an app root that could not be measured")
+    func aForeignBridgeStillOutranksAnUnmeasurableAppRoot() async {
+        let report = await report(
+            runtimeStatus: spawnFailure,
+            socketHolder: foreignLsofOutput,
+            transport: respondingSocket(),
+            checks: CheckID.uiSet
+        )
+        #expect(report.check(.foreignBridge)?.verdict == .failure)
+        #expect(report.check(.appRoot)?.verdict == .skipped)
+        #expect(report.check(.appRoot)?.summary.contains(diagnosticSocketPath) == true)
+        #expect(report.checks.allSatisfy { $0.verdict != .ok })
+    }
+
+    // F-010: a stopped runtime is grey with a reason. Nothing was owed about the app root
+    // of a runtime that is not running, so the dead probe does not turn that amber.
+    @Test("a stopped runtime stays grey even when the status probe also failed")
+    func aStoppedRuntimeIsNotRepaintedByAFailedProbe() async {
+        let report = await report(
+            runtimeStatus: spawnFailure,
+            socketHolder: ourLsofOutput,
+            transport: StubDockerTransport(byPath: [:]),
+            checks: CheckID.uiSet
+        )
+        #expect(report.checks.allSatisfy { $0.verdict == .skipped })
+        #expect(report.check(.appRoot)?.summary.isEmpty == false)
+    }
+}

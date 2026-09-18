@@ -664,7 +664,7 @@ run's worth of spawns; the explicit button issues a second.
 **NFR-003:** this file is new. `RuntimeViewModel.swift` must not gain a line —
 check with `git diff --exit-code Sources/ContainerStackApp/RuntimeViewModel.swift`.
 
-**Depends on:** T-015, T-019
+**Depends on:** T-015, T-018a, T-019
 
 ---
 

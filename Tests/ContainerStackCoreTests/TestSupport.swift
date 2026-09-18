@@ -1,15 +1,22 @@
 import Foundation
+import Testing
 
 @testable import ContainerStackCore
 
 actor StubDockerTransport: DockerAPITransport {
-    private var responses: [Data]
+    struct Exhausted: Error {}
+
+    private var results: [Result<Data, any Error>]
     private(set) var paths: [String] = []
     private(set) var requests: [String] = []
     private(set) var timeouts: [Duration?] = []
 
+    init(results: [Result<Data, any Error>]) {
+        self.results = results
+    }
+
     init(responses: [Data]) {
-        self.responses = responses
+        self.results = responses.map { .success($0) }
     }
 
     func send(request: Data) throws -> Data {
@@ -21,7 +28,32 @@ actor StubDockerTransport: DockerAPITransport {
         requests.append(requestText)
         paths.append(String(requestText.split(separator: " ")[1]))
         timeouts.append(timeout)
-        return responses.removeFirst()
+        guard !results.isEmpty else { throw Exhausted() }
+        return try results.removeFirst().get()
+    }
+}
+
+@Suite("A stub transport can model a failed Docker call")
+struct StubDockerTransportTests {
+    private let ping = Data("GET /_ping HTTP/1.1\r\n\r\n".utf8)
+
+    @Test("a queued failure is thrown, not swallowed")
+    func stubTransportThrowsTheQueuedError() async throws {
+        let stub = StubDockerTransport(results: [.failure(UnixSocketError.timedOut)])
+        await #expect(throws: UnixSocketError.timedOut) { try await stub.send(request: ping) }
+    }
+
+    @Test("a request past the end of the queue throws instead of trapping")
+    func stubTransportThrowsWhenExhausted() async throws {
+        let stub = StubDockerTransport(results: [])
+        await #expect(throws: StubDockerTransport.Exhausted.self) { try await stub.send(request: ping) }
+    }
+
+    @Test("the response-taking initialiser still answers in order")
+    func stubTransportKeepsTheResponsesLabel() async throws {
+        let stub = StubDockerTransport(responses: [jsonResponse("[]"), jsonResponse("{}")])
+        #expect(try await stub.send(request: ping) == jsonResponse("[]"))
+        #expect(try await stub.send(request: ping) == jsonResponse("{}"))
     }
 }
 

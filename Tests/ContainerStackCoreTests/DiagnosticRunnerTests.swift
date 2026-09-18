@@ -461,11 +461,17 @@ struct DiagnosticRunnerSocketTests {
         #expect(report.check(.versions)?.verdict != .ok)
     }
 
-    // NFR-001: the versions check reads `/version` and `/info`, and the ping is not paid twice.
+    // NFR-001: every check reads its own endpoint once, and the ping is not paid twice.
     @Test("a healthy run asks each endpoint exactly once, in order")
     func aHealthyRunAsksEachEndpointOnce() async {
-        let transport = respondingRuntime()
+        let transport = StubDockerTransport(byPath: [
+            "/_ping": .success(jsonResponse("OK")),
+            "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
+            "/info": .success(jsonResponse(#"{"Containers":3,"Images":11}"#)),
+            "/containers/json": .success(jsonResponse("[]")),
+            "/networks": .success(jsonResponse("[]")),
+        ])
         _ = await makeRunner(transport: transport).run(checks: CheckID.uiSet)
-        #expect(await transport.paths == ["/_ping", "/version", "/info"])
+        #expect(await transport.paths == ["/_ping", "/version", "/info", "/containers/json", "/networks"])
     }
 }

@@ -41,6 +41,7 @@ public struct DiagnosticRunner: Sendable {
         let appRoot: AppRootMeasurement
         let socket: SocketMeasurement
         let versions: VersionsMeasurement
+        let routes: RoutesMeasurement
     }
 
     /// A refused socket and one that never answered both resolve to `.offline`, and F-010 needs
@@ -85,6 +86,23 @@ public struct DiagnosticRunner: Sendable {
         }
     }
 
+    /// "Nothing publishes", "could not tell" and "unroutable" are three answers, and merging
+    /// any two of them is the defect this split exists to keep out (#45).
+    private enum RoutesMeasurement {
+        case notAsked
+        case nothingToCheck(summary: String)
+        case reachable([UnroutableNetwork])
+        case unroutable([UnroutableNetwork])
+        case unmeasurable(summary: String, reason: String)
+
+        /// Only networks a readable routing table condemned: a check that could not run
+        /// gives `resolve` nothing to rank.
+        var unroutableNetworks: [UnroutableNetwork] {
+            if case .unroutable(let networks) = self { return networks }
+            return []
+        }
+    }
+
     /// Gathers what `RuntimeState.resolve` takes and calls it once. Which failure
     /// outranks which is decided there and nowhere else, so nothing here compares two.
     private func signals(for checks: Set<CheckID>) async -> Signals {
@@ -96,6 +114,12 @@ public struct DiagnosticRunner: Sendable {
 
         let appRoot = checks.contains(.appRoot) ? await appRootMeasurement() : .intact
         let bridge = checks.contains(.foreignBridge) ? await bridgeOwnership() : nil
+        // Every route signal arrives over the socket, so asking a dead one buys nothing but
+        // more waiting inside the same budget (NFR-002).
+        let routes =
+            socket.responds && checks.contains(.routes)
+            ? await routesMeasurement()
+            : RoutesMeasurement.notAsked
         let state = RuntimeState.resolve(
             socketResponds: socket.responds,
             // Means "a helper this caller launched", as it does in the app. A report launches
@@ -103,12 +127,13 @@ public struct DiagnosticRunner: Sendable {
             helperRunning: false,
             isStarting: false,
             failure: socket.failure,
+            unroutableNetworks: routes.unroutableNetworks,
             // Gated exactly as `RuntimeViewModel.applyState` gates them, so both callers hand
             // `resolve` the same inputs. The app's call convention, not a second ranking.
             missingAppRoot: socket.responds ? appRoot.missingRoot : nil,
             foreignBridge: socket.responds ? bridge?.foreignSocketPath : nil
         )
-        return Signals(state: state, appRoot: appRoot, socket: socket, versions: versions)
+        return Signals(state: state, appRoot: appRoot, socket: socket, versions: versions, routes: routes)
     }
 
     /// `ping` retries only what costs a syscall to re-ask (`DockerAPIClient.failsImmediately`), so
@@ -153,6 +178,49 @@ public struct DiagnosticRunner: Sendable {
         }
     }
 
+    /// Two independent ways to fail to measure — the Docker call and `netstat` — and neither may
+    /// arrive as an empty answer, which reads as "no route needed" (F-009, #45).
+    private func routesMeasurement() async -> RoutesMeasurement {
+        let containers: [DockerContainerSummary]
+        let networks: [DockerNetworkSummary]
+        do {
+            containers = try await client.decode(
+                [DockerContainerSummary].self,
+                response: client.requestRetryingImmediateFailures(path: "/containers/json")
+            )
+            networks = try await client.decode(
+                [DockerNetworkSummary].self,
+                response: client.requestRetryingImmediateFailures(path: "/networks")
+            )
+        } catch {
+            return .unmeasurable(summary: Self.unlistedNetworks, reason: error.localizedDescription)
+        }
+
+        guard containers.contains(where: \.isRunning) else {
+            return .nothingToCheck(summary: "Container routes: no running containers to check")
+        }
+        let publishing = NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks)
+        let uncheckable = NetworkRouteHealth.uncheckablePublishingNetworks(containers: containers, networks: networks)
+        if publishing.isEmpty, uncheckable.isEmpty {
+            return .nothingToCheck(summary: "Container routes: no running container publishes ports")
+        }
+        guard !publishing.isEmpty else { return Self.noSubnetReported(uncheckable) }
+
+        switch await probe.routingTable() {
+        case .failed(let reason):
+            return .unmeasurable(summary: Self.unreadableRoutingTable, reason: reason)
+        case .output(let table):
+            // `canJudgeRoutes` after the probe, never instead of it: an empty table from a dead
+            // netstat is "could not ask", and only `ProbeResult` knows which happened.
+            guard NetworkRouteHealth.canJudgeRoutes(table) else {
+                return .unmeasurable(summary: Self.unreadableRoutingTable, reason: Self.emptyRoutingTable)
+            }
+            let unroutable = NetworkRouteHealth.unroutableNetworks(publishing, routes: table)
+            if !unroutable.isEmpty { return .unroutable(unroutable) }
+            guard uncheckable.isEmpty else { return Self.noSubnetReported(uncheckable) }
+            return .reachable(publishing)
+        }
+    }
     /// An unheld socket is not a foreign one: with no holder there is nothing to outrank
     /// the local runtime, and `lsof` reporting nobody is a stale socket file.
     private func bridgeOwnership() async -> (foreignSocketPath: String?, ourBridgeRunning: Bool) {
@@ -211,6 +279,7 @@ public struct DiagnosticRunner: Sendable {
             // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:32`).
             if id == .socket { return passed(id, summary: "Docker socket: healthy", detail: nil) }
             if id == .versions { return versionsCheck(signals.versions) }
+            if id == .routes { return routesCheck(signals.routes) }
             return notRun(id)
         }
     }
@@ -241,6 +310,50 @@ public struct DiagnosticRunner: Sendable {
             ? "Docker socket: UNKNOWN — the socket did not answer before the timeout."
             : "API version: UNKNOWN — the Docker API did not answer."
     }
+
+    /// F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:45`, `:56`, `:63`,
+    /// `:67`, `:69`, `:74-75`), copied rather than reworded, because T-016 renders these back out.
+    private static func routesCheck(_ measurement: RoutesMeasurement) -> DiagnosticCheck {
+        switch measurement {
+        case .notAsked:
+            return notRun(.routes)
+        case .nothingToCheck(let summary):
+            return passed(.routes, summary: summary, detail: nil)
+        case .reachable(let networks):
+            return passed(.routes, summary: "Container routes: reachable (\(labels(networks)))", detail: nil)
+        case .unroutable(let networks):
+            return failed(
+                .routes,
+                summary: "Container routes: NO ROUTE to \(labels(networks))",
+                detail: """
+                    Published ports accept connections and then hang.
+                    Restarting the containers does not fix it. Run: cstack runtime restart
+                    """,
+                remedy: .restartRuntime
+            )
+        case .unmeasurable(let summary, let reason):
+            return indeterminate(.routes, summary: summary, detail: reason)
+        }
+    }
+
+    private static func labels(_ networks: [UnroutableNetwork]) -> String {
+        networks.map(\.label).joined(separator: ", ")
+    }
+
+    /// F-003: `CStackCommands.swift:81`, with the reason the CLI leaves to its own line.
+    private static func noSubnetReported(_ networks: [String]) -> RoutesMeasurement {
+        .unmeasurable(
+            summary: "Container routes: cannot check \(networks.joined(separator: ", ")) — no subnet reported",
+            reason: "The runtime reported no subnet for these networks, so the host route cannot be judged."
+        )
+    }
+
+    private static let unreadableRoutingTable = "Container routes: could not read the routing table"
+    private static let emptyRoutingTable = "netstat returned no routing table."
+
+    /// Invented, not copied: today `cstack doctor` throws out of `listNetworks` (`CStackCommands.swift:51`)
+    /// rather than printing a line here. Same shape as `unmeasuredSummary`, for the same reason.
+    private static let unlistedNetworks = "Container routes: UNKNOWN — the Docker API did not answer."
 
     private static func passed(_ id: CheckID, summary: String, detail: String?) -> DiagnosticCheck {
         DiagnosticCheck(

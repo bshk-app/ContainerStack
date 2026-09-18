@@ -68,6 +68,8 @@ public struct ShellSystemProbe: SystemProbe {
         }.value
     }
 
+    /// stderr is dropped rather than merged: `netstat`/`lsof`/`ps` output is parsed
+    /// positionally, so a reason names the path and status but never the command's own message.
     private static let processRunnerSpawn: Spawn = { executablePath, arguments, timeout in
         try ProcessRunner.run(
             executablePath: executablePath,

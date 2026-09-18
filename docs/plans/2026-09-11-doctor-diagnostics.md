@@ -17,7 +17,8 @@ offers a button only where a proven repair already exists.
 
 The repo's real gates — CI runs exactly these (`.github/workflows/ci.yml`):
 
-- `swift build --product ContainerStack && swift build --product cstack && swift build --product container-stack-runtime` — 0 errors
+- `swift build --product ContainerStack && swift build --product cstack && swift build --product ContainerStackRuntime` — 0 errors. Product names come from `Package.swift:10-27`; there is no `container-stack-runtime` product, and asking for one fails with `Could not find target named 'container-stack-runtime-product'`.
+- `swift-format` is reachable on this machine only as `xcrun swift-format`.
 - `swift test` — 0 failures
 - `swift-format lint --strict -r -p Sources Tests` — 0 diagnostics
 - `swiftlint --strict` with the pinned version in `.swiftlint-version` (0.65.1) — 0 violations, **including `file_length` (`RuntimeViewModel.swift` must stay untouched, NFR-003)**

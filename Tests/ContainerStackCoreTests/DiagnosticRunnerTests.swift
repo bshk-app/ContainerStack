@@ -50,6 +50,19 @@ struct DiagnosticRunnerTests {
         #expect(report.checks.map(\.id) == [.appRoot, .routes])
     }
 
+    // Spelled out rather than derived from `allCases`: reordering `CheckID` into
+    // F-004 precedence must fail here, not pass against a moving target.
+    @Test("the emitted order is the declared order, pinned literally")
+    func theReportEmitsChecksInTheDeclaredOrder() async {
+        let report = await makeRunner().run(checks: Set(CheckID.allCases))
+        #expect(
+            report.checks.map(\.id) == [
+                .appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext,
+                .memoryCommitment,
+            ]
+        )
+    }
+
     // The producer owns what `DiagnosticCheck` cannot: a check that was not run
     // names no repair.
     @Test("a skipped check carries no remedy")

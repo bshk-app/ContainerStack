@@ -438,8 +438,8 @@ git commit -m "feat(core): name the CLI and UI check sets"
 ```swift
 @Test func aForeignBridgeOutranksAMissingAppRoot() async {
     let report = await makeRunner(
-        socketHolder: .output(foreignLsofOutput),
-        runtimeStatus: .output(statusWithMissingRoot)
+        runtimeStatus: .output(statusWithMissingRoot),
+        socketHolder: .output(foreignLsofOutput)
     ).run(checks: CheckID.uiSet)
     #expect(report.check(.foreignBridge)?.verdict == .failure)
     #expect(report.check(.appRoot)?.verdict == .skipped)

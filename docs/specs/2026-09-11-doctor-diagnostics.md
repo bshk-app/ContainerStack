@@ -425,18 +425,23 @@ are part of the work, not preconditions someone else supplies:
 8. Does the 20s total budget (NFR-002) apply to the CLI too? The CLI has no
    section to block and a human waiting at a prompt may prefer completeness
    over a deadline.
-9. **`helperRunning` reaches `resolve` from a different source in each caller,
-   so the Doctor and the app can disagree about the same machine.** The app
-   passes `runtimeProcess?.isRunning == true` (`RuntimeViewModel.swift:531`) — a
-   `Process` handle it owns, which is `nil` whenever the bridge was started by a
-   previous session or by launchd. The runner cannot use that: it lives in Core
-   and also serves a CLI that launched nothing, so it scans the process table
-   (`DiagnosticRunner.swift:54`). Where the app says "not running" the scan says
-   "running". The blast radius is narrow — `helperRunning` is read only at
-   `RuntimeState.swift:52`, which additionally requires `socketResponds == false`
-   and `failure == nil` — but inside that window the two surfaces report
-   different states. Decide whether the app should adopt the scan, or whether
-   `resolve` should take ownership of the question.
+9. **Decided: `helperRunning` is false for any caller that did not itself launch
+   the helper.** The flag means "a helper this caller launched is running", which
+   is what the app passes (`runtimeProcess?.isRunning == true`,
+   `RuntimeViewModel.swift:531`) — a `Process` handle it owns, `nil` whenever the
+   bridge was started by launchd or a previous session. The runner launches
+   nothing, from a CLI or from a freshly-opened section, so it passes `false`
+   (`DiagnosticRunner.swift:54`) rather than scanning the process table. This
+   makes the Doctor's inputs identical to the app's for every bridge the app did
+   not launch. The process-table scan was actively wrong: it is read at
+   `RuntimeState.swift:52`, reachable only when `socketResponds == false` and
+   `failure == nil` — a bridge that answers but is unhealthy, since `ping()`
+   returns false without throwing on a non-`OK` body
+   (`DockerAPIClient+Resources.swift:186-189`). Against a launchd-started bridge
+   that resolved `.starting`, which projects every check to `.skipped` with no
+   remedy and, in the app, disables the manual restart (#44). The runner keeps
+   measuring bridge ownership for the `foreignBridge` check, which is a separate
+   question about who holds the socket.
 
 ## 9. Success criteria
 

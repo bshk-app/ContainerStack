@@ -244,4 +244,19 @@ struct DiagnosticRunnerPrecedenceTests {
             #expect(report.checks.contains { $0.verdict == .indeterminate })
         }
     }
+
+    // A launchd-started bridge answering something other than `OK`: `ping` returns false without
+    // throwing, so only `helperRunning` decides, and this caller launched nothing (#44).
+    @Test("a wedged bridge this caller did not launch never reports a start in progress")
+    func aBridgeThisCallerDidNotLaunchIsNeverAStartInProgress() async {
+        let report = await makeRunner(
+            socketHolder: .output(ourLsofOutput),
+            processTable: .output(processTable),
+            transport: StubDockerTransport(byPath: ["/_ping": .success(jsonResponse("wedged"))])
+        ).run(checks: CheckID.uiSet)
+        #expect(report.checks.allSatisfy { $0.verdict != .ok })
+        #expect(report.checks.allSatisfy { $0.summary != RuntimeState.starting.detail })
+        #expect(report.check(.socket)?.summary == RuntimeState.genericFailure)
+        #expect(report.check(.appRoot)?.summary == RuntimeState.genericFailure)
+    }
 }

@@ -49,11 +49,9 @@ public struct DiagnosticRunner: Sendable {
         let bridge = checks.contains(.foreignBridge) ? await bridgeOwnership() : nil
         return RuntimeState.resolve(
             socketResponds: socketResponds,
-            // The process table, not an owned `Process` as the app uses: a report can be taken by
-            // a CLI that launched nothing. The two can only disagree while the socket is silent.
-            helperRunning: bridge?.ourBridgeRunning ?? false,
-            // A report is one measurement: nothing here launched a runtime, so no start is
-            // in progress and `.starting` can only be reached through `helperRunning`.
+            // Means "a helper this caller launched", as it does in the app. A report launches
+            // nothing, so a bridge started by launchd is `.offline`, never `.starting` (#44).
+            helperRunning: false,
             isStarting: false,
             failure: failure,
             // Gated exactly as `RuntimeViewModel.applyState` gates them, so both callers hand

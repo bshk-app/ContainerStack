@@ -430,7 +430,7 @@ git commit -m "feat(core): name the CLI and UI check sets"
 
 ---
 
-### [T-008] Precedence is projected, not re-derived (F-004)
+### [T-008] Precedence is projected, not re-derived (F-004)  `[DONE:2026-09-18]`
 
 **Files:**
 - Modify: `Sources/ContainerStackCore/DiagnosticRunner.swift`

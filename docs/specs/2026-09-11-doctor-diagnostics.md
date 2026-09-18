@@ -425,6 +425,18 @@ are part of the work, not preconditions someone else supplies:
 8. Does the 20s total budget (NFR-002) apply to the CLI too? The CLI has no
    section to block and a human waiting at a prompt may prefer completeness
    over a deadline.
+9. **`helperRunning` reaches `resolve` from a different source in each caller,
+   so the Doctor and the app can disagree about the same machine.** The app
+   passes `runtimeProcess?.isRunning == true` (`RuntimeViewModel.swift:531`) — a
+   `Process` handle it owns, which is `nil` whenever the bridge was started by a
+   previous session or by launchd. The runner cannot use that: it lives in Core
+   and also serves a CLI that launched nothing, so it scans the process table
+   (`DiagnosticRunner.swift:54`). Where the app says "not running" the scan says
+   "running". The blast radius is narrow — `helperRunning` is read only at
+   `RuntimeState.swift:52`, which additionally requires `socketResponds == false`
+   and `failure == nil` — but inside that window the two surfaces report
+   different states. Decide whether the app should adopt the scan, or whether
+   `resolve` should take ownership of the question.
 
 ## 9. Success criteria
 

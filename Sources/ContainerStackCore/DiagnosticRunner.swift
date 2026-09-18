@@ -89,12 +89,22 @@ public struct DiagnosticRunner: Sendable {
             guard id == .foreignBridge else {
                 return skipped(id, because: "Another Docker bridge holds \(socketPath).")
             }
-            return failed(id, state: state, remedy: nil)
+            return failed(id, summary: state.title, detail: state.detail, remedy: nil)
         case .detached(let appRoot):
             guard id == .appRoot else {
                 return skipped(id, because: "The runtime is storing into \(appRoot), which no longer exists.")
             }
-            return failed(id, state: state, remedy: .restartRuntime)
+            // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:25-27`),
+            // copied rather than reworded, because T-016 renders these back out.
+            return failed(
+                id,
+                summary: "Runtime storage: MISSING — storing into \(appRoot), which no longer exists.",
+                detail: """
+                    Images, volumes and containers kept there cannot be found.
+                    The restart moves it back to the default location. Run: cstack runtime restart
+                    """,
+                remedy: .restartRuntime
+            )
         case .offline, .starting, .unknown:
             return skipped(id, because: state.detail ?? state.title)
         case .running, .degraded:
@@ -102,12 +112,17 @@ public struct DiagnosticRunner: Sendable {
         }
     }
 
-    private static func failed(_ id: CheckID, state: RuntimeState, remedy: Remedy?) -> DiagnosticCheck {
+    private static func failed(
+        _ id: CheckID,
+        summary: String,
+        detail: String?,
+        remedy: Remedy?
+    ) -> DiagnosticCheck {
         DiagnosticCheck(
             id: id,
             verdict: .failure,
-            summary: state.title,
-            detail: state.detail,
+            summary: summary,
+            detail: detail,
             remedy: remedy,
             duration: .zero
         )

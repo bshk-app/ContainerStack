@@ -174,6 +174,32 @@ struct DiagnosticRunnerPrecedenceTests {
         #expect(report.check(.socket)?.summary.contains(missingRoot) == true)
     }
 
+    // F-003 forbids drift: these are the bytes `cstack doctor` prints today
+    // (`CStackCommands.swift:25-27`), copied rather than improved.
+    @Test("the app-root failure reproduces today's CLI wording verbatim")
+    func aMissingAppRootCarriesTheCLIsOwnWording() async {
+        let report = await makeRunner(
+            runtimeStatus: .output(statusWithMissingRoot),
+            socketHolder: .output(ourLsofOutput),
+            processTable: .output(processTable),
+            transport: respondingSocket()
+        ).run(checks: CheckID.cliSet)
+        let appRoot = report.check(.appRoot)
+        #expect(appRoot?.verdict == .failure)
+        #expect(
+            appRoot?.summary
+                == "Runtime storage: MISSING — storing into \(missingRoot), which no longer exists."
+        )
+        #expect(
+            appRoot?.detail
+                == """
+                Images, volumes and containers kept there cannot be found.
+                The restart moves it back to the default location. Run: cstack runtime restart
+                """
+        )
+        #expect(appRoot?.remedy == .restartRuntime)
+    }
+
     // The assertion that the ordering is not copied: the expected state is computed by
     // `resolve` itself, so a change there moves this fixture rather than contradicting it.
     @Test("the failing check is the one resolve names, for the same signals")

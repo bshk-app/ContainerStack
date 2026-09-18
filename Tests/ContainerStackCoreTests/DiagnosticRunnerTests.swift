@@ -205,4 +205,17 @@ struct DiagnosticRunnerPrecedenceTests {
         #expect(report.checks.allSatisfy { !$0.summary.isEmpty })
         #expect(report.checks.allSatisfy { $0.remedy == nil })
     }
+
+    // F-010 also splits stopped from wedged: a socket that times out must be `.indeterminate`,
+    // never `.skipped`. `resolve` has no wedged case yet, so today's answer is pinned as wrong.
+    @Test("a wedged socket is still grey, which F-010 forbids")
+    func aWedgedSocketIsNotYetToldApartFromAStoppedOne() async {
+        let report = await makeRunner(
+            transport: StubDockerTransport(byPath: ["/_ping": .failure(UnixSocketError.timedOut)])
+        ).run(checks: CheckID.uiSet)
+        #expect(report.checks.allSatisfy { $0.verdict == .skipped })
+        withKnownIssue("a wedged socket reads as a stopped one until resolve can tell them apart") {
+            #expect(report.checks.contains { $0.verdict == .indeterminate })
+        }
+    }
 }

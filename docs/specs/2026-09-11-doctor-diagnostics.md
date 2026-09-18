@@ -180,9 +180,11 @@ user asking "is my environment healthy?" before anything visibly breaks.
   exists to *report* a hang, not to outlast it three times; enforce an overall
   deadline after which unfinished checks are `.indeterminate` (F-010).
   *Acceptance:* a probe fake that never returns; assert the report is published
-  within 20s and that the timed-out checks are `.indeterminate`. Also assert
-  the probe fake recorded a 10s timeout, mirroring `StubDockerTransport`'s
-  existing `timeouts` log.
+  within 20s and that the timed-out checks are `.indeterminate`. The 10s
+  per-spawn timeout is **not** assertable through the fake — §3.2's method
+  signatures carry no timeout parameter, so none crosses the boundary. Assert it
+  instead in T-005 against the production `ShellSystemProbe`, which must pass
+  `ProcessRunner.diagnosticTimeout` (`ProcessRunner.swift:38`).
 - **[NFR-003] Line budget.** The change adds zero lines to
   `Sources/ContainerStackApp/RuntimeViewModel.swift`, which is at exactly 690
   lines against `file_length: warning: 690` under `--strict`.
@@ -235,8 +237,10 @@ DockerAPIClient (actor) ─────────────────┘  
     `func routingTable() async -> ProbeResult`,
     `func socketHolder(socketPath: String) async -> ProbeResult` (`lsof`),
     `func processTable() async -> ProbeResult` (`ps`)
-  - *Note:* the last two are required only by the `foreignBridge` check, so the
-    CLI set never invokes them. The parsing they feed already lives in Core —
+  - *Note:* the last two are required only by the `foreignBridge` check, which
+    **both** sets run — F-002 put `foreignBridge` in the CLI set too, and
+    NFR-001 counts `lsof` and `ps` among the CLI's four spawns. The parsing they
+    feed already lives in Core —
     `BridgeOwnership` (`BridgeOwnership.swift:11`) and `ProcessTable`
     (`RuntimeControl.swift:5`); only the two spawns are new to Core. The
     app-side `RuntimeShell` (`RuntimeViewModel+Control.swift:191`) is not
@@ -380,8 +384,8 @@ are part of the work, not preconditions someone else supplies:
 - **Responses must be keyed by path.** The queue is path-blind, so swapping two
   calls silently feeds `/networks` JSON to `listContainers` and the test still
   passes.
-- **A recording `SystemProbe` fake** with a call log and per-call timeouts, so
-  spawn counts (NFR-001) and the 10s timeout (NFR-002) are assertable.
+- **A recording `SystemProbe` fake** with a call log, so spawn counts (NFR-001)
+  are assertable. It cannot log timeouts: §3.2's signatures do not take one.
 - **A gated `SystemProbe` fake** exposing a `CheckedContinuation`, so F-007's
   coalescing and discard-on-leave branches are reachable without `Task.sleep`.
 - **An injected clock** for `ranAt`.

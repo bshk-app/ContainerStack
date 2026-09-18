@@ -258,7 +258,7 @@ Protocol with the four methods from spec §3.2 (`runtimeStatus`,
 `routingTable`, `socketHolder(socketPath:)`, `processTable`), then a
 `RecordingSystemProbe` actor holding canned `ProbeResult`s, a `callCount` and a
 per-call timeout log, plus a `GatedSystemProbe` exposing a
-`CheckedContinuation` (needed by T-016).
+`CheckedContinuation` (needed by T-020, not T-016 — T-016 is the text renderer).
 
 **Step 4 — Verify GREEN**
 
@@ -614,6 +614,33 @@ appear.
 ---
 
 ### [T-019] `repairDockerContextRecord() async -> Bool`
+### [T-018a] A test-support target both test targets can import
+
+**Blocks T-020.** `Package.swift:56-64` gives `ContainerStackAppTests` a
+dependency on `ContainerStackApp` only, and SwiftPM has no way for one test
+target to import another. So `GatedSystemProbe`, which lives in
+`ContainerStackCoreTests`, is invisible to `DoctorViewModelTests` — and T-020's
+single-flight proof needs exactly that fake.
+
+**Files:** modify `Package.swift`; move the fakes out of
+`Tests/ContainerStackCoreTests/SystemProbeFakes.swift`.
+
+Add a non-test library target (e.g. `DiagnosticTestSupport`, depending on
+`ContainerStackCore`), move `RecordingSystemProbe`/`GatedSystemProbe` into it,
+and add it to both test targets' dependencies.
+
+**Step 1 — RED:** a trivial test in `ContainerStackAppTests` that imports the
+new module and constructs `GatedSystemProbe`; it fails to compile today.
+
+**Watch:** the new target ships in the package but is referenced only by tests.
+Confirm it does not enter any of the three shipped products, and that
+`swiftlint --strict` and the `file_length`/`type_body_length` caps still pass on
+the moved file.
+
+**Depends on:** T-004
+
+---
+
 
 **Files:** modify `Sources/ContainerStackApp/RuntimeViewModel+DockerContext.swift:160-188`.
 Extract the repair so it returns success; the polled caller keeps ignoring the

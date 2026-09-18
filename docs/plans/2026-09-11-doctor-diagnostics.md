@@ -22,7 +22,7 @@ The repo's real gates — CI runs exactly these (`.github/workflows/ci.yml`):
 - `swift test` — 0 failures
 - `swift-format lint --strict -r -p Sources Tests` — 0 diagnostics
 - `swiftlint --strict` with the pinned version in `.swiftlint-version` (0.65.1) — 0 violations, **including `file_length` (`RuntimeViewModel.swift` must stay untouched, NFR-003)**
-- `COMMENT_BLOCK_DIFF_BASE=main scripts/hooks/check-new-comment-blocks.sh` — comment gate.
+- `COMMENT_BLOCK_DIFF_BASE=origin/main scripts/hooks/check-new-comment-blocks.sh` — comment gate.
   **The variable is not optional.** It defaults to `HEAD` (`:30`), so on a clean
   tree the diff is empty and the gate passes vacuously while reporting success.
   CI avoids this by setting `origin/${{ github.base_ref }}` (`ci.yml:80`).
@@ -48,7 +48,7 @@ roughly half the acceptance criteria in the spec cannot be written at all
 
 ---
 
-### [T-001] StubDockerTransport can fail
+### [T-001] StubDockerTransport can fail  `[DONE:2026-09-18]`
 
 **Files:**
 - Modify: `Tests/ContainerStackCoreTests/TestSupport.swift:5-27`
@@ -114,7 +114,7 @@ git commit -m "test: let StubDockerTransport fail and report exhaustion"
 
 ---
 
-### [T-002] Transport responses keyed by path
+### [T-002] Transport responses keyed by path  `[DONE:2026-09-18]`
 
 **Files:**
 - Modify: `Tests/ContainerStackCoreTests/TestSupport.swift`
@@ -170,7 +170,7 @@ git commit -m "test: key stub transport responses by request path"
 
 ---
 
-### [T-003] Report value types
+### [T-003] Report value types  `[DONE:2026-09-18]`
 
 **Files:**
 - Create: `Sources/ContainerStackCore/DiagnosticReport.swift`
@@ -228,7 +228,7 @@ git commit -m "feat(core): add the DiagnosticReport value types"
 
 ---
 
-### [T-004] SystemProbe protocol and fakes
+### [T-004] SystemProbe protocol and fakes  `[DONE:2026-09-18]`
 
 **Files:**
 - Create: `Sources/ContainerStackCore/SystemProbe.swift`
@@ -279,7 +279,7 @@ git commit -m "feat(core): add SystemProbe and its test fakes"
 
 ---
 
-### [T-005] Production probe does not launder failure
+### [T-005] Production probe does not launder failure  `[DONE:2026-09-18]`
 
 **Files:**
 - Modify: `Sources/ContainerStackCore/SystemProbe.swift`

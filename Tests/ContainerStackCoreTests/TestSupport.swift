@@ -26,10 +26,19 @@ actor StubDockerTransport: DockerAPITransport {
     func send(request: Data, timeout: Duration?) throws -> Data {
         let requestText = String(decoding: request, as: UTF8.self)
         requests.append(requestText)
-        paths.append(String(requestText.split(separator: " ")[1]))
+        paths.append(Self.path(ofRequestText: requestText))
         timeouts.append(timeout)
         guard !results.isEmpty else { throw Exhausted() }
         return try results.removeFirst().get()
+    }
+
+    // A request without a path token is recorded, not fatal: the exhaustion guard below
+    // has to be the thing that reports an over-consumed queue, and `paths` has to keep
+    // describing every attempt for the call-count assertions that read it.
+    private static func path(ofRequestText requestText: String) -> String {
+        let fields = requestText.split(separator: " ")
+        guard fields.count > 1 else { return "<malformed>" }
+        return String(fields[1])
     }
 }
 
@@ -40,13 +49,29 @@ struct StubDockerTransportTests {
     @Test("a queued failure is thrown, not swallowed")
     func stubTransportThrowsTheQueuedError() async throws {
         let stub = StubDockerTransport(results: [.failure(UnixSocketError.timedOut)])
-        await #expect(throws: UnixSocketError.timedOut) { try await stub.send(request: ping) }
+        await #expect(throws: UnixSocketError.timedOut) { try await stub.send(request: Data()) }
     }
 
     @Test("a request past the end of the queue throws instead of trapping")
     func stubTransportThrowsWhenExhausted() async throws {
         let stub = StubDockerTransport(results: [])
+        await #expect(throws: StubDockerTransport.Exhausted.self) { try await stub.send(request: Data()) }
+    }
+
+    @Test("an unparseable request is still recorded as an attempt")
+    func stubTransportRecordsAMalformedRequest() async throws {
+        let stub = StubDockerTransport(results: [])
+        await #expect(throws: StubDockerTransport.Exhausted.self) { try await stub.send(request: Data()) }
+        #expect(await stub.paths == ["<malformed>"])
+        #expect(await stub.requests == [""])
+    }
+
+    @Test("an exhausted call still reports which endpoint it tried")
+    func stubTransportRecordsThePathOfAnExhaustedCall() async throws {
+        let stub = StubDockerTransport(responses: [jsonResponse("[]")])
+        _ = try await stub.send(request: ping)
         await #expect(throws: StubDockerTransport.Exhausted.self) { try await stub.send(request: ping) }
+        #expect(await stub.paths == ["/_ping", "/_ping"])
     }
 
     @Test("the response-taking initialiser still answers in order")

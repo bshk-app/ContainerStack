@@ -330,7 +330,7 @@ git commit -m "feat(core): run diagnostic probes without swallowing failure"
 
 ---
 
-### [T-006] Runner returns one check per requested id
+### [T-006] Runner returns one check per requested id  `[DONE:2026-09-18]`
 
 **Files:**
 - Create: `Sources/ContainerStackCore/DiagnosticRunner.swift`
@@ -378,10 +378,12 @@ git commit -m "feat(core): add DiagnosticRunner returning one check per request"
 
 ---
 
-### [T-007] Named check sets (F-002)
+### [T-007] Named check sets (F-002)  `[DONE:2026-09-18]`
 
 **Files:**
-- Modify: `Sources/ContainerStackCore/DiagnosticRunner.swift`
+- Modify: `Sources/ContainerStackCore/DiagnosticReport.swift` — `CheckID` is
+  declared there, not in `DiagnosticRunner.swift`; the extension belongs beside
+  the type it extends.
 
 **Step 1 — RED**
 

@@ -234,8 +234,8 @@ public struct DiagnosticRunner: Sendable {
         }
     }
 
-    /// No CLI wording to copy: today `cstack doctor` throws out of `health()` here rather than
-    /// printing a line for a socket that never answered.
+    /// Invented, not copied: today `cstack doctor` aborts at `health()` (`CStackCommands.swift:31`)
+    /// rather than printing a line here. F-003's amendment sanctions that second CLI difference.
     private static func unmeasuredSummary(for id: CheckID) -> String {
         id == .socket
             ? "Docker socket: UNKNOWN — the socket did not answer before the timeout."

@@ -42,6 +42,19 @@ user asking "is my environment healthy?" before anything visibly breaks.
   bridge, where it gains a bridge-ownership line and skips the checks that
   become meaningless. That diff is sanctioned, being the point of adding
   `foreignBridge` to the CLI set.
+
+  **Amendment (T-011 review).** A **second** difference is hereby sanctioned: a
+  **wedged** socket. Today `cstack doctor` aborts at `try await client.health()`
+  (`CStackCommands.swift:31`) and prints no socket or version line at all, so
+  there is no wording to be byte-identical to. F-010 nevertheless requires the
+  socket and versions checks to be `.indeterminate` rather than `.skipped`, and
+  a rendered report therefore gains two `UNKNOWN` lines where today's binary
+  emits an error and exits. F-003 and F-010 cannot both hold unamended for that
+  state; the conflict is resolved in F-010's favour, because a diagnostic that
+  aborts when the runtime hangs is the defect Doctor exists to remove. The
+  wording is fixed in `DiagnosticRunner.unmeasuredSummary(for:)` and is invented,
+  not copied — it is sanctioned here so that a T-016 golden records a decision
+  rather than inheriting one.
   *Acceptance:* golden-output tests over fixtures for healthy,
   missing-app-root, unroutable-network, **and foreign-bridge** states. The
   first three goldens are pinned from today's binary before the refactor; the

@@ -85,6 +85,17 @@ struct DiagnosticReportTests {
         )
     }
 
+    @Test("a check is addressable by id, and an unrequested one is absent")
+    func lookupFindsACheckByIDAndReportsAnAbsentOne() {
+        let report = DiagnosticReport(
+            checks: [check(id: .appRoot, verdict: .skipped), check(id: .routes, verdict: .ok)],
+            ranAt: Date(timeIntervalSince1970: 0)
+        )
+        #expect(report.check(.appRoot)?.verdict == .skipped)
+        #expect(report.check(.routes)?.verdict == .ok)
+        #expect(report.check(.memoryCommitment) == nil)
+    }
+
     @Test("a probe failure is not an empty output")
     func probeFailureIsDistinctFromEmptyOutput() {
         #expect(ProbeResult.failed(reason: "no such file") == .failed(reason: "no such file"))

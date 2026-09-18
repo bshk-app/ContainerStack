@@ -1,7 +1,9 @@
 import Foundation
 
+/// Declared in F-004 precedence order, which is the order a report emits: the
+/// check that outranks every other leads.
 public enum CheckID: String, CaseIterable, Codable, Sendable {
-    case appRoot, socket, versions, routes, foreignBridge, dockerContext, memoryCommitment
+    case foreignBridge, appRoot, socket, versions, routes, dockerContext, memoryCommitment
 }
 
 extension CheckID {
@@ -71,6 +73,12 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
     public init(checks: [DiagnosticCheck], ranAt: Date) {
         self.checks = checks
         self.ranAt = ranAt
+    }
+
+    /// Nil means the id was never requested: a requested check is always present,
+    /// `.skipped` at worst.
+    public func check(_ id: CheckID) -> DiagnosticCheck? {
+        checks.first { $0.id == id }
     }
 }
 

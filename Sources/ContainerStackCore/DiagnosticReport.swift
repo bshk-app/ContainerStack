@@ -4,6 +4,19 @@ public enum CheckID: String, CaseIterable, Codable, Sendable {
     case appRoot, socket, versions, routes, foreignBridge, dockerContext, memoryCommitment
 }
 
+extension CheckID {
+    /// `memoryCommitment` is CLI-only: it costs one `inspectContainer` per running
+    /// container, which NFR-001 forbids the UI from paying.
+    public static let cliSet: Set<CheckID> = [
+        .appRoot, .socket, .versions, .routes, .foreignBridge, .memoryCommitment,
+    ]
+
+    /// `dockerContext` is UI-only: the CLI answers it from `cstack context` instead.
+    public static let uiSet: Set<CheckID> = [
+        .appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext,
+    ]
+}
+
 public enum Verdict: Codable, Equatable, Sendable {
     case ok, warning, failure
 

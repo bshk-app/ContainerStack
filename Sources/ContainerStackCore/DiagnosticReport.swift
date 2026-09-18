@@ -25,12 +25,10 @@ public enum Remedy: Codable, Equatable, Sendable {
 public struct DiagnosticCheck: Codable, Equatable, Sendable {
     public let id: CheckID
     public let verdict: Verdict
-    /// `summary` is non-empty; `remedy` is nil exactly when `verdict` is `.ok`.
     public let summary: String
     /// Carries newlines: the memory-commitment report is seven lines wide.
     public let detail: String?
     public let remedy: Remedy?
-    /// NFR-005: which probe ate the budget.
     public let duration: Duration
 
     public init(
@@ -63,7 +61,7 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
     }
 }
 
-public enum ProbeResult: Sendable {
+public enum ProbeResult: Equatable, Sendable {
     case output(String)
     /// A non-zero exit, a spawn failure or a timeout lands here, never in
     /// `.output("")`.

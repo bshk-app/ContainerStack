@@ -27,6 +27,9 @@ struct DiagnosticReportTests {
     func reportRoundTripsThroughJSON() throws {
         let report = DiagnosticReport(checks: [check()], ranAt: Date(timeIntervalSince1970: 0))
         #expect(try roundTrip(report) == report)
+        let decoded = try #require(try roundTrip(report).checks.first)
+        #expect(decoded.duration == .seconds(1))
+        #expect(decoded.duration != .zero)
     }
 
     /// A wedged runtime reads as healthy if "could not measure" decodes as "did
@@ -84,16 +87,8 @@ struct DiagnosticReportTests {
 
     @Test("a probe failure is not an empty output")
     func probeFailureIsDistinctFromEmptyOutput() {
-        let failed = ProbeResult.failed(reason: "no such file")
-        guard case .failed(let reason) = failed else {
-            Issue.record("a failed probe must not read as output")
-            return
-        }
-        #expect(reason == "no such file")
-        guard case .output(let text) = ProbeResult.output("") else {
-            Issue.record("an empty output is still output")
-            return
-        }
-        #expect(text.isEmpty)
+        #expect(ProbeResult.failed(reason: "no such file") == .failed(reason: "no such file"))
+        #expect(ProbeResult.failed(reason: "no such file") != .output(""))
+        #expect(ProbeResult.output("") != .output("no such file"))
     }
 }

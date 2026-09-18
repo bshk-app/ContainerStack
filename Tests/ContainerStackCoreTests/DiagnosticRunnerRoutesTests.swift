@@ -115,14 +115,14 @@ struct DiagnosticRunnerRoutesTests {
     // The second way this check fails to measure: the networks it would have judged never arrived.
     @Test("a network listing that failed is amber, not an empty list of networks")
     func aFailedNetworkListingLeavesTheRoutesCheckIndeterminate() async {
-        let check = await routes(
-            table: .output(routedTable),
-            containers: publishingContainers,
-            networks: .failure(UnixSocketError.timedOut)
-        )
+        let transport = runtime(containers: publishingContainers, networks: .failure(UnixSocketError.timedOut))
+        let check = await makeRunner(routingTable: .output(routedTable), transport: transport)
+            .run(checks: CheckID.uiSet).check(.routes)
         #expect(check?.verdict == .indeterminate)
         #expect(check?.verdict != .ok)
         #expect(check?.detail?.isEmpty == false)
+        // NFR-002: `failsImmediately` excludes `.timedOut`, so this wait is paid once, not three times.
+        #expect(await transport.paths.filter { $0 == "/networks" }.count == 1)
     }
 
     // T-008: the runner hands `resolve` the unroutable networks and projects what it decided,

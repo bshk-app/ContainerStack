@@ -22,7 +22,10 @@ The repo's real gates — CI runs exactly these (`.github/workflows/ci.yml`):
 - `swift test` — 0 failures
 - `swift-format lint --strict -r -p Sources Tests` — 0 diagnostics
 - `swiftlint --strict` with the pinned version in `.swiftlint-version` (0.65.1) — 0 violations, **including `file_length` (`RuntimeViewModel.swift` must stay untouched, NFR-003)**
-- `scripts/hooks/check-new-comment-blocks.sh` — comment gate passes
+- `COMMENT_BLOCK_DIFF_BASE=main scripts/hooks/check-new-comment-blocks.sh` — comment gate.
+  **The variable is not optional.** It defaults to `HEAD` (`:30`), so on a clean
+  tree the diff is empty and the gate passes vacuously while reporting success.
+  CI avoids this by setting `origin/${{ github.base_ref }}` (`ci.yml:80`).
 - `spec-auditor` — `DRIFT: none`
 
 ## Dependencies

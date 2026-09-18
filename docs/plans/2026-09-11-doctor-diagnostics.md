@@ -481,7 +481,7 @@ git commit -m "feat(core): project RuntimeState onto check verdicts"
 
 ---
 
-### [T-009] App-root check
+### [T-009] App-root check  `[DONE:2026-09-18]`
 
 **Files:** modify runner + tests.
 Uses `RuntimeStatusParser.missingAppRoot` (`RuntimeProcessConfiguration.swift:232`).
@@ -491,7 +491,7 @@ Summary/remedy text must match today's CLI: `"Runtime storage: MISSING — stori
 
 ---
 
-### [T-010] Probe failure never reads as healthy (F-009)
+### [T-010] Probe failure never reads as healthy (F-009)  `[DONE:2026-09-18]`
 
 **Step 1 — RED:** `runtimeStatus` returns `.failed`; assert the app-root check is
 `.failure`, never `.ok` and never `.skipped`. This is the defect that motivated
@@ -502,7 +502,7 @@ healthy root.
 
 ---
 
-### [T-011] Socket and versions via health, without retrying a hang
+### [T-011] Socket and versions via health, without retrying a hang  `[DONE:2026-09-18]`
 
 **Files:** modify runner.
 Use `requestRetryingImmediateFailures` (`DockerAPIClient.swift:450`), not
@@ -518,7 +518,7 @@ per path, not three.
 
 ---
 
-### [T-012] Routes check
+### [T-012] Routes check  `[DONE:2026-09-18]`
 
 Reuses `NetworkRouteHealth.publishingNetworks` / `.uncheckablePublishingNetworks` / `.canJudgeRoutes`.
 Three distinct outcomes must stay distinct (issue #45): no publisher, cannot

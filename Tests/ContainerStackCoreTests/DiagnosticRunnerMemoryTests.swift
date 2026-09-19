@@ -131,6 +131,10 @@ struct DiagnosticRunnerMemoryTests {
         )
         #expect(check?.remedy == .manual("Stop a container or recreate it with a smaller --memory."))
         #expect(check?.remedy != .restartRuntime)
+        // Derived, not restated: the advice is both the last detail line and the remedy, so
+        // T-016 renders one of the two or F-003's byte-for-byte CLI order gains a repeated line.
+        let lastDetailLine = check?.detail?.split(separator: "\n").last.map(String.init)
+        #expect(check?.remedy == lastDetailLine.map(Remedy.manual))
     }
 
     // Decision 6: an unread `hw.memsize` is a measurement failure, not a healthy machine.
@@ -160,6 +164,9 @@ struct DiagnosticRunnerMemoryTests {
             check?.summary == "Container memory limits: unavailable — 1 running container(s) could not be inspected."
         )
         #expect(check?.remedy == nil)
+        // NFR-002: `memoryLimitBytes` retries only immediate failures, so a wedged socket is
+        // waited on once per container rather than three times inside the same budget.
+        #expect(await inspectPaths(of: transport).count == 1)
     }
 
     // A total that is missing a container is not a total, however healthy the part we read
@@ -247,5 +254,42 @@ struct DiagnosticRunnerMemoryTests {
         #expect(healthy.verdict == .ok)
         #expect(warned.verdict == .warning)
         #expect(warned.verdict != healthy.verdict)
+    }
+
+    // The other half of F-013's order, which the test above cannot reach: `.warning` outranks
+    // what is below it without ever displacing a `.failure` measured in the same run.
+    @Test("a memory warning does not mask an unroutable network in the same report")
+    func aMemoryWarningNeverOutranksAConcurrentFailure() async {
+        let publishing = """
+            [{"Id":"c0","Names":["/web"],"State":"running",
+              "Ports":[{"PrivatePort":80,"PublicPort":8080,"Type":"tcp"}],
+              "NetworkSettings":{"Networks":{"compose_default":{}}}}]
+            """
+        let networks = """
+            [{"Id":"n1","Name":"compose_default","Driver":"bridge",
+              "IPAM":{"Config":[{"Subnet":"192.168.64.0/24"}]}}]
+            """
+        let tableWithoutTheBridge = """
+            Internet:
+            Destination        Gateway            Flags        Netif
+            default            192.168.1.1        UGScg          en0
+            """
+        let transport = StubDockerTransport(byPath: [
+            "/_ping": .success(jsonResponse("OK")),
+            "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
+            "/info": .success(jsonResponse(#"{"Containers":1,"Images":0}"#)),
+            "/containers/json": .success(jsonResponse(publishing)),
+            "/networks": .success(jsonResponse(networks)),
+            "/containers/c0/json": .success(inspectResponse(id: "c0", memory: 14_000_000_000)),
+        ])
+        let report = await makeRunner(
+            routingTable: .output(tableWithoutTheBridge),
+            transport: transport,
+            hostMemoryBytes: hostBytes
+        ).run(checks: CheckID.cliSet)
+        #expect(report.check(.memoryCommitment)?.verdict == .warning)
+        #expect(report.check(.routes)?.verdict == .failure)
+        #expect(report.verdict == .failure)
+        #expect(report.verdict != .warning)
     }
 }

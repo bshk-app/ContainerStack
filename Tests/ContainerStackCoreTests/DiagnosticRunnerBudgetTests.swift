@@ -147,4 +147,17 @@ struct DiagnosticRunnerBudgetTests {
     func theDefaultBudgetIsTheTwentySecondsTheSpecFixes() {
         #expect(DiagnosticRunner.defaultBudget == .seconds(20))
     }
+
+    /// The gathering and the budget signal the same gate, and a continuation resumed twice
+    /// traps rather than fails, so every way the two can land is raced here instead.
+    @Test("the gate resumes its one waiter once, whichever way the race lands")
+    func theGateResumesItsWaiterOnceHoweverTheRaceLands() async {
+        for step in 0..<120 {
+            // Straddles the gathering: the low budgets signal before anyone waits, the high
+            // ones after it, and the ones in between tie with it.
+            let runner = makeRunner(transport: idleRuntime(), budget: .microseconds(step * 5))
+            let report = await runner.run(checks: CheckID.uiSet)
+            #expect(report.checks.count == CheckID.uiSet.count)
+        }
+    }
 }

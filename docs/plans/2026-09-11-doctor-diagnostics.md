@@ -591,6 +591,33 @@ overall deadline.
 
 **Depends on:** T-013
 
+> **Landed as `d2fc5ac`, with one deviation.** Not `withThrowingTaskGroup` plus a
+> deadline: `ProcessRunner.run` blocks on a semaphore no cancellation reaches, so
+> the budget *abandons* the gathering instead of cancelling it — a gate resumed by
+> whichever of the gathering and the budget arrives first, then one snapshot of an
+> actor-held struct. The probes still run concurrently, which is what NFR-002 asks.
+
+---
+
+### [T-015b] Per-check `duration` (NFR-005)
+
+`DiagnosticRunner+Verdicts.swift` passes `duration: .zero` at all six projection
+sites, so NFR-005's "an incident can name which probe consumed the budget" is
+unmet — and T-015 is what made it worth having, because a run can now end with
+checks that never answered and nothing recording which one ate the 20s. The
+`Codable` half of NFR-005 is done; this is the other half.
+
+Also unmet from the same NFR: a run with any `.indeterminate` check should log
+one line naming them.
+
+**Step 1 — RED:** with a probe parked behind a gate and a budget that expires,
+assert the timed-out check's `duration` is at least the budget rather than `.zero`.
+
+**Note:** no `TODO` marker in the source — SwiftLint's `todo` rule plus
+`--strict` makes one a build failure, so this entry is the marker.
+
+**Depends on:** T-015
+
 ---
 
 ### [T-016] DoctorTextRenderer + goldens (F-003, F-012)

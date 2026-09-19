@@ -23,6 +23,7 @@ func makeRunner(
     transport: StubDockerTransport = StubDockerTransport(byPath: [:]),
     socketPath: String = diagnosticSocketPath,
     bridgePath: String = diagnosticBridgePath,
+    hostMemoryBytes: Int64? = nil,
     now: Date = diagnosticClockDate
 ) -> DiagnosticRunner {
     DiagnosticRunner(
@@ -30,6 +31,7 @@ func makeRunner(
         probe: probe,
         socketPath: socketPath,
         bridgePath: bridgePath,
+        hostMemoryBytes: { hostMemoryBytes },
         now: { now }
     )
 }
@@ -44,6 +46,7 @@ func makeRunner(
     transport: StubDockerTransport = StubDockerTransport(byPath: [:]),
     socketPath: String = diagnosticSocketPath,
     bridgePath: String = diagnosticBridgePath,
+    hostMemoryBytes: Int64? = nil,
     now: Date = diagnosticClockDate
 ) -> DiagnosticRunner {
     makeRunner(
@@ -56,6 +59,7 @@ func makeRunner(
         transport: transport,
         socketPath: socketPath,
         bridgePath: bridgePath,
+        hostMemoryBytes: hostMemoryBytes,
         now: now
     )
 }

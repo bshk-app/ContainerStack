@@ -9,6 +9,9 @@ public struct DiagnosticRunner: Sendable {
     /// Which bridge counts as ours: `lsof` names the pid holding the socket, and only
     /// the process table can say whether that pid is the helper this build ships.
     private let bridgePath: String
+    /// Injected so the "host memory unknown" branch is reachable in a test; nil is the
+    /// sysctl's own answer when it could not be read, never a guess.
+    private let hostMemoryBytes: @Sendable () -> Int64?
     /// Injected so `ranAt` is assertable; a report never stamps itself from `Date()`.
     private let now: @Sendable () -> Date
 
@@ -17,12 +20,14 @@ public struct DiagnosticRunner: Sendable {
         probe: any SystemProbe,
         socketPath: String,
         bridgePath: String,
+        hostMemoryBytes: @escaping @Sendable () -> Int64? = HostMemory.totalBytes,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.client = client
         self.probe = probe
         self.socketPath = socketPath
         self.bridgePath = bridgePath
+        self.hostMemoryBytes = hostMemoryBytes
         self.now = now
     }
 
@@ -43,6 +48,7 @@ public struct DiagnosticRunner: Sendable {
         let versions: VersionsMeasurement
         let routes: RoutesMeasurement
         let bridge: BridgeMeasurement
+        let memory: MemoryMeasurement
     }
 
     /// A refused socket and one that never answered both resolve to `.offline`, and F-010 needs
@@ -121,6 +127,24 @@ public struct DiagnosticRunner: Sendable {
         }
     }
 
+    /// One container listing serves both the routes and memory checks: NFR-001 budgets a
+    /// single `listContainers` for the run, however many checks want it.
+    private enum ContainersMeasurement {
+        case notAsked
+        case listed([DockerContainerSummary])
+        case unmeasurable(reason: String)
+    }
+
+    /// An inspect that failed is kept apart from a limit the runtime reported as absent: the
+    /// first makes the total incomplete, the second is a container the total never covered.
+    private enum MemoryMeasurement {
+        case notAsked
+        case nothingRunning
+        case noneInspected(failures: Int)
+        case inspected(MemoryCommitment, failures: Int)
+        case unmeasurable(reason: String)
+    }
+
     /// Gathers what `RuntimeState.resolve` takes and calls it once. Which failure
     /// outranks which is decided there and nowhere else, so nothing here compares two.
     private func signals(for checks: Set<CheckID>) async -> Signals {
@@ -134,10 +158,19 @@ public struct DiagnosticRunner: Sendable {
         let bridge = checks.contains(.foreignBridge) ? await bridgeOwnership() : BridgeMeasurement.notAsked
         // Every route signal arrives over the socket, so asking a dead one buys nothing but
         // more waiting inside the same budget (NFR-002).
+        let wantsContainers = checks.contains(.routes) || checks.contains(.memoryCommitment)
+        let containers =
+            socket.responds && wantsContainers
+            ? await containersMeasurement()
+            : ContainersMeasurement.notAsked
         let routes =
             socket.responds && checks.contains(.routes)
-            ? await routesMeasurement()
+            ? await routesMeasurement(containers)
             : RoutesMeasurement.notAsked
+        let memory =
+            socket.responds && checks.contains(.memoryCommitment)
+            ? await memoryMeasurement(containers)
+            : MemoryMeasurement.notAsked
         let state = RuntimeState.resolve(
             socketResponds: socket.responds,
             // Means "a helper this caller launched", as it does in the app. A report launches
@@ -157,7 +190,8 @@ public struct DiagnosticRunner: Sendable {
             socket: socket,
             versions: versions,
             routes: routes,
-            bridge: bridge
+            bridge: bridge,
+            memory: memory
         )
     }
 
@@ -203,16 +237,36 @@ public struct DiagnosticRunner: Sendable {
         }
     }
 
+    /// A listing that never arrived is not an empty machine, so the failure is carried rather
+    /// than laundered into `[]` (F-009).
+    private func containersMeasurement() async -> ContainersMeasurement {
+        do {
+            return .listed(
+                try await client.decode(
+                    [DockerContainerSummary].self,
+                    response: client.requestRetryingImmediateFailures(path: "/containers/json")
+                )
+            )
+        } catch {
+            return .unmeasurable(reason: error.localizedDescription)
+        }
+    }
+
     /// Two independent ways to fail to measure — the Docker call and `netstat` — and neither may
     /// arrive as an empty answer, which reads as "no route needed" (F-009, #45).
-    private func routesMeasurement() async -> RoutesMeasurement {
+    private func routesMeasurement(_ listing: ContainersMeasurement) async -> RoutesMeasurement {
         let containers: [DockerContainerSummary]
+        switch listing {
+        case .notAsked:
+            return .notAsked
+        case .unmeasurable(let reason):
+            return .unmeasurable(summary: Self.unlistedNetworks, reason: reason)
+        case .listed(let listed):
+            containers = listed
+        }
+
         let networks: [DockerNetworkSummary]
         do {
-            containers = try await client.decode(
-                [DockerContainerSummary].self,
-                response: client.requestRetryingImmediateFailures(path: "/containers/json")
-            )
             networks = try await client.decode(
                 [DockerNetworkSummary].self,
                 response: client.requestRetryingImmediateFailures(path: "/networks")
@@ -245,6 +299,35 @@ public struct DiagnosticRunner: Sendable {
             guard uncheckable.isEmpty else { return Self.noSubnetReported(uncheckable) }
             return .reachable(publishing)
         }
+    }
+
+    /// The one check whose cost grows with the container count (NFR-001): one inspect per
+    /// running container, which is why F-002 keeps it out of the UI set.
+    private func memoryMeasurement(_ listing: ContainersMeasurement) async -> MemoryMeasurement {
+        let running: [DockerContainerSummary]
+        switch listing {
+        case .notAsked:
+            return .notAsked
+        case .unmeasurable(let reason):
+            return .unmeasurable(reason: reason)
+        case .listed(let listed):
+            running = listed.filter(\.isRunning)
+        }
+        guard !running.isEmpty else { return .nothingRunning }
+
+        var limits: [Int64?] = []
+        var failures = 0
+        for container in running {
+            do {
+                limits.append(try await client.memoryLimitBytes(containerID: container.id))
+            } catch {
+                failures += 1
+            }
+        }
+        guard !limits.isEmpty else { return .noneInspected(failures: failures) }
+        // 0 is `HostMemory`'s own "could not read", and the one value `fraction` refuses to divide by.
+        let commitment = MemoryCommitment.measure(limits: limits, hostBytes: hostMemoryBytes() ?? 0)
+        return .inspected(commitment, failures: failures)
     }
 
     /// An unheld socket is not a foreign one: with no holder there is nothing to outrank
@@ -337,8 +420,101 @@ public struct DiagnosticRunner: Sendable {
         if id == .versions { return versionsCheck(signals.versions) }
         if id == .routes { return routesCheck(signals.routes, ranked: ranked) }
         if id == .foreignBridge { return bridgeCheck(signals.bridge) }
+        if id == .memoryCommitment { return memoryCheck(signals.memory) }
         return notRun(id)
     }
+
+    /// F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:107`, `:117`, `:120`,
+    /// `:123`, `:126-128`, `:132`, `:138`, `:143`), copied rather than reworded.
+    private static func memoryCheck(_ measurement: MemoryMeasurement) -> DiagnosticCheck {
+        switch measurement {
+        case .notAsked:
+            return notRun(.memoryCommitment)
+        case .nothingRunning:
+            // `cstack doctor` returns at `CStackCommands.swift:46` before it reaches the memory
+            // report, so nothing was measured and there is no line to reproduce.
+            return skipped(.memoryCommitment, because: Self.noRunningContainers)
+        case .unmeasurable(let reason):
+            return indeterminate(.memoryCommitment, summary: Self.unlistedContainers, detail: reason)
+        case .noneInspected(let failures):
+            return indeterminate(
+                .memoryCommitment,
+                summary: "Container memory limits: unavailable — \(failures) running container(s)"
+                    + " could not be inspected.",
+                detail: nil
+            )
+        case .inspected(let commitment, let failures):
+            return commitmentCheck(commitment, failures: failures)
+        }
+    }
+
+    /// Decisions 5 and 6 in `spec-gaps.md`: over-commitment is amber rather than red, and an
+    /// unread host size or a failed inspect is amber because it was not measured.
+    private static func commitmentCheck(_ commitment: MemoryCommitment, failures: Int) -> DiagnosticCheck {
+        let trailing = trailingLines(commitment, failures: failures)
+        guard commitment.hostBytes > 0 else {
+            return indeterminate(
+                .memoryCommitment,
+                summary: "Container memory limits: \(ByteSize.formatted(commitment.configuredBytes))"
+                    + " configured (host memory unknown)",
+                detail: trailing.isEmpty ? nil : trailing.joined(separator: "\n")
+            )
+        }
+
+        let summary =
+            "\(ByteSize.formatted(commitment.configuredBytes)) in explicit container limits"
+            + " vs \(ByteSize.formatted(commitment.hostBytes)) host memory"
+        var lines = trailing
+        var text: String
+        var remedy: Remedy?
+        switch commitment.verdict {
+        case .within:
+            text = "Container memory limits: \(summary)"
+        case .approaching:
+            text =
+                "Container memory limits: \(summary)"
+                + " — guests approaching their limits may pressure other applications"
+        case .exceeding:
+            text = "Container memory limits: HIGH — \(summary)"
+            lines.insert(Self.growthTowardLimits, at: 0)
+            lines.insert(Self.smallerMemoryAdvice, at: 1)
+            remedy = .manual(Self.smallerMemoryAdvice)
+        }
+
+        let detail = lines.isEmpty ? nil : lines.joined(separator: "\n")
+        guard failures == 0 else {
+            return indeterminate(.memoryCommitment, summary: text, detail: detail)
+        }
+        guard commitment.verdict == .within else {
+            return warned(.memoryCommitment, summary: text, detail: detail, remedy: remedy)
+        }
+        return passed(.memoryCommitment, summary: text, detail: detail)
+    }
+
+    /// The two lines the CLI appends after its verdict, each only when it has something to
+    /// say: an excluded container and an uninspected one are different admissions.
+    private static func trailingLines(_ commitment: MemoryCommitment, failures: Int) -> [String] {
+        var lines: [String] = []
+        if commitment.containersWithoutLimit > 0 {
+            lines.append(
+                "\(commitment.containersWithoutLimit) running container(s) have no explicit memory limit"
+                    + " and are excluded from that total."
+            )
+        }
+        if failures > 0 {
+            lines.append("\(failures) running container(s) could not be inspected, so the total is incomplete.")
+        }
+        return lines
+    }
+
+    private static let growthTowardLimits =
+        "Guests do not reserve every byte immediately, but host use can grow toward these limits."
+    private static let smallerMemoryAdvice = "Stop a container or recreate it with a smaller --memory."
+
+    /// Invented, not copied: today `cstack doctor` returns before the memory report in this
+    /// state, and throws out of `listContainers` (`CStackCommands.swift:43`) in the next.
+    private static let noRunningContainers = "Container memory limits: no running containers to check"
+    private static let unlistedContainers = "Container memory limits: UNKNOWN — the Docker API did not answer."
 
     /// The one check with no CLI line behind it: `cstack doctor` never measured ownership,
     /// so this wording is new rather than reproduced (F-003).
@@ -454,69 +630,4 @@ public struct DiagnosticRunner: Sendable {
     /// Invented, not copied: today `cstack doctor` throws out of `listNetworks` (`CStackCommands.swift:51`)
     /// rather than printing a line here. Same shape as `unmeasuredSummary`, for the same reason.
     private static let unlistedNetworks = "Container routes: UNKNOWN — the Docker API did not answer."
-
-    private static func passed(_ id: CheckID, summary: String, detail: String?) -> DiagnosticCheck {
-        DiagnosticCheck(
-            id: id,
-            verdict: .ok,
-            summary: summary,
-            detail: detail,
-            remedy: nil,
-            duration: .zero
-        )
-    }
-
-    private static func failed(
-        _ id: CheckID,
-        summary: String,
-        detail: String?,
-        remedy: Remedy?
-    ) -> DiagnosticCheck {
-        DiagnosticCheck(
-            id: id,
-            verdict: .failure,
-            summary: summary,
-            detail: detail,
-            remedy: remedy,
-            duration: .zero
-        )
-    }
-
-    /// Amber, and the reason the measurement failed travels with it: "could not tell" is
-    /// only actionable when the report names what did not answer.
-    private static func indeterminate(_ id: CheckID, summary: String, detail: String?) -> DiagnosticCheck {
-        DiagnosticCheck(
-            id: id,
-            verdict: .indeterminate,
-            summary: summary,
-            detail: detail,
-            // No repair: an unmeasured root gives no grounds to restart anything.
-            remedy: nil,
-            duration: .zero
-        )
-    }
-
-    /// A reason, never a bare "not applicable": the check below a failure is grey because
-    /// something above it already decided, and the report has to say what.
-    private static func skipped(_ id: CheckID, because reason: String) -> DiagnosticCheck {
-        DiagnosticCheck(
-            id: id,
-            verdict: .skipped,
-            summary: reason,
-            detail: nil,
-            remedy: nil,
-            duration: .zero
-        )
-    }
-
-    private static func notRun(_ id: CheckID) -> DiagnosticCheck {
-        DiagnosticCheck(
-            id: id,
-            verdict: .skipped,
-            summary: "Not run.",
-            detail: nil,
-            remedy: nil,
-            duration: .zero
-        )
-    }
 }

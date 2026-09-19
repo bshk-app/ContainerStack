@@ -569,7 +569,7 @@ The orphaned `ourBridgeRunning` is gone: `BridgeMeasurement` replaced the tuple.
 
 ---
 
-### [T-014] Memory-commitment check (CLI set only)
+### [T-014] Memory-commitment check (CLI set only)  `[DONE:2026-09-19]`
 
 Mapping decided in `spec-gaps.md`: `.within` → `.ok`, `.approaching` →
 `.warning`, `.exceeding` → `.warning` with `.manual` remedy, host memory
@@ -582,7 +582,7 @@ while the CLI set issues one per running container.
 
 ---
 
-### [T-015] Total 20s budget and concurrent probes (NFR-002)
+### [T-015] Total 20s budget and concurrent probes (NFR-002)  `[DONE:2026-09-19]`
 
 **Step 1 — RED:** a probe fake that never returns; assert the report is
 published within 20s and the unfinished checks are `.indeterminate`.

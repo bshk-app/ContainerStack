@@ -71,6 +71,8 @@ user asking "is my environment healthy?" before anything visibly breaks.
   | network listing failed | `Container routes: UNKNOWN — the Docker API did not answer.` | aborts at `:51` |
   | foreign bridge | bridge-ownership line, and `Docker bridge: ours` when it is not foreign | no such check |
   | bridge holder unidentifiable | `Docker bridge: UNKNOWN — the process holding the socket could not be identified.` | no such check |
+  | no running containers | `Container memory limits: no running containers to check` | returns at `:46` before the memory report |
+  | container listing failed | `Container memory limits: UNKNOWN — the Docker API did not answer.` | aborts at `:43` |
 
   Consequence to accept deliberately: `cstack doctor` **stops exiting non-zero
   by throwing** in these states, and reports them instead. That is the point — a

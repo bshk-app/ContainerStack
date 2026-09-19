@@ -102,4 +102,36 @@ struct DiagnosticReportTests {
         #expect(ProbeResult.failed(reason: "no such file") != .output(""))
         #expect(ProbeResult.output("") != .output("no such file"))
     }
+
+    // F-013: each row drops the worst verdict of the row above it, so the whole ordering is
+    // pinned by the sequence rather than by one case at a time.
+    @Test(
+        "a report's verdict is the worst its checks carry",
+        arguments: [
+            ([Verdict.failure, .warning, .indeterminate, .ok, .skipped], Verdict.failure),
+            ([.warning, .indeterminate, .ok, .skipped], .warning),
+            ([.indeterminate, .ok, .skipped], .indeterminate),
+            ([.ok, .skipped], .ok),
+            ([.skipped, .ok, .failure, .ok], .failure),
+        ]
+    )
+    func reportVerdictIsTheWorstItsChecksCarry(verdicts: [Verdict], expected: Verdict) {
+        let report = DiagnosticReport(
+            checks: verdicts.map { check(verdict: $0) }, ranAt: Date(timeIntervalSince1970: 0)
+        )
+        #expect(report.verdict == expected)
+    }
+
+    // The two edges F-013 names: nothing to aggregate, and nothing that ran.
+    @Test(
+        "a report with nothing to judge is skipped, not ok",
+        arguments: [[Verdict](), [.skipped], [.skipped, .skipped, .skipped]]
+    )
+    func aReportWithNoJudgementIsSkipped(verdicts: [Verdict]) {
+        let report = DiagnosticReport(
+            checks: verdicts.map { check(verdict: $0) }, ranAt: Date(timeIntervalSince1970: 0)
+        )
+        #expect(report.verdict == .skipped)
+        #expect(report.verdict != .ok)
+    }
 }

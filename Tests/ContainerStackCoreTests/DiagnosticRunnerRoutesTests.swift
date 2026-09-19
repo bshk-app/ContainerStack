@@ -60,6 +60,16 @@ struct DiagnosticRunnerRoutesTests {
         ).run(checks: CheckID.uiSet).check(.routes)
     }
 
+    private func report(table: String) async -> DiagnosticReport {
+        await makeRunner(
+            routingTable: .output(table),
+            transport: runtime(
+                containers: publishingContainers,
+                networks: .success(jsonResponse(networksWithSubnet))
+            )
+        ).run(checks: CheckID.uiSet)
+    }
+
     // The pin. Three inputs, three verdicts, asserted as a set so collapsing any pair fails
     // here rather than in whichever fixture happened to cover the survivor.
     @Test("no publisher, cannot judge and unroutable are three verdicts, not two")
@@ -228,5 +238,34 @@ struct DiagnosticRunnerRoutesTests {
             .run(checks: CheckID.uiSet)
         #expect(report.check(.routes)?.verdict == .skipped)
         #expect(await transport.paths == ["/_ping"])
+    }
+
+    // F-013, and the reason it exists: `.running` and `.degraded` project the same checks, so
+    // the aggregate is the only place a runner that stopped forwarding the networks shows up.
+    @Test("a degraded run's verdict is not a healthy run's")
+    func aDegradedRunIsDistinguishableFromAHealthyOne() async {
+        let healthy = await report(table: routedTable)
+        let degraded = await report(table: tableWithoutTheBridge)
+        #expect(healthy.verdict == .ok)
+        #expect(degraded.verdict == .failure)
+        #expect(degraded.verdict != healthy.verdict)
+    }
+
+    // The same pin from the other side: the routes failure carries the networks `resolve`
+    // ranked, so an unranked measurement cannot reach `.failure` on its own.
+    @Test("the degraded verdict is the one resolve ranked, not the one the probe measured")
+    func theRoutesFailureComesFromTheResolvedState() async {
+        let degraded = await report(table: tableWithoutTheBridge)
+        let state = RuntimeState.resolve(
+            socketResponds: true,
+            helperRunning: false,
+            isStarting: false,
+            failure: nil,
+            unroutableNetworks: [UnroutableNetwork(networkName: "compose_default", subnet: "192.168.64.0/24")]
+        )
+        #expect(state.isDegraded)
+        #expect(degraded.check(.routes)?.verdict == .failure)
+        #expect(degraded.check(.routes)?.summary == "Container routes: NO ROUTE to \(unroutableLabel)")
+        #expect(degraded.verdict == degraded.check(.routes)?.verdict)
     }
 }

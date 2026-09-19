@@ -266,22 +266,34 @@ public struct DiagnosticRunner: Sendable {
                 return indeterminate(id, summary: unmeasuredSummary(for: id), detail: reason)
             }
             return skipped(id, because: state.detail ?? state.title)
-        case .running, .degraded:
-            // Nothing outranked this check, so a probe that could not run is its own answer:
-            // amber, never the grey of a check something else made moot.
-            if id == .appRoot, case .unmeasurable(let reason) = signals.appRoot {
-                return indeterminate(
-                    id,
-                    summary: "Runtime storage: UNKNOWN — the runtime status could not be read.",
-                    detail: reason
-                )
-            }
-            // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:32`).
-            if id == .socket { return passed(id, summary: "Docker socket: healthy", detail: nil) }
-            if id == .versions { return versionsCheck(signals.versions) }
-            if id == .routes { return routesCheck(signals.routes) }
-            return notRun(id)
+        case .running:
+            return usableRuntimeCheck(signals, onto: id, ranked: [])
+        case .degraded(let networks):
+            return usableRuntimeCheck(signals, onto: id, ranked: networks)
         }
+    }
+
+    /// `ranked` is what `resolve` condemned, and the routes check reports that rather than
+    /// re-deciding it: the two answers cannot drift apart if only one of them judges (F-013).
+    private static func usableRuntimeCheck(
+        _ signals: Signals,
+        onto id: CheckID,
+        ranked: [UnroutableNetwork]
+    ) -> DiagnosticCheck {
+        // Nothing outranked this check, so a probe that could not run is its own answer:
+        // amber, never the grey of a check something else made moot.
+        if id == .appRoot, case .unmeasurable(let reason) = signals.appRoot {
+            return indeterminate(
+                id,
+                summary: "Runtime storage: UNKNOWN — the runtime status could not be read.",
+                detail: reason
+            )
+        }
+        // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:32`).
+        if id == .socket { return passed(id, summary: "Docker socket: healthy", detail: nil) }
+        if id == .versions { return versionsCheck(signals.versions) }
+        if id == .routes { return routesCheck(signals.routes, ranked: ranked) }
+        return notRun(id)
     }
 
     /// F-003: `CStackCommands.swift:33-36` prints these four fields as one block, so they stay
@@ -313,7 +325,7 @@ public struct DiagnosticRunner: Sendable {
 
     /// F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:45`, `:56`, `:63`,
     /// `:67`, `:69`, `:74-75`), copied rather than reworded, because T-016 renders these back out.
-    private static func routesCheck(_ measurement: RoutesMeasurement) -> DiagnosticCheck {
+    private static func routesCheck(_ measurement: RoutesMeasurement, ranked: [UnroutableNetwork]) -> DiagnosticCheck {
         switch measurement {
         case .notAsked:
             return notRun(.routes)
@@ -322,9 +334,12 @@ public struct DiagnosticRunner: Sendable {
         case .reachable(let networks):
             return passed(.routes, summary: "Container routes: reachable (\(labels(networks)))", detail: nil)
         case .unroutable(let networks):
+            // `resolve` is the only thing that ranks unroutability (T-008), so networks it
+            // never saw are reported unjudged rather than condemned twice over.
+            guard !ranked.isEmpty else { return unrankedRoutes(networks) }
             return failed(
                 .routes,
-                summary: "Container routes: NO ROUTE to \(labels(networks))",
+                summary: "Container routes: NO ROUTE to \(labels(ranked))",
                 detail: """
                     Published ports accept connections and then hang.
                     Restarting the containers does not fix it. Run: cstack runtime restart
@@ -336,6 +351,15 @@ public struct DiagnosticRunner: Sendable {
         }
     }
 
+    /// Reachable only when the runner stops handing `resolve` what the probe found: the
+    /// measurement stands, the verdict does not, because nothing ranked it (F-013).
+    private static func unrankedRoutes(_ networks: [UnroutableNetwork]) -> DiagnosticCheck {
+        indeterminate(
+            .routes,
+            summary: "Container routes: UNKNOWN — \(labels(networks)) was measured but never ranked",
+            detail: "The resolved runtime state did not carry these networks, so no route verdict can be given."
+        )
+    }
     private static func labels(_ networks: [UnroutableNetwork]) -> String {
         networks.map(\.label).joined(separator: ", ")
     }

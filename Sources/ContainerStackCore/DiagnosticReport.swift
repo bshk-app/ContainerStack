@@ -80,6 +80,26 @@ public struct DiagnosticReport: Codable, Equatable, Sendable {
     public func check(_ id: CheckID) -> DiagnosticCheck? {
         checks.first { $0.id == id }
     }
+
+    /// F-013: derived rather than stored, so it can never disagree with `checks` — the
+    /// worst verdict present, and `.skipped` when there is none.
+    public var verdict: Verdict {
+        checks.map(\.verdict).max { $0.severity < $1.severity } ?? .skipped
+    }
+}
+
+extension Verdict {
+    /// F-013's ordering as a total order: `.failure` > `.warning` > `.indeterminate` >
+    /// `.ok` > `.skipped`. Ranks verdicts for the aggregate only, never runtime precedence.
+    fileprivate var severity: Int {
+        switch self {
+        case .skipped: 0
+        case .ok: 1
+        case .indeterminate: 2
+        case .warning: 3
+        case .failure: 4
+        }
+    }
 }
 
 public enum ProbeResult: Equatable, Sendable {

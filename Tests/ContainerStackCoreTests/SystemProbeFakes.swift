@@ -61,6 +61,7 @@ actor GatedSystemProbe: SystemProbe {
     private var isOpen = false
     private var gateWaiters: [CheckedContinuation<Void, Never>] = []
     private var entryWaiters: [(threshold: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var exitWaiters: [(threshold: Int, continuation: CheckedContinuation<Void, Never>)] = []
     private(set) var callCount = 0
     private(set) var completedCallCount = 0
 
@@ -82,6 +83,13 @@ actor GatedSystemProbe: SystemProbe {
         await withCheckedContinuation { entryWaiters.append((count, $0)) }
     }
 
+    /// The other end: returns once `count` calls have left the gate, so a test can let a
+    /// run abandoned by a deadline finish before it asserts anything about it.
+    func waitUntilCompleted(count: Int = 1) async {
+        guard completedCallCount < count else { return }
+        await withCheckedContinuation { exitWaiters.append((count, $0)) }
+    }
+
     func runtimeStatus() async -> ProbeResult { await gate() }
 
     func routingTable() async -> ProbeResult { await gate() }
@@ -99,6 +107,9 @@ actor GatedSystemProbe: SystemProbe {
             await withCheckedContinuation { gateWaiters.append($0) }
         }
         completedCallCount += 1
+        let left = exitWaiters.filter { $0.threshold <= completedCallCount }
+        exitWaiters.removeAll { $0.threshold <= completedCallCount }
+        for waiter in left { waiter.continuation.resume() }
         return result
     }
 }
@@ -189,5 +200,18 @@ struct GatedSystemProbeTests {
         #expect(await first.value == .output("status"))
         #expect(await second.value == .output("status"))
         #expect(await probe.completedCallCount == 2)
+    }
+
+    @Test("a departure is awaitable too, so an abandoned run can be let finish")
+    func gatedProbeAwaitsCallsLeavingTheGate() async {
+        let probe = GatedSystemProbe(result: .output("status"))
+        let first = Task { await probe.runtimeStatus() }
+        let second = Task { await probe.processTable() }
+        await probe.waitUntilCalled(count: 2)
+        await probe.open()
+        await probe.waitUntilCompleted(count: 2)
+        #expect(await probe.completedCallCount == 2)
+        #expect(await first.value == .output("status"))
+        #expect(await second.value == .output("status"))
     }
 }

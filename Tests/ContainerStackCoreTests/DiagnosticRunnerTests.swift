@@ -24,7 +24,8 @@ func makeRunner(
     socketPath: String = diagnosticSocketPath,
     bridgePath: String = diagnosticBridgePath,
     hostMemoryBytes: Int64? = nil,
-    now: Date = diagnosticClockDate
+    now: Date = diagnosticClockDate,
+    budget: Duration = DiagnosticRunner.defaultBudget
 ) -> DiagnosticRunner {
     DiagnosticRunner(
         client: DockerAPIClient(transport: transport),
@@ -32,7 +33,8 @@ func makeRunner(
         socketPath: socketPath,
         bridgePath: bridgePath,
         hostMemoryBytes: { hostMemoryBytes },
-        now: { now }
+        now: { now },
+        budget: budget
     )
 }
 
@@ -47,7 +49,8 @@ func makeRunner(
     socketPath: String = diagnosticSocketPath,
     bridgePath: String = diagnosticBridgePath,
     hostMemoryBytes: Int64? = nil,
-    now: Date = diagnosticClockDate
+    now: Date = diagnosticClockDate,
+    budget: Duration = DiagnosticRunner.defaultBudget
 ) -> DiagnosticRunner {
     makeRunner(
         probe: RecordingSystemProbe(
@@ -60,7 +63,8 @@ func makeRunner(
         socketPath: socketPath,
         bridgePath: bridgePath,
         hostMemoryBytes: hostMemoryBytes,
-        now: now
+        now: now,
+        budget: budget
     )
 }
 

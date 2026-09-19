@@ -37,29 +37,50 @@ user asking "is my environment healthy?" before anything visibly breaks.
   (`cliChecks == [...]`, `uiChecks == [...]`), not merely the absence of an
   `inspectContainer` request — an absence passes for a wrong set too.
 
-- **[F-003]** `cstack doctor` becomes a formatter over `DiagnosticReport`. Its
-  stdout is byte-identical to today's for every state **except** a foreign
-  bridge, where it gains a bridge-ownership line and skips the checks that
-  become meaningless. That diff is sanctioned, being the point of adding
-  `foreignBridge` to the CLI set.
+- **[F-003]** `cstack doctor` becomes a formatter over `DiagnosticReport`.
 
-  **Amendment (T-011 review).** A **second** difference is hereby sanctioned: a
-  **wedged** socket. Today `cstack doctor` aborts at `try await client.health()`
-  (`CStackCommands.swift:31`) and prints no socket or version line at all, so
-  there is no wording to be byte-identical to. F-010 nevertheless requires the
-  socket and versions checks to be `.indeterminate` rather than `.skipped`, and
-  a rendered report therefore gains two `UNKNOWN` lines where today's binary
-  emits an error and exits. F-003 and F-010 cannot both hold unamended for that
-  state; the conflict is resolved in F-010's favour, because a diagnostic that
-  aborts when the runtime hangs is the defect Doctor exists to remove. The
-  wording is fixed in `DiagnosticRunner.unmeasuredSummary(for:)` and is invented,
-  not copied — it is sanctioned here so that a T-016 golden records a decision
-  rather than inheriting one.
+  **The original "byte-identical except one sanctioned diff" wording was not
+  achievable, and is replaced.** The reason is structural, not incidental:
+  `doctor` is declared `async throws` (`CStackCommands.swift:8`) and reaches the
+  API through `try` (`:31` `health()`, `:51` `listNetworks()`). Whenever a
+  measurement fails, today's binary **aborts** — it prints no line for that
+  check and exits non-zero. So for every state in which the Doctor must say
+  "could not measure", there is no existing output to be identical to. F-009 and
+  F-010 require exactly those states to render as `.indeterminate`. The old
+  F-003 and F-010 could not both hold.
+
+  The rule is now:
+
+  1. **For every state today's `cstack doctor` actually prints, stdout stays
+     byte-identical.** This is the part that protects users' scripts and is
+     pinned by goldens.
+  2. **States where today's binary aborts instead of printing gain new lines.**
+     They are enumerated below; nothing may be added to this list without
+     amending the spec, so a golden can never bless wording nobody chose.
+  3. **One behavioural addition:** the foreign-bridge check, new to the CLI,
+     which prints a bridge-ownership line and skips the checks it makes
+     meaningless. This was the originally sanctioned diff.
+
+  Sanctioned new lines, all from `DiagnosticRunner`:
+
+  | State | Line | Today's CLI |
+  |---|---|---|
+  | status probe unreadable | `Runtime storage: UNKNOWN — the runtime status could not be read.` | aborts |
+  | socket timed out | `Docker socket: UNKNOWN — the socket did not answer before the timeout.` | aborts at `:31` |
+  | version call failed | `API version: UNKNOWN — the Docker API did not answer.` | aborts at `:31` |
+  | network listing failed | `Container routes: UNKNOWN — the Docker API did not answer.` | aborts at `:51` |
+  | foreign bridge | bridge-ownership line | no such check |
+
+  Consequence to accept deliberately: `cstack doctor` **stops exiting non-zero
+  by throwing** in these states, and reports them instead. That is the point — a
+  diagnostic that dies when the runtime hangs fails exactly when it is needed.
+
   *Acceptance:* golden-output tests over fixtures for healthy,
-  missing-app-root, unroutable-network, **and foreign-bridge** states. The
-  first three goldens are pinned from today's binary before the refactor; the
-  fourth is new. Rendering is a pure function so no stdout capture is needed —
-  see F-012.
+  missing-app-root, unroutable-network, **and foreign-bridge** states, plus one
+  golden per row of the table above. The first three goldens are pinned from
+  today's binary before the refactor; the rest are new and are pinned to this
+  table. Rendering is a pure function so no stdout capture is needed — see
+  F-012.
 
 - **[F-004]** Precedence is **not re-derived**. The runner gathers the signals
   for the requested checks, calls `RuntimeState.resolve`
@@ -154,6 +175,20 @@ user asking "is my environment healthy?" before anything visibly breaks.
   *Acceptance:* F-003's goldens compare the returned `String`; a separate
   assertion proves `DiagnosticRunner` writes nothing to stdout/stderr.
 
+- **[F-013]** `DiagnosticReport` carries an aggregate `verdict`, derived from
+  its checks by a stated rule rather than stored: the worst verdict present,
+  ordering `.failure` > `.warning` > `.indeterminate` > `.ok` > `.skipped`. An
+  all-`.skipped` report is `.skipped`; an empty report is `.skipped`.
+  Rationale: without it the report exposes only `checks`/`ranAt`, `.running`
+  and `.degraded` project identically, and the `unroutableNetworks` signal the
+  runner feeds `resolve` cannot be observed at all — mutating it to `[]` left
+  every test green. This is a testability requirement, not a badge: F-006's
+  sidebar entry stays unadorned in v1.
+  *Acceptance:* a test asserts a degraded run's aggregate differs from a
+  healthy run's, and fails if the runner stops forwarding `unroutableNetworks`.
+  Table-driven cases pin the ordering, including the two empty/all-skipped
+  edges.
+
 ### 2.2 Non-functional requirements
 
 - **[NFR-001] Performance.** Process spawns per run are fixed and independent of
@@ -174,7 +209,7 @@ user asking "is my environment healthy?" before anything visibly breaks.
   *Acceptance:* a recording `SystemProbe` fake counts spawns and the stub
   counts request paths; assert exact counts (`spawns == 4` for the CLI set and
   `== 5` for the UI set, and the UI set's API paths equal
-  `["/_ping", "/version", "/info", "/containers/json?all=0", "/networks"]` in
+  `["/_ping", "/version", "/info", "/containers/json", "/networks"]` in
   order), and assert neither count changes between 0 and 20 running containers
   for the UI set.
 - **[NFR-002] Total time budget.** The whole run is bounded at **20s**, not per
@@ -405,9 +440,13 @@ are part of the work, not preconditions someone else supplies:
 
 ## 8. Open questions
 
-1. Does `DiagnosticReport` need an aggregate verdict for a sidebar badge, or is
-   the row list enough for v1? (Brainstorm left open; a badge implies background
-   runs, which are a non-goal — likely defer.)
+1. ~~Aggregate verdict.~~ **Resolved: `DiagnosticReport` carries one.** Not for
+   a badge — that is still a non-goal — but because without it the report
+   exposes only `checks`/`ranAt`, and `.running` and `.degraded` project
+   identically. Mutating `unroutableNetworks` to `[]` in the runner left all 450
+   tests green, so the wiring T-012 added is unpinnable as the type stands. An
+   aggregate is the smallest surface that makes a degraded run observably
+   different from a healthy one. See [F-013].
 2. ~~Docker-context check seam.~~ **Resolved.** Doctor gets its own read-only
    check, built from pieces that already exist and already are pure:
    `DockerCLI.recordedSocketPath(for:)` (`DockerCLI.swift:152`, with an

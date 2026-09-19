@@ -529,6 +529,32 @@ judge, unroutable.
 ---
 
 ### [T-013] Foreign-bridge check
+### [T-012a] Aggregate verdict on the report (F-013)
+
+**Why now:** T-012 wired `unroutableNetworks` into `RuntimeState.resolve`, and
+the T-012 reviewer proved that wiring is unpinnable — mutating it to `[]` left
+all 450 tests green, because `.running` and `.degraded` project identically and
+`DiagnosticReport` exposes only `checks`/`ranAt`.
+
+**Files:** modify `Sources/ContainerStackCore/DiagnosticReport.swift`; test in
+`Tests/ContainerStackCoreTests/DiagnosticReportTests.swift` and
+`Tests/ContainerStackCoreTests/DiagnosticRunnerRoutesTests.swift`.
+
+Derive it, do not store it: worst verdict present, ordering
+`.failure` > `.warning` > `.indeterminate` > `.ok` > `.skipped`. Empty and
+all-skipped reports are `.skipped`.
+
+**Step 1 — RED (the one that matters):** a degraded run's aggregate differs
+from a healthy run's. Then mutate the runner to pass `unroutableNetworks: []`
+and confirm **that** test fails — if it still passes, the aggregate has not
+closed the hole it exists to close.
+
+Table-driven cases pin the ordering and both edges.
+
+**Depends on:** T-012
+
+---
+
 
 Uses `BridgeOwnership.holder(lsofOutput:)` + `ProcessTable.pids(forExecutable:in:)`
 — both already in Core (`BridgeOwnership.swift:11`, `RuntimeControl.swift:5`).

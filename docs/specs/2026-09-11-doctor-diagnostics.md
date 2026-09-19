@@ -69,7 +69,8 @@ user asking "is my environment healthy?" before anything visibly breaks.
   | socket timed out | `Docker socket: UNKNOWN — the socket did not answer before the timeout.` | aborts at `:31` |
   | version call failed | `API version: UNKNOWN — the Docker API did not answer.` | aborts at `:31` |
   | network listing failed | `Container routes: UNKNOWN — the Docker API did not answer.` | aborts at `:51` |
-  | foreign bridge | bridge-ownership line | no such check |
+  | foreign bridge | bridge-ownership line, and `Docker bridge: ours` when it is not foreign | no such check |
+  | bridge holder unidentifiable | `Docker bridge: UNKNOWN — the process holding the socket could not be identified.` | no such check |
 
   Consequence to accept deliberately: `cstack doctor` **stops exiting non-zero
   by throwing** in these states, and reports them instead. That is the point — a

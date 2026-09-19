@@ -528,8 +528,7 @@ judge, unroutable.
 
 ---
 
-### [T-013] Foreign-bridge check
-### [T-012a] Aggregate verdict on the report (F-013)
+### [T-012a] Aggregate verdict on the report (F-013)  `[DONE:2026-09-18]`
 
 **Why now:** T-012 wired `unroutableNetworks` into `RuntimeState.resolve`, and
 the T-012 reviewer proved that wiring is unpinnable — mutating it to `[]` left
@@ -555,10 +554,16 @@ Table-driven cases pin the ordering and both edges.
 
 ---
 
+### [T-013] Foreign-bridge check  `[DONE:2026-09-18]`
 
 Uses `BridgeOwnership.holder(lsofOutput:)` + `ProcessTable.pids(forExecutable:in:)`
 — both already in Core (`BridgeOwnership.swift:11`, `RuntimeControl.swift:5`).
 A failed `lsof` or `ps` gives `.indeterminate`, never "ours" (spec §5).
+
+Done: the check's own wording (new, no CLI line behind it), `.ok` when our bridge
+holds the socket, `.indeterminate` for either dead probe and for a holder `lsof`
+cannot see, and a `.manual` remedy on the failure — F-005 rules out `.restartRuntime`.
+The orphaned `ourBridgeRunning` is gone: `BridgeMeasurement` replaced the tuple.
 
 **Depends on:** T-008
 

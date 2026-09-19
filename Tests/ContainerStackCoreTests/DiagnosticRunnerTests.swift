@@ -10,6 +10,14 @@ let diagnosticClockDate = Date(timeIntervalSince1970: 1_700_000_000)
 let diagnosticSocketPath = "/tmp/containerstack-doctor-tests.sock"
 let diagnosticBridgePath = "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
 
+/// A machine whose socket is held by the bridge this build ships. The default every
+/// fixture takes, because a holder nobody can see is unknown ownership, not ours.
+let ourBridgeLsofOutput = "p777\ncsocktainer\nn\(diagnosticSocketPath)"
+let ourBridgeProcessTable = """
+        1 /sbin/launchd
+      777 \(diagnosticBridgePath) --socket \(diagnosticSocketPath)
+    """
+
 func makeRunner(
     probe: any SystemProbe,
     transport: StubDockerTransport = StubDockerTransport(byPath: [:]),
@@ -31,8 +39,8 @@ func makeRunner(
 func makeRunner(
     runtimeStatus: ProbeResult = .output(""),
     routingTable: ProbeResult = .output(""),
-    socketHolder: ProbeResult = .output(""),
-    processTable: ProbeResult = .output(""),
+    socketHolder: ProbeResult = .output(ourBridgeLsofOutput),
+    processTable: ProbeResult = .output(ourBridgeProcessTable),
     transport: StubDockerTransport = StubDockerTransport(byPath: [:]),
     socketPath: String = diagnosticSocketPath,
     bridgePath: String = diagnosticBridgePath,
@@ -326,8 +334,8 @@ struct DiagnosticRunnerProbeFailureTests {
                 checks: checks
             )
             // Exact rather than `allSatisfy`: F-009 governs the checks that depend on the dead
-            // probe, and the socket answered for itself while `/version` did not.
-            #expect(report.checks.filter { $0.verdict == .ok }.map(\.id) == [.socket])
+            // probe, and the socket and the bridge each answered from a probe of their own.
+            #expect(report.checks.filter { $0.verdict == .ok }.map(\.id) == [.foreignBridge, .socket])
             #expect(report.check(.versions)?.verdict == .indeterminate)
             #expect(report.check(.appRoot)?.verdict == .indeterminate)
             #expect(report.checks.allSatisfy { !$0.summary.isEmpty })

@@ -42,6 +42,7 @@ public struct DiagnosticRunner: Sendable {
         let socket: SocketMeasurement
         let versions: VersionsMeasurement
         let routes: RoutesMeasurement
+        let bridge: BridgeMeasurement
     }
 
     /// A refused socket and one that never answered both resolve to `.offline`, and F-010 needs
@@ -103,6 +104,23 @@ public struct DiagnosticRunner: Sendable {
         }
     }
 
+    /// Four answers because the two that matter are the ones a boolean loses: a probe that
+    /// could not run, and a holder nobody could see, are neither ours nor foreign.
+    private enum BridgeMeasurement {
+        case notAsked
+        case ours
+        case foreign(socketPath: String)
+        case unseenHolder
+        case unmeasurable(reason: String)
+
+        /// Only a bridge the probes named: `resolve` ranks ownership it was told about,
+        /// and an unreadable probe tells it nothing.
+        var foreignSocketPath: String? {
+            if case .foreign(let socketPath) = self { return socketPath }
+            return nil
+        }
+    }
+
     /// Gathers what `RuntimeState.resolve` takes and calls it once. Which failure
     /// outranks which is decided there and nowhere else, so nothing here compares two.
     private func signals(for checks: Set<CheckID>) async -> Signals {
@@ -113,7 +131,7 @@ public struct DiagnosticRunner: Sendable {
             : VersionsMeasurement.unmeasurable(reason: socket.failure ?? RuntimeState.genericFailure)
 
         let appRoot = checks.contains(.appRoot) ? await appRootMeasurement() : .intact
-        let bridge = checks.contains(.foreignBridge) ? await bridgeOwnership() : nil
+        let bridge = checks.contains(.foreignBridge) ? await bridgeOwnership() : BridgeMeasurement.notAsked
         // Every route signal arrives over the socket, so asking a dead one buys nothing but
         // more waiting inside the same budget (NFR-002).
         let routes =
@@ -131,9 +149,16 @@ public struct DiagnosticRunner: Sendable {
             // Gated exactly as `RuntimeViewModel.applyState` gates them, so both callers hand
             // `resolve` the same inputs. The app's call convention, not a second ranking.
             missingAppRoot: socket.responds ? appRoot.missingRoot : nil,
-            foreignBridge: socket.responds ? bridge?.foreignSocketPath : nil
+            foreignBridge: socket.responds ? bridge.foreignSocketPath : nil
         )
-        return Signals(state: state, appRoot: appRoot, socket: socket, versions: versions, routes: routes)
+        return Signals(
+            state: state,
+            appRoot: appRoot,
+            socket: socket,
+            versions: versions,
+            routes: routes,
+            bridge: bridge
+        )
     }
 
     /// `ping` retries only what costs a syscall to re-ask (`DockerAPIClient.failsImmediately`), so
@@ -221,17 +246,26 @@ public struct DiagnosticRunner: Sendable {
             return .reachable(publishing)
         }
     }
-    /// An unheld socket is not a foreign one: with no holder there is nothing to outrank
-    /// the local runtime, and `lsof` reporting nobody is a stale socket file.
-    private func bridgeOwnership() async -> (foreignSocketPath: String?, ourBridgeRunning: Bool) {
-        guard case .output(let lsof) = await probe.socketHolder(socketPath: socketPath),
-            case .output(let listing) = await probe.processTable()
-        else { return (nil, false) }
 
-        let holder = BridgeOwnership.holder(lsofOutput: lsof)
+    /// An unheld socket is not a foreign one: with no holder there is nothing to outrank
+    /// the local runtime, and a socket that answers while `lsof` names nobody is held out of sight.
+    private func bridgeOwnership() async -> BridgeMeasurement {
+        let lsof: String
+        switch await probe.socketHolder(socketPath: socketPath) {
+        case .output(let output): lsof = output
+        case .failed(let reason): return .unmeasurable(reason: reason)
+        }
+        let listing: String
+        switch await probe.processTable() {
+        case .output(let output): listing = output
+        case .failed(let reason): return .unmeasurable(reason: reason)
+        }
+
+        guard let holder = BridgeOwnership.holder(lsofOutput: lsof) else { return .unseenHolder }
         let ourPIDs = ProcessTable.pids(forExecutable: bridgePath, in: listing)
-        let isForeign = holder != nil && !BridgeOwnership.isOurs(holder: holder, ourPIDs: ourPIDs)
-        return (isForeign ? socketPath : nil, !ourPIDs.isEmpty)
+        return BridgeOwnership.isOurs(holder: holder, ourPIDs: ourPIDs)
+            ? .ours
+            : .foreign(socketPath: socketPath)
     }
 
     /// Exhaustive by construction: a new `RuntimeState` has to be given a projection here
@@ -243,7 +277,16 @@ public struct DiagnosticRunner: Sendable {
             guard id == .foreignBridge else {
                 return skipped(id, because: "Another Docker bridge holds \(socketPath).")
             }
-            return failed(id, summary: state.title, detail: state.detail, remedy: nil)
+            // F-005: a restart of our runtime cannot evict a process it did not start, so the
+            // only honest repair is one the person performs.
+            return failed(
+                id,
+                summary: state.title,
+                detail: state.detail,
+                remedy: .manual(
+                    "Stop the other Docker bridge holding \(socketPath), then start the runtime again."
+                )
+            )
         case .detached(let appRoot):
             guard id == .appRoot else {
                 return skipped(id, because: "The runtime is storing into \(appRoot), which no longer exists.")
@@ -293,8 +336,40 @@ public struct DiagnosticRunner: Sendable {
         if id == .socket { return passed(id, summary: "Docker socket: healthy", detail: nil) }
         if id == .versions { return versionsCheck(signals.versions) }
         if id == .routes { return routesCheck(signals.routes, ranked: ranked) }
+        if id == .foreignBridge { return bridgeCheck(signals.bridge) }
         return notRun(id)
     }
+
+    /// The one check with no CLI line behind it: `cstack doctor` never measured ownership,
+    /// so this wording is new rather than reproduced (F-003).
+    private static func bridgeCheck(_ measurement: BridgeMeasurement) -> DiagnosticCheck {
+        switch measurement {
+        case .notAsked:
+            return notRun(.foreignBridge)
+        case .ours:
+            return passed(.foreignBridge, summary: "Docker bridge: ours", detail: nil)
+        case .unmeasurable(let reason):
+            return indeterminate(.foreignBridge, summary: unidentifiedHolder, detail: reason)
+        case .unseenHolder:
+            return indeterminate(.foreignBridge, summary: unidentifiedHolder, detail: Self.holderOutOfSight)
+        case .foreign(let socketPath):
+            // `resolve` is the only thing that ranks ownership, so a foreign bridge it never
+            // saw is reported unjudged rather than condemned twice over (F-013).
+            return indeterminate(
+                .foreignBridge,
+                summary: unidentifiedHolder,
+                detail: "Another bridge was measured holding \(socketPath), "
+                    + "but the resolved runtime state did not carry it."
+            )
+        }
+    }
+
+    /// One summary for every way ownership goes unanswered: a probe that died, a holder out
+    /// of sight and one nothing ranked are all "we cannot say", and none of them is ours.
+    private static let unidentifiedHolder =
+        "Docker bridge: UNKNOWN — the process holding the socket could not be identified."
+    private static let holderOutOfSight =
+        "The socket answers, but lsof named no process holding it, so its owner is not visible from here."
 
     /// F-003: `CStackCommands.swift:33-36` prints these four fields as one block, so they stay
     /// one check with the remaining three lines as detail.
@@ -360,6 +435,7 @@ public struct DiagnosticRunner: Sendable {
             detail: "The resolved runtime state did not carry these networks, so no route verdict can be given."
         )
     }
+
     private static func labels(_ networks: [UnroutableNetwork]) -> String {
         networks.map(\.label).joined(separator: ", ")
     }

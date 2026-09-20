@@ -666,6 +666,66 @@ Four goldens: healthy, missing-app-root, unroutable-network, foreign-bridge.
 ---
 
 ### [T-017] CLI becomes a formatter
+### [T-016a] Stop the CLI dropping and reordering lines
+
+The T-016 goldens exposed four lines today's `cstack doctor` prints that the
+renderer never emits, plus an order change. Dropping output is a regression,
+not the sanctioned addition F-003 allows.
+
+**Files:** `Sources/ContainerStackCore/DiagnosticRunner.swift`,
+`DiagnosticRunner+Projection.swift`, `DoctorTextRenderer.swift`, and their tests.
+
+Four fixes, each with its own failing golden first:
+
+1. **A healthy app root is not capturable.** `AppRootMeasurement` has only
+   `.missing` / `.intact` / `.unmeasurable`, so the CLI's
+   `Runtime storage: <root>` (`CStackCommands.swift:38`) can never be rendered.
+   `.intact` has to carry the root.
+2. **`Docker socket: healthy` above a missing root** (`:24`) is dropped because
+   the socket check is `.skipped` there. `resolve` only yields `.detached` when
+   the socket responded, so the fact is known -- the projection discards it.
+3. **`Container routes: reachable` is swallowed** when another publisher has no
+   subnet: `routesMeasurement` returns `noSubnetReported` *instead of*
+   `.reachable` (`DiagnosticRunner.swift:481`), while the CLI prints both `:67`
+   and `:81`. `RoutesMeasurement`'s own comment says this must not happen.
+4. **`Container memory limits: no running containers`** is in F-003's table but
+   projects to `.skipped`, which renders nothing. The routes check's sibling
+   state projects to `.ok`. Move the projection, not the table.
+
+**Then the order.** The CLI prints storage *after* socket and versions; report
+precedence puts `appRoot` first, and `foreignBridge` before everything. Fixing
+the four drops does not fix this. Give the renderer its own CLI print order,
+independent of `CheckID`'s precedence order -- precedence is about which check
+outranks which, not about what a human reads first. Pin both orders separately
+so a change to one cannot silently move the other.
+
+**Watch:** T-008's rule stands -- `RuntimeState.resolve` remains the only
+precedence authority. None of these fixes may re-rank anything; they restore
+facts the projection already had and threw away.
+
+**Depends on:** T-016
+
+---
+
+### [T-016b] Our own wording for probe failures
+
+Amber rows render a second line from `error.localizedDescription`.
+`UnixSocketError` (`DockerAPIClient.swift:686`) conforms only to
+`Error, Equatable, Sendable`, so that text is Foundation's `NSError` bridge --
+wording nobody chose, which can change with macOS. The T-016 golden cannot
+catch drift because it computes the expectation from the same expression.
+
+**Files:** `Sources/ContainerStackCore/DockerAPIClient.swift` (or wherever
+`UnixSocketError` is best extended), plus the renderer goldens.
+
+Give the error type `LocalizedError` with our own text, then rewrite the
+affected goldens as **string literals** rather than derived expressions -- that
+is what turns them into a drift detector instead of a tautology.
+
+**Depends on:** T-016a
+
+---
+
 
 **Files:** modify `Sources/CStackCLI/CStackCommands.swift:8-145` — `doctor`
 becomes `print(DoctorTextRenderer.render(await runner.run(checks: .cliSet)))`.

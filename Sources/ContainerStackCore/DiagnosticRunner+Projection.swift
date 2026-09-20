@@ -27,6 +27,11 @@ extension DiagnosticRunner {
                 took: took
             )
         case .detached(let appRoot):
+            // `resolve` reaches this state only with the socket answering, so the socket check keeps
+            // the answer it already has (`CStackCommands.swift:24`) instead of being made moot.
+            if id == .socket, signals.socket.responds {
+                return passed(id, summary: Self.socketHealthy, detail: nil, took: took)
+            }
             guard id == .appRoot else {
                 return skipped(
                     id,
@@ -68,24 +73,35 @@ extension DiagnosticRunner {
         ranked: [UnroutableNetwork]
     ) -> DiagnosticCheck {
         let took = signals.duration(of: id)
-        // Nothing outranked this check, so a probe that could not run is its own answer:
-        // amber, never the grey of a check something else made moot.
-        if id == .appRoot, case .unmeasurable(let reason) = signals.appRoot {
-            return indeterminate(
-                id,
-                summary: "Runtime storage: UNKNOWN — the runtime status could not be read.",
-                detail: reason,
-                took: took
-            )
-        }
+        if id == .appRoot { return appRootCheck(signals.appRoot, took: took) }
         // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:32`).
-        if id == .socket { return passed(id, summary: "Docker socket: healthy", detail: nil, took: took) }
+        if id == .socket { return passed(id, summary: Self.socketHealthy, detail: nil, took: took) }
         if id == .versions { return versionsCheck(signals.versions, took: took) }
         if id == .routes { return routesCheck(signals.routes, ranked: ranked, took: took) }
         if id == .foreignBridge { return bridgeCheck(signals.bridge, took: took) }
         if id == .memoryCommitment { return memoryCheck(signals.memory, took: took) }
         return notRun(id, took: took)
     }
+
+    /// F-003: `CStackCommands.swift:37-38` prints storage only when the status named a root, and
+    /// `resolve` owns the missing one, so `.missing` cannot reach a runtime it called usable.
+    private static func appRootCheck(_ measurement: AppRootMeasurement, took: Duration) -> DiagnosticCheck {
+        switch measurement {
+        case .unmeasurable(let reason):
+            return indeterminate(
+                .appRoot,
+                summary: "Runtime storage: UNKNOWN — the runtime status could not be read.",
+                detail: reason,
+                took: took
+            )
+        case .intact(let root?):
+            return passed(.appRoot, summary: "Runtime storage: \(root)", detail: nil, took: took)
+        case .intact, .missing:
+            return notRun(.appRoot, took: took)
+        }
+    }
+
+    private static let socketHealthy = "Docker socket: healthy"
 
     /// F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:107`, `:117`, `:120`,
     /// `:123`, `:126-128`, `:132`, `:138`, `:143`), copied rather than reworded.
@@ -94,9 +110,9 @@ extension DiagnosticRunner {
         case .notAsked:
             return notRun(.memoryCommitment, took: took)
         case .nothingRunning:
-            // `cstack doctor` returns at `CStackCommands.swift:46` before it reaches the memory
-            // report, so nothing was measured and there is no line to reproduce.
-            return skipped(.memoryCommitment, because: Self.noRunningContainers, took: took)
+            // F-003's table sanctions this line for the state the CLI returns from at
+            // `CStackCommands.swift:46`, and a `.skipped` verdict would render it as silence.
+            return passed(.memoryCommitment, summary: Self.noRunningContainers, detail: nil, took: took)
         case .unmeasurable(let reason):
             return indeterminate(.memoryCommitment, summary: Self.unlistedContainers, detail: reason, took: took)
         case .noneInspected(let failures):
@@ -182,8 +198,8 @@ extension DiagnosticRunner {
         "Guests do not reserve every byte immediately, but host use can grow toward these limits."
     private static let smallerMemoryAdvice = "Stop a container or recreate it with a smaller --memory."
 
-    /// Invented, not copied: today `cstack doctor` returns before the memory report in this
-    /// state, and throws out of `listContainers` (`CStackCommands.swift:43`) in the next.
+    /// F-003's table, row 7: today `cstack doctor` returns before the memory report in this state,
+    /// so the line is sanctioned rather than copied. The next one throws out of `:43`.
     private static let noRunningContainers = "Container memory limits: no running containers to check"
     private static let unlistedContainers = "Container memory limits: UNKNOWN — the Docker API did not answer."
 
@@ -269,13 +285,14 @@ extension DiagnosticRunner {
             return notRun(.routes, took: took)
         case .nothingToCheck(let summary):
             return passed(.routes, summary: summary, detail: nil, took: took)
-        case .reachable(let networks):
-            return passed(
-                .routes,
-                summary: "Container routes: reachable (\(labels(networks)))",
-                detail: nil,
-                took: took
-            )
+        case .reachable(let networks, let uncheckable):
+            let summary = "Container routes: reachable (\(labels(networks)))"
+            // `CStackCommands.swift:81` follows `:67` rather than replacing it: the networks that
+            // were judged keep their verdict, and the check stays amber for the one that was not.
+            guard uncheckable.isEmpty else {
+                return indeterminate(.routes, summary: summary, detail: noSubnetLine(uncheckable), took: took)
+            }
+            return passed(.routes, summary: summary, detail: nil, took: took)
         case .unroutable(let networks):
             // `resolve` is the only thing that ranks unroutability (T-008), so networks it
             // never saw are reported unjudged rather than condemned twice over.

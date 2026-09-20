@@ -4,7 +4,25 @@ import Foundation
 /// `print(DoctorTextRenderer.render(report))`, so the trailing newline is `print`'s.
 public enum DoctorTextRenderer {
     public static func render(_ report: DiagnosticReport) -> String {
-        report.checks.flatMap(lines(of:)).joined(separator: "\n")
+        inPrintOrder(report.checks).flatMap(lines(of:)).joined(separator: "\n")
+    }
+
+    /// The order `cstack doctor` prints (`CStackCommands.swift:24-84`), which is not `CheckID`'s
+    /// F-004 precedence order: precedence ranks checks, this only decides what a person reads first.
+    public static let printOrder: [CheckID] = [
+        .foreignBridge, .socket, .versions, .appRoot, .routes, .dockerContext, .memoryCommitment,
+    ]
+
+    /// Stable, and a check whose id `printOrder` does not name keeps its place at the end rather
+    /// than disappearing: a report never loses a check it was asked for.
+    private static func inPrintOrder(_ checks: [DiagnosticCheck]) -> [DiagnosticCheck] {
+        let rank = Dictionary(uniqueKeysWithValues: printOrder.enumerated().map { ($1, $0) })
+        return checks.enumerated()
+            .sorted { left, right in
+                (rank[left.element.id] ?? printOrder.count, left.offset)
+                    < (rank[right.element.id] ?? printOrder.count, right.offset)
+            }
+            .map(\.element)
     }
 
     /// A skipped check is silence: F-003 has the foreign bridge skip what it makes meaningless,

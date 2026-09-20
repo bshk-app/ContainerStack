@@ -102,8 +102,8 @@ struct DiagnosticRunnerTests {
         #expect(report.checks.map(\.id) == [.appRoot, .routes])
     }
 
-    // Spelled out rather than derived from `allCases`: reordering `CheckID` away from
-    // F-004 precedence must fail here, not pass against a moving target.
+    // Spelled out rather than derived from `allCases`: reordering `CheckID` away from F-004
+    // precedence must fail here, not silently in `DoctorTextRenderer.printOrder`'s own test.
     @Test("the emitted order is the declared order, pinned literally")
     func theReportEmitsChecksInTheDeclaredOrder() async {
         let report = await makeRunner().run(checks: Set(CheckID.allCases))
@@ -193,7 +193,9 @@ struct DiagnosticRunnerPrecedenceTests {
         }
     }
 
-    @Test("a missing app root alone is the failure, and the checks below it are skipped")
+    // `resolve` returns `.detached` only when the socket answered, so the socket check keeps the
+    // answer it already has: F-003's `CStackCommands.swift:24`, which prints it above the storage line.
+    @Test("a missing app root alone is the failure, and the socket it answered on stays healthy")
     func aMissingAppRootAloneFailsTheAppRootCheck() async {
         let report = await makeRunner(
             runtimeStatus: .output(statusWithMissingRoot),
@@ -204,8 +206,10 @@ struct DiagnosticRunnerPrecedenceTests {
         #expect(report.check(.appRoot)?.verdict == .failure)
         #expect(report.check(.appRoot)?.remedy == .restartRuntime)
         #expect(report.check(.foreignBridge)?.verdict == .skipped)
-        #expect(report.check(.socket)?.verdict == .skipped)
-        #expect(report.check(.socket)?.summary.contains(missingRoot) == true)
+        #expect(report.check(.socket)?.verdict == .ok)
+        #expect(report.check(.socket)?.summary == "Docker socket: healthy")
+        #expect(report.check(.versions)?.verdict == .skipped)
+        #expect(report.check(.versions)?.summary.contains(missingRoot) == true)
     }
 
     // F-003 forbids drift: these are the bytes `cstack doctor` prints today

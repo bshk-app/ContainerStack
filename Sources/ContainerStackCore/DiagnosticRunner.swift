@@ -197,7 +197,9 @@ public struct DiagnosticRunner: Sendable {
     /// read as "no missing root", which is a healthy runtime (F-009).
     enum AppRootMeasurement {
         case missing(String)
-        case intact
+        /// Carries the root the status named, which is the line the CLI prints at
+        /// `CStackCommands.swift:38`; nil when the status named none.
+        case intact(root: String?)
         case unmeasurable(reason: String)
 
         /// Only a root the probe actually reported: `resolve` ranks states, and a
@@ -213,7 +215,9 @@ public struct DiagnosticRunner: Sendable {
     enum RoutesMeasurement {
         case notAsked
         case nothingToCheck(summary: String)
-        case reachable([UnroutableNetwork])
+        /// `uncheckable` rides along rather than replacing the verdict: the CLI prints `:81`
+        /// after `:67`, so a network nobody can judge does not unsay the ones that were judged.
+        case reachable([UnroutableNetwork], uncheckable: [String])
         case unroutable([UnroutableNetwork])
         case unmeasurable(summary: String, reason: String)
 
@@ -294,7 +298,7 @@ public struct DiagnosticRunner: Sendable {
             group.addTask { await self.gatherOverTheAPI(checks: checks, into: measurements) }
             group.addTask {
                 let appRoot = await self.timed { () async -> AppRootMeasurement in
-                    checks.contains(.appRoot) ? await self.appRootMeasurement() : .intact
+                    checks.contains(.appRoot) ? await self.appRootMeasurement() : .intact(root: nil)
                 }
                 await measurements.appRoot(appRoot.value, took: appRoot.elapsed)
             }
@@ -412,7 +416,9 @@ public struct DiagnosticRunner: Sendable {
     private func appRootMeasurement() async -> AppRootMeasurement {
         switch await probe.runtimeStatus() {
         case .output(let status):
-            guard let root = RuntimeStatusParser.missingAppRoot(status) else { return .intact }
+            guard let root = RuntimeStatusParser.missingAppRoot(status) else {
+                return .intact(root: RuntimeStatusParser.appRoot(status))
+            }
             return .missing(root)
         case .failed(let reason):
             return .unmeasurable(reason: reason)
@@ -478,17 +484,21 @@ public struct DiagnosticRunner: Sendable {
             }
             let unroutable = NetworkRouteHealth.unroutableNetworks(publishing, routes: table)
             if !unroutable.isEmpty { return .unroutable(unroutable) }
-            guard uncheckable.isEmpty else { return Self.noSubnetReported(uncheckable) }
-            return .reachable(publishing)
+            return .reachable(publishing, uncheckable: uncheckable)
         }
     }
 
     /// F-003: `CStackCommands.swift:81`, with the reason the CLI leaves to its own line.
     private static func noSubnetReported(_ networks: [String]) -> RoutesMeasurement {
         .unmeasurable(
-            summary: "Container routes: cannot check \(networks.joined(separator: ", ")) — no subnet reported",
+            summary: noSubnetLine(networks),
             reason: "The runtime reported no subnet for these networks, so the host route cannot be judged."
         )
+    }
+
+    /// One spelling for `CStackCommands.swift:81`, whether it stands alone or follows `:67`.
+    static func noSubnetLine(_ networks: [String]) -> String {
+        "Container routes: cannot check \(networks.joined(separator: ", ")) — no subnet reported"
     }
 
     private static let unreadableRoutingTable = "Container routes: could not read the routing table"

@@ -267,16 +267,17 @@ struct DiagnosticRunnerMemoryTests {
         )
     }
 
-    // Today's CLI returns at `CStackCommands.swift:46` before it reaches the memory report, so
-    // there is no line to reproduce and nothing was measured.
-    @Test("a runtime with nothing running spends no inspect and claims no verdict")
-    func nothingRunningIsSkippedRatherThanPassed() async {
+    // F-003's table, row 7: today's CLI returns at `CStackCommands.swift:46` before the memory
+    // report, and the sanctioned line for that state is a verdict, not the silence of `.skipped`.
+    @Test("a runtime with nothing running says so and spends no inspect")
+    func nothingRunningIsAnsweredWithoutAnInspect() async {
         let transport = runtime(containers: [])
         let check = await makeRunner(transport: transport, hostMemoryBytes: hostBytes)
             .run(checks: CheckID.cliSet)
             .check(.memoryCommitment)
-        #expect(check?.verdict == .skipped)
-        #expect(check?.verdict != .ok)
+        #expect(check?.verdict == .ok)
+        #expect(check?.verdict != .skipped)
+        #expect(check?.summary == "Container memory limits: no running containers to check")
         #expect(check?.remedy == nil)
         #expect(await inspectPaths(of: transport).isEmpty)
     }

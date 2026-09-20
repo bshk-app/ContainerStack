@@ -16,19 +16,36 @@ struct DoctorTextRendererTests {
     /// so what a failed call reports is whatever Foundation bridges it to.
     private let transportFailure = UnixSocketError.timedOut.localizedDescription
 
-    private var statusWithMissingRoot: String {
+    private var statusWithMissingRoot: String { statusWith(root: missingRoot) }
+
+    private func statusWith(root: String) -> String {
         """
         FIELD              VALUE
         status             running
-        appRoot            \(missingRoot)
+        appRoot            \(root)
         installRoot        /usr/local/
         """
+    }
+
+    /// `.intact` is only reached for a root that is there, so the golden for the line the CLI
+    /// prints at `:38` needs a directory that exists.
+    private func makeIntactRoot() throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appending(path: "doctor-root-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
     }
 
     private let publishingContainers = """
         [{"Id":"c1","Names":["/web"],"State":"running",
           "Ports":[{"PrivatePort":80,"PublicPort":8080,"Type":"tcp"}],
           "NetworkSettings":{"Networks":{"compose_default":{}}}}]
+        """
+    /// One network the routing table can answer for and one the runtime listed no record for, which
+    /// is what makes `uncheckablePublishingNetworks` non-empty next to a reachable verdict.
+    private let publishingOnTwoNetworks = """
+        [{"Id":"c1","Names":["/web"],"State":"running",
+          "Ports":[{"PrivatePort":80,"PublicPort":8080,"Type":"tcp"}],
+          "NetworkSettings":{"Networks":{"compose_default":{},"legacy_default":{}}}}]
         """
     private let networksWithSubnet = """
         [{"Id":"n1","Name":"compose_default","Driver":"bridge",
@@ -38,6 +55,12 @@ struct DoctorTextRendererTests {
         Internet:
         Destination        Gateway            Flags        Netif
         default            192.168.1.1        UGScg          en0
+        """
+    private let routedTable = """
+        Internet:
+        Destination        Gateway            Flags        Netif
+        default            192.168.1.1        UGScg          en0
+        192.168.64         link#18            UC       bridge100
         """
 
     private func inspectResponse(id: String, memory: Int64) -> Data {
@@ -87,11 +110,14 @@ struct DoctorTextRendererTests {
         return DoctorTextRenderer.render(report)
     }
 
-    // Derived from `CStackCommands.swift:32-36` and `:56`, `:120`. The bridge line is F-003's
-    // one behavioural addition; `:38` has no projection behind it and is absent (reported).
+    // Derived from `CStackCommands.swift:32-36`, `:38` and `:56`, `:120`, in the order the CLI
+    // prints them: storage follows the version block rather than leading the report.
     @Test("a healthy runtime renders the CLI's block in the CLI's order")
-    func aHealthyRuntimeRendersTodaysLines() async {
+    func aHealthyRuntimeRendersTodaysLines() async throws {
+        let root = try makeIntactRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
         let text = await rendered(
+            runtimeStatus: .output(statusWith(root: root.path)),
             transport: runtime(
                 containers: .success(jsonResponse(#"[{"Id":"c0","Names":["/c0"],"State":"running"}]"#)),
                 networks: .success(jsonResponse("[]")),
@@ -108,15 +134,16 @@ struct DoctorTextRendererTests {
                 Engine: 1.7.0
                 Containers: 1
                 Images: 0
+                Runtime storage: \(root.path)
                 Container routes: no running container publishes ports
                 Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory
                 """
         )
     }
 
-    // Derived from `CStackCommands.swift:25-27`. `:24` prints the socket line first and has no
-    // projection behind it in this state, so it is absent (reported).
-    @Test("a missing app root renders the three lines the CLI prints for it")
+    // Derived from `CStackCommands.swift:24-27`: the socket line leads, because `resolve` reaches
+    // this state only with the socket answering.
+    @Test("a missing app root renders the four lines the CLI prints for it")
     func aMissingAppRootRendersTodaysLines() async {
         let text = await rendered(
             runtimeStatus: .output(statusWithMissingRoot),
@@ -124,6 +151,7 @@ struct DoctorTextRendererTests {
         )
         #expect(
             text == """
+                Docker socket: healthy
                 Runtime storage: MISSING — storing into \(missingRoot), which no longer exists.
                 Images, volumes and containers kept there cannot be found.
                 The restart moves it back to the default location. Run: cstack runtime restart
@@ -182,8 +210,8 @@ struct DoctorTextRendererTests {
         #expect(!text.contains("Runtime storage:"))
     }
 
-    // F-003 §2.1, row 1. Today's CLI aborts here, so only the table's line is owed; the reason
-    // the probe gave follows it, which the table does not enumerate (reported).
+    // F-003 §2.1, rows 1 and 7. Today's CLI aborts here, so only the table's lines are owed; the
+    // reason the probe gave follows the first, which the table does not enumerate (reported).
     @Test("a status probe nobody could read renders the unknown-storage line")
     func anUnreadableStatusProbeRendersTheUnknownLine() async {
         let text = await rendered(
@@ -193,14 +221,15 @@ struct DoctorTextRendererTests {
         #expect(
             text == """
                 Docker bridge: ours
-                Runtime storage: UNKNOWN — the runtime status could not be read.
-                \(probeFailure)
                 Docker socket: healthy
                 API version: 1.43
                 Engine: 1.7.0
                 Containers: 0
                 Images: 0
+                Runtime storage: UNKNOWN — the runtime status could not be read.
+                \(probeFailure)
                 Container routes: no running containers to check
+                Container memory limits: no running containers to check
                 """
         )
     }
@@ -241,6 +270,7 @@ struct DoctorTextRendererTests {
                 Images: 0
                 Container routes: UNKNOWN — the Docker API did not answer.
                 \(transportFailure)
+                Container memory limits: no running containers to check
                 """
         )
     }
@@ -259,6 +289,7 @@ struct DoctorTextRendererTests {
                 Containers: 0
                 Images: 0
                 Container routes: no running containers to check
+                Container memory limits: no running containers to check
                 """
         )
     }
@@ -289,13 +320,89 @@ struct DoctorTextRendererTests {
         )
     }
 
-    // F-003 §2.1, row 7, and the one row today's projection cannot render: the memory check is
-    // `.skipped` in this state, and a skipped check is what the foreign-bridge row renders as silence.
-    @Test("a runtime with nothing running renders no memory line at all")
-    func nothingRunningRendersNoMemoryLine() async {
+    // F-003 §2.1, row 7: the CLI returns before the memory report here, and the table sanctions
+    // the line that says so, which a `.skipped` verdict would render as silence.
+    @Test("a runtime with nothing running renders the memory line the table sanctions")
+    func nothingRunningRendersTheMemoryLine() async {
         let text = await rendered(transport: quietRuntime(), hostMemoryBytes: hostBytes)
         #expect(text.contains("Container routes: no running containers to check"))
-        #expect(!text.contains("Container memory limits"))
+        #expect(text.contains("Container memory limits: no running containers to check"))
+    }
+
+    // Derived from `CStackCommands.swift:67` and `:81`, which the CLI prints one after the other:
+    // a network nobody can judge does not withdraw the verdict on the networks that were judged.
+    @Test("a reachable network and an unjudgeable one both render")
+    func reachableNetworksSurviveAnUnjudgeableSibling() async {
+        let text = await rendered(
+            routingTable: .output(routedTable),
+            transport: runtime(
+                containers: .success(jsonResponse(publishingOnTwoNetworks)),
+                networks: .success(jsonResponse(networksWithSubnet)),
+                info: #"{"Containers":1,"Images":1}"#,
+                inspects: ["c1": .success(inspectResponse(id: "c1", memory: 4_000_000_000))]
+            ),
+            hostMemoryBytes: hostBytes
+        )
+        #expect(
+            text == """
+                Docker bridge: ours
+                Docker socket: healthy
+                API version: 1.43
+                Engine: 1.7.0
+                Containers: 1
+                Images: 1
+                Container routes: reachable (compose_default (192.168.64.0/24))
+                Container routes: cannot check legacy_default — no subnet reported
+                Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory
+                """
+        )
+    }
+
+    // F-004 precedence and reading order are two lists that happen to overlap. Pinned here and in
+    // `DiagnosticRunnerTests.theReportEmitsChecksInTheDeclaredOrder`, so moving one cannot move the other.
+    @Test("the CLI print order is its own list, pinned literally")
+    func thePrintOrderIsPinnedApartFromPrecedence() {
+        #expect(
+            DoctorTextRenderer.printOrder == [
+                .foreignBridge, .socket, .versions, .appRoot, .routes, .dockerContext,
+                .memoryCommitment,
+            ]
+        )
+        #expect(DoctorTextRenderer.printOrder != CheckID.allCases)
+        // Total over `CheckID`: a new check has to be given a place to print rather than vanishing.
+        #expect(Set(DoctorTextRenderer.printOrder) == Set(CheckID.allCases))
+        #expect(DoctorTextRenderer.printOrder.count == CheckID.allCases.count)
+    }
+
+    @Test("a precedence-ordered report renders in print order")
+    func theRendererReordersAPrecedenceOrderedReport() {
+        let report = DiagnosticReport(
+            checks: [
+                DiagnosticCheck(
+                    id: .appRoot,
+                    verdict: .ok,
+                    summary: "Runtime storage: /tmp/root",
+                    detail: nil,
+                    remedy: nil,
+                    duration: .zero
+                ),
+                DiagnosticCheck(
+                    id: .socket,
+                    verdict: .ok,
+                    summary: "Docker socket: healthy",
+                    detail: nil,
+                    remedy: nil,
+                    duration: .zero
+                ),
+            ],
+            ranAt: diagnosticClockDate
+        )
+        #expect(
+            DoctorTextRenderer.render(report) == """
+                Docker socket: healthy
+                Runtime storage: /tmp/root
+                """
+        )
     }
 
     // The hazard: the advice is both a `detail` line and the remedy, and here a trailing line

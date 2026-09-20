@@ -647,7 +647,7 @@ assert the timed-out check's `duration` is at least the budget rather than `.zer
 
 ---
 
-### [T-016] DoctorTextRenderer + goldens (F-003, F-012)
+### [T-016] DoctorTextRenderer + goldens (F-003, F-012)  `[DONE:2026-09-20]`
 
 **Files:**
 - Create: `Sources/ContainerStackCore/DoctorTextRenderer.swift`
@@ -665,7 +665,6 @@ Four goldens: healthy, missing-app-root, unroutable-network, foreign-bridge.
 
 ---
 
-### [T-017] CLI becomes a formatter
 ### [T-016a] Stop the CLI dropping and reordering lines
 
 The T-016 goldens exposed four lines today's `cstack doctor` prints that the
@@ -726,6 +725,7 @@ is what turns them into a drift detector instead of a tautology.
 
 ---
 
+### [T-017] CLI becomes a formatter
 
 **Files:** modify `Sources/CStackCLI/CStackCommands.swift:8-145` — `doctor`
 becomes `print(DoctorTextRenderer.render(await runner.run(checks: .cliSet)))`.

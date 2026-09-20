@@ -224,6 +224,11 @@ struct DiagnosticRunnerMemoryTests {
                 """
         )
         #expect(check?.remedy == .manual("Stop a container or recreate it with a smaller --memory."))
+        // T-016 cannot assume the remedy is the last detail line: here the incomplete-total
+        // line follows it, so dedupe must match anywhere in detail, not just the tail.
+        let advice = "Stop a container or recreate it with a smaller --memory."
+        #expect(check?.detail?.split(separator: "\n").last.map(String.init) != advice)
+        #expect(check?.detail?.contains(advice) == true)
         // F-013: the exception also decides what a partly measured over-commitment contributes.
         #expect(report.verdict == .warning)
         #expect(report.verdict != .indeterminate)
@@ -245,6 +250,8 @@ struct DiagnosticRunnerMemoryTests {
             .check(.memoryCommitment)
         #expect(check?.verdict == .indeterminate)
         #expect(check?.verdict != .warning)
+        // The ordering itself: the host-unknown wording wins, not the comparison against nothing.
+        #expect(check?.summary == "Container memory limits: 14.0 GB configured (host memory unknown)")
         #expect(check?.remedy == nil)
     }
 

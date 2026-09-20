@@ -751,20 +751,29 @@ Goldens covering it must be literals, never interpolations of the error.
 
 ---
 
-### [T-016d] Close the class: `CancellationError`
+### [T-016d] `CancellationError` wording — app surface only, not the CLI
 
-The T-016c reviewer enumerated every error type that can escape into
-`DiagnosticRunner`'s four generic `error.localizedDescription` catches
-(`:392`, `:410`, `:439`, `:463`). All now carry chosen wording except one:
-`CancellationError` escapes unwrapped from `try await Task.sleep(for:
-retryPolicy.delay)` at `DockerAPIClient.swift:467` and renders as
-`The operation couldn't be completed. (Swift.CancellationError error 1.)`.
+The T-016c reviewer listed `CancellationError` as the last type able to reach
+`DiagnosticRunner`'s generic `error.localizedDescription` catches (`:392`,
+`:410`, `:439`, `:463`) with Foundation bridge text, escaping from
+`try await Task.sleep(for: retryPolicy.delay)` at `DockerAPIClient.swift:467`.
 
-It is a stdlib type, so the fix is at the throw site, not the type: catch the
-cancellation in the retry loop and surface it as a `DockerAPIError` case with
-our own wording, or let the runner's catches translate it.
+**Re-checked: it cannot reach them.** `signals(for:)` runs the gather in an
+*unstructured* `Task {}` whose handle is discarded (`DiagnosticRunner.swift:273`),
+and an unstructured task does not inherit cancellation from its caller. Only the
+budget timer is cancelled (`:282`). The comment at `:268` states the same
+property: "nothing cancellation reaches, so the budget stops waiting and never
+stops the probe." The reviewer's reproduction cancelled a task directly, which
+the runner never does.
 
-Verified empirically by the reviewer, not inferred.
+So no rendered `cstack doctor` line can carry that text, and this does not gate
+T-017 or anything else in the CLI.
+
+What remains is the **app** surface, where tasks genuinely are cancelled and the
+same client is used. Worth doing for that reason alone, at ordinary priority:
+wrap the retry-loop cancellation in a `DockerAPIError` case with chosen wording.
+Scope it to the app's error presentation and pin both description paths, as
+T-016b/c did.
 
 **Depends on:** T-016c
 

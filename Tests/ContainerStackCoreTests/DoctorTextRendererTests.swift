@@ -270,6 +270,30 @@ struct DoctorTextRendererTests {
         )
     }
 
+    // T-016c: a response the parser rejects reaches the same line, and the words have to be ours.
+    @Test("a network listing that could not be parsed renders our words for the parse failure")
+    func anUnparseableNetworkListingRendersTheParseFailure() async {
+        let text = await rendered(
+            transport: runtime(
+                containers: .success(jsonResponse("[]")),
+                networks: .success(Data("not an HTTP response at all".utf8))
+            )
+        )
+        #expect(
+            text == """
+                Docker bridge: ours
+                Docker socket: healthy
+                API version: 1.43
+                Engine: 1.7.0
+                Containers: 0
+                Images: 0
+                Container routes: UNKNOWN — the Docker API did not answer.
+                The Docker API sent a response whose headers never ended.
+                Container memory limits: no running containers to check
+                """
+        )
+    }
+
     // F-003 §2.1, row 6.
     @Test("a socket whose holder nobody could see renders the unknown-bridge line")
     func anUnseenBridgeHolderRendersTheUnknownLine() async {

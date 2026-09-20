@@ -665,7 +665,7 @@ Four goldens: healthy, missing-app-root, unroutable-network, foreign-bridge.
 
 ---
 
-### [T-016a] Stop the CLI dropping and reordering lines
+### [T-016a] Stop the CLI dropping and reordering lines  `[DONE:2026-09-20]`
 
 The T-016 goldens exposed four lines today's `cstack doctor` prints that the
 renderer never emits, plus an order change. Dropping output is a regression,
@@ -706,7 +706,7 @@ facts the projection already had and threw away.
 
 ---
 
-### [T-016b] Our own wording for probe failures
+### [T-016b] Our own wording for probe failures  `[DONE:2026-09-20]`
 
 Amber rows render a second line from `error.localizedDescription`.
 `UnixSocketError` (`DockerAPIClient.swift:686`) conforms only to
@@ -725,7 +725,7 @@ is what turns them into a drift detector instead of a tautology.
 
 ---
 
-### [T-016c] The parse error reaches stdout too
+### [T-016c] The parse error reaches stdout too  `[DONE:2026-09-20]`
 
 Same defect as T-016b, found by its reviewer and more exposed than
 `UnixSocketError` was. `DockerHTTPParseError` (`DockerHTTPResponse.swift:15`)
@@ -748,6 +748,25 @@ with `CustomStringConvertible` unpinned and its reviewer had to add that.
 Goldens covering it must be literals, never interpolations of the error.
 
 **Depends on:** T-016b
+
+---
+
+### [T-016d] Close the class: `CancellationError`
+
+The T-016c reviewer enumerated every error type that can escape into
+`DiagnosticRunner`'s four generic `error.localizedDescription` catches
+(`:392`, `:410`, `:439`, `:463`). All now carry chosen wording except one:
+`CancellationError` escapes unwrapped from `try await Task.sleep(for:
+retryPolicy.delay)` at `DockerAPIClient.swift:467` and renders as
+`The operation couldn't be completed. (Swift.CancellationError error 1.)`.
+
+It is a stdlib type, so the fix is at the throw site, not the type: catch the
+cancellation in the retry loop and surface it as a `DockerAPIError` case with
+our own wording, or let the runner's catches translate it.
+
+Verified empirically by the reviewer, not inferred.
+
+**Depends on:** T-016c
 
 ---
 

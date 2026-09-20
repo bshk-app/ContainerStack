@@ -779,13 +779,41 @@ T-016b/c did.
 
 ---
 
-### [T-017] CLI becomes a formatter
+### [T-017] CLI becomes a formatter  `[DONE:2026-09-20]`
 
 **Files:** modify `Sources/CStackCLI/CStackCommands.swift:8-145` — `doctor`
 becomes `print(DoctorTextRenderer.render(await runner.run(checks: .cliSet)))`.
 All parsing and branching leaves the CLI.
 
 **Depends on:** T-016
+
+---
+
+### [T-017a] A dead socket makes `cstack doctor` print nothing
+
+Found by the T-017 reviewer, reproduced against the binary:
+`cstack doctor --socket /tmp/nonexistent.sock` writes **one byte** — `print`'s
+own newline — and exits 0. Every check is `.skipped`, so the renderer emits an
+empty string.
+
+A refused socket is `SocketMeasurement.silent`, not `.unmeasurable`, so the
+`.offline` branch of `project` (`DiagnosticRunner+Projection.swift:57`) never
+reaches the `indeterminate` arm that F-003's table sanctions for "socket timed
+out". Only a timeout does.
+
+This also loses a line today's CLI prints. `resolve` is handed
+`missingAppRoot: socket.responds ? appRoot.missingRoot : nil`
+(`DiagnosticRunner.swift:362`), so a missing app root measured while the socket
+is down cannot reach `.detached`. The old CLI pinged, printed
+`Docker socket: not responding` (`CStackCommands.swift:24`) and then all three
+missing-root lines regardless of the socket. That state now renders silence,
+which F-003's rule 1 does not permit.
+
+The gating is deliberate — it is how `RuntimeViewModel.applyState` calls
+`resolve`, and F-004 keeps one ranking — so the repair is a spec decision about
+whether a missing app root outranks a dead socket, not a projection tweak.
+
+**Depends on:** T-017
 
 ---
 

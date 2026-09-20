@@ -93,6 +93,9 @@ printf 'App bundle: %s\n' "$APP"
 
 if [[ -S "$SOCKET_PATH" ]]; then
     printf '==> Running live Docker API smoke test against %s\n' "$SOCKET_PATH"
+    # `doctor` reports failures instead of throwing them (F-003), so under `set -e` it can no
+    # longer fail this script. `ping` still exits non-zero, and is what asserts the API answered.
+    "$CLI" ping --socket "$SOCKET_PATH"
     "$CLI" doctor --socket "$SOCKET_PATH"
 else
     printf '==> Skipping live Docker API smoke test; socket not found: %s\n' "$SOCKET_PATH"

@@ -625,7 +625,7 @@ it, and re-check it still fails if the whole exception is removed.
 
 ---
 
-### [T-015b] Per-check `duration` (NFR-005)
+### [T-015b] Per-check `duration` (NFR-005)  `[DONE:2026-09-20]`
 
 
 `DiagnosticRunner+Verdicts.swift` passes `duration: .zero` at all six projection

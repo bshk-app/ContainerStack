@@ -176,7 +176,7 @@ extension CStackCLI {
         return listing.contains(label)
     }
 
-    private static func runtimeConfiguration(socketPath: String?) -> RuntimeProcessConfiguration {
+    static func runtimeConfiguration(socketPath: String?) -> RuntimeProcessConfiguration {
         RuntimeProcessConfiguration.make(
             socktainerPath: bundledSocktainerPath(),
             socketPath: socketPath ?? RuntimeProcessConfiguration.defaultSocketPath,

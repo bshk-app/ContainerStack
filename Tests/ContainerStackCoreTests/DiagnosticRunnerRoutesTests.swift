@@ -12,6 +12,13 @@ struct DiagnosticRunnerRoutesTests {
           "Ports":[{"PrivatePort":80,"PublicPort":8080,"Type":"tcp"}],
           "NetworkSettings":{"Networks":{"compose_default":{}}}}]
         """
+    /// One network `/networks` describes and one it does not, which is the only input that puts a
+    /// judged and an unjudgeable network inside a single routes check.
+    private let publishingOnTwoNetworks = """
+        [{"Id":"c1","Names":["/web"],"State":"running",
+          "Ports":[{"PrivatePort":80,"PublicPort":8080,"Type":"tcp"}],
+          "NetworkSettings":{"Networks":{"compose_default":{},"legacy_default":{}}}}]
+        """
     private let idleContainers = """
         [{"Id":"c1","Names":["/web"],"State":"running",
           "Ports":[{"PrivatePort":80,"Type":"tcp"}],
@@ -220,6 +227,21 @@ struct DiagnosticRunnerRoutesTests {
         #expect(check?.remedy == nil)
     }
 
+    // T-016a let `.reachable` carry `uncheckable`, which makes a fourth input: one network judged,
+    // one not. Pinned on the verdict, because the rendered text is identical either way (#45).
+    @Test("a reachable network does not launder an unjudgeable sibling")
+    func aReachableNetworkDoesNotLaunderAnUnjudgeableSibling() async {
+        let check = await routes(
+            table: .output(routedTable),
+            containers: publishingOnTwoNetworks,
+            networks: .success(jsonResponse(networksWithSubnet))
+        )
+        #expect(check?.verdict == .indeterminate)
+        #expect(check?.verdict != .ok)
+        #expect(check?.summary == "Container routes: reachable (\(unroutableLabel))")
+        #expect(check?.detail == "Container routes: cannot check legacy_default \u{2014} no subnet reported")
+        #expect(check?.remedy == nil)
+    }
     // NFR-002: the routes check is two Docker calls, and neither is paid three times.
     @Test("the routes check asks for containers and networks once each")
     func theRoutesCheckAsksEachEndpointOnce() async {

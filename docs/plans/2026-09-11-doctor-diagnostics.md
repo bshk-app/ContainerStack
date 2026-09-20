@@ -600,6 +600,32 @@ overall deadline.
 ---
 
 ### [T-015b] Per-check `duration` (NFR-005)
+### [T-014a] `.exceeding` survives a partial inspect failure
+
+**Files:** modify `Sources/ContainerStackCore/DiagnosticRunner.swift` (the
+`commitmentCheck`/`memoryCheck` path) and
+`Tests/ContainerStackCoreTests/DiagnosticRunnerMemoryTests.swift`.
+
+Today any failed `inspectContainer` makes the whole memory check
+`.indeterminate`. That is right when a missing sample could still change the
+answer — `.within` and `.approaching` — but wrong for `.exceeding`, which is
+monotone: an uninspected limit only adds to the committed total, so nothing
+further can un-exceed it. Amber there hides a real risk and drops the `.manual`
+remedy while the CLI text still prints the HIGH lines.
+
+**Step 1 — RED:** a fixture where the inspected containers already exceed host
+memory *and* one inspect failed asserts `.warning`, the `.manual` remedy, and a
+`detail` that says the measurement was incomplete. A sibling case pins that
+`.within` with a failed inspect stays `.indeterminate`.
+
+**Watch:** `aPartiallyFailedInspectIsIndeterminateAndNamesTheGap` already pins
+today's behaviour. Narrow it to the non-monotone verdicts rather than deleting
+it, and re-check it still fails if the whole exception is removed.
+
+**Depends on:** T-014
+
+---
+
 
 `DiagnosticRunner+Verdicts.swift` passes `duration: .zero` at all six projection
 sites, so NFR-005's "an incident can name which probe consumed the budget" is

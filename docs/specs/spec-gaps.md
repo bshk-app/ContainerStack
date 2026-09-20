@@ -53,9 +53,17 @@ below; all five remaining open questions are genuinely optional.
 5. **`MemoryCommitment.exceeding` → `.warning`** with a `.manual` remedy. Over-
    commitment is a risk, not a broken state; red on a working system devalues
    red. (Closes OQ-4.)
-6. **"Host memory unknown" and failed `inspectContainer` → `.indeterminate`.**
-   Both are measurement failures; the CLI text is unchanged, only the internal
-   label. (Closes OQ-4's second half.)
+6. **"Host memory unknown" and failed `inspectContainer` → `.indeterminate`,
+   *except* when what was already measured is `.exceeding`.** Both are
+   measurement failures, so amber is right when a missing sample could still
+   change the answer — which is the case for `.within` and `.approaching`.
+   `.exceeding` is different because it is **monotone**: an uninspected limit
+   can only add to the committed total, so no further measurement can
+   un-exceed. Downgrading it to amber would hide a real risk and drop its
+   `.manual` remedy while the CLI text still prints the HIGH lines. For
+   `.exceeding`, keep `.warning` and the remedy, and say in `detail` that the
+   measurement was incomplete. (Closes OQ-4's second half; the exception was
+   raised by the T-014 reviewer and decided by the user.)
 7. **`repairDockerContextRecord() async -> Bool`** extracted from the private
    method. Polling keeps ignoring the result; Doctor renders failure. (Closes
    OQ-7.)

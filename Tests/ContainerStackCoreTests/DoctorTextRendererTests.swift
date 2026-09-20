@@ -11,11 +11,6 @@ struct DoctorTextRendererTests {
     private let missingRoot = "/tmp/containerstack-doctor-tests/root-that-is-gone"
     private let probeFailure = "/usr/local/bin/container could not be run: ENOENT"
     private let foreignLsofOutput = "p4242\ncsocktainer\nn\(diagnosticSocketPath)"
-
-    /// The transport's own words, not the Doctor's: `UnixSocketError` carries no message,
-    /// so what a failed call reports is whatever Foundation bridges it to.
-    private let transportFailure = UnixSocketError.timedOut.localizedDescription
-
     private var statusWithMissingRoot: String { statusWith(root: missingRoot) }
 
     private func statusWith(root: String) -> String {
@@ -244,9 +239,9 @@ struct DoctorTextRendererTests {
         #expect(
             text == """
                 Docker socket: UNKNOWN — the socket did not answer before the timeout.
-                \(transportFailure)
+                The connection to the Docker socket timed out.
                 API version: UNKNOWN — the Docker API did not answer.
-                \(transportFailure)
+                The connection to the Docker socket timed out.
                 """
         )
     }
@@ -269,7 +264,7 @@ struct DoctorTextRendererTests {
                 Containers: 0
                 Images: 0
                 Container routes: UNKNOWN — the Docker API did not answer.
-                \(transportFailure)
+                The connection to the Docker socket timed out.
                 Container memory limits: no running containers to check
                 """
         )
@@ -313,9 +308,9 @@ struct DoctorTextRendererTests {
                 Containers: 0
                 Images: 0
                 Container routes: UNKNOWN — the Docker API did not answer.
-                \(transportFailure)
+                The connection to the Docker socket timed out.
                 Container memory limits: UNKNOWN — the Docker API did not answer.
-                \(transportFailure)
+                The connection to the Docker socket timed out.
                 """
         )
     }

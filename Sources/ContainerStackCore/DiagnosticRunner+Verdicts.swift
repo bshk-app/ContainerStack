@@ -3,14 +3,14 @@ import Foundation
 /// How each verdict is spelled. Separated from the projection so `DiagnosticRunner.swift`
 /// carries only what a check decides, never how a `DiagnosticCheck` is assembled.
 extension DiagnosticRunner {
-    static func passed(_ id: CheckID, summary: String, detail: String?) -> DiagnosticCheck {
+    static func passed(_ id: CheckID, summary: String, detail: String?, took duration: Duration) -> DiagnosticCheck {
         DiagnosticCheck(
             id: id,
             verdict: .ok,
             summary: summary,
             detail: detail,
             remedy: nil,
-            duration: .zero
+            duration: duration
         )
     }
 
@@ -18,7 +18,8 @@ extension DiagnosticRunner {
         _ id: CheckID,
         summary: String,
         detail: String?,
-        remedy: Remedy?
+        remedy: Remedy?,
+        took duration: Duration
     ) -> DiagnosticCheck {
         DiagnosticCheck(
             id: id,
@@ -26,7 +27,7 @@ extension DiagnosticRunner {
             summary: summary,
             detail: detail,
             remedy: remedy,
-            duration: .zero
+            duration: duration
         )
     }
 
@@ -36,7 +37,8 @@ extension DiagnosticRunner {
         _ id: CheckID,
         summary: String,
         detail: String?,
-        remedy: Remedy?
+        remedy: Remedy?,
+        took duration: Duration
     ) -> DiagnosticCheck {
         DiagnosticCheck(
             id: id,
@@ -44,13 +46,18 @@ extension DiagnosticRunner {
             summary: summary,
             detail: detail,
             remedy: remedy,
-            duration: .zero
+            duration: duration
         )
     }
 
     /// Amber, and the reason the measurement failed travels with it: "could not tell" is
     /// only actionable when the report names what did not answer.
-    static func indeterminate(_ id: CheckID, summary: String, detail: String?) -> DiagnosticCheck {
+    static func indeterminate(
+        _ id: CheckID,
+        summary: String,
+        detail: String?,
+        took duration: Duration
+    ) -> DiagnosticCheck {
         DiagnosticCheck(
             id: id,
             verdict: .indeterminate,
@@ -58,31 +65,33 @@ extension DiagnosticRunner {
             detail: detail,
             // No repair: an unmeasured root gives no grounds to restart anything.
             remedy: nil,
-            duration: .zero
+            duration: duration
         )
     }
 
     /// A reason, never a bare "not applicable": the check below a failure is grey because
     /// something above it already decided, and the report has to say what.
-    static func skipped(_ id: CheckID, because reason: String) -> DiagnosticCheck {
+    static func skipped(_ id: CheckID, because reason: String, took duration: Duration) -> DiagnosticCheck {
         DiagnosticCheck(
             id: id,
             verdict: .skipped,
             summary: reason,
             detail: nil,
             remedy: nil,
-            duration: .zero
+            duration: duration
         )
     }
 
-    static func notRun(_ id: CheckID) -> DiagnosticCheck {
+    /// Still timed: a healthy app root reaches here with a probe behind it, and what that
+    /// probe cost is the one thing this verdict's wording does not say.
+    static func notRun(_ id: CheckID, took duration: Duration) -> DiagnosticCheck {
         DiagnosticCheck(
             id: id,
             verdict: .skipped,
             summary: "Not run.",
             detail: nil,
             remedy: nil,
-            duration: .zero
+            duration: duration
         )
     }
 }

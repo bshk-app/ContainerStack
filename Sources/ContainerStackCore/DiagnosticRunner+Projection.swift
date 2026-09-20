@@ -7,10 +7,13 @@ extension DiagnosticRunner {
     /// rather than silently inheriting one.
     static func project(_ signals: Signals, onto id: CheckID) -> DiagnosticCheck {
         let state = signals.state
+        // What this check's own measurement cost, carried whatever the verdict: a check the
+        // precedence order made moot still spent whatever it spent before that was known.
+        let took = signals.duration(of: id)
         switch state {
         case .foreignBridge(let socketPath):
             guard id == .foreignBridge else {
-                return skipped(id, because: "Another Docker bridge holds \(socketPath).")
+                return skipped(id, because: "Another Docker bridge holds \(socketPath).", took: took)
             }
             // F-005: a restart of our runtime cannot evict a process it did not start, so the
             // only honest repair is one the person performs.
@@ -20,11 +23,16 @@ extension DiagnosticRunner {
                 detail: state.detail,
                 remedy: .manual(
                     "Stop the other Docker bridge holding \(socketPath), then start the runtime again."
-                )
+                ),
+                took: took
             )
         case .detached(let appRoot):
             guard id == .appRoot else {
-                return skipped(id, because: "The runtime is storing into \(appRoot), which no longer exists.")
+                return skipped(
+                    id,
+                    because: "The runtime is storing into \(appRoot), which no longer exists.",
+                    took: took
+                )
             }
             // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:25-27`),
             // copied rather than reworded, because T-016 renders these back out.
@@ -35,15 +43,16 @@ extension DiagnosticRunner {
                     Images, volumes and containers kept there cannot be found.
                     The restart moves it back to the default location. Run: cstack runtime restart
                     """,
-                remedy: .restartRuntime
+                remedy: .restartRuntime,
+                took: took
             )
         case .offline, .starting, .unknown:
             // A socket that timed out was not measured, and only the checks that needed it turn
             // amber: the rest are grey because this one already decided (F-010).
             if case .unmeasurable(let reason) = signals.socket, id == .socket || id == .versions {
-                return indeterminate(id, summary: unmeasuredSummary(for: id), detail: reason)
+                return indeterminate(id, summary: unmeasuredSummary(for: id), detail: reason, took: took)
             }
-            return skipped(id, because: state.detail ?? state.title)
+            return skipped(id, because: state.detail ?? state.title, took: took)
         case .running:
             return usableRuntimeCheck(signals, onto: id, ranked: [])
         case .degraded(let networks):
@@ -58,58 +67,66 @@ extension DiagnosticRunner {
         onto id: CheckID,
         ranked: [UnroutableNetwork]
     ) -> DiagnosticCheck {
+        let took = signals.duration(of: id)
         // Nothing outranked this check, so a probe that could not run is its own answer:
         // amber, never the grey of a check something else made moot.
         if id == .appRoot, case .unmeasurable(let reason) = signals.appRoot {
             return indeterminate(
                 id,
                 summary: "Runtime storage: UNKNOWN — the runtime status could not be read.",
-                detail: reason
+                detail: reason,
+                took: took
             )
         }
         // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:32`).
-        if id == .socket { return passed(id, summary: "Docker socket: healthy", detail: nil) }
-        if id == .versions { return versionsCheck(signals.versions) }
-        if id == .routes { return routesCheck(signals.routes, ranked: ranked) }
-        if id == .foreignBridge { return bridgeCheck(signals.bridge) }
-        if id == .memoryCommitment { return memoryCheck(signals.memory) }
-        return notRun(id)
+        if id == .socket { return passed(id, summary: "Docker socket: healthy", detail: nil, took: took) }
+        if id == .versions { return versionsCheck(signals.versions, took: took) }
+        if id == .routes { return routesCheck(signals.routes, ranked: ranked, took: took) }
+        if id == .foreignBridge { return bridgeCheck(signals.bridge, took: took) }
+        if id == .memoryCommitment { return memoryCheck(signals.memory, took: took) }
+        return notRun(id, took: took)
     }
 
     /// F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:107`, `:117`, `:120`,
     /// `:123`, `:126-128`, `:132`, `:138`, `:143`), copied rather than reworded.
-    private static func memoryCheck(_ measurement: MemoryMeasurement) -> DiagnosticCheck {
+    private static func memoryCheck(_ measurement: MemoryMeasurement, took: Duration) -> DiagnosticCheck {
         switch measurement {
         case .notAsked:
-            return notRun(.memoryCommitment)
+            return notRun(.memoryCommitment, took: took)
         case .nothingRunning:
             // `cstack doctor` returns at `CStackCommands.swift:46` before it reaches the memory
             // report, so nothing was measured and there is no line to reproduce.
-            return skipped(.memoryCommitment, because: Self.noRunningContainers)
+            return skipped(.memoryCommitment, because: Self.noRunningContainers, took: took)
         case .unmeasurable(let reason):
-            return indeterminate(.memoryCommitment, summary: Self.unlistedContainers, detail: reason)
+            return indeterminate(.memoryCommitment, summary: Self.unlistedContainers, detail: reason, took: took)
         case .noneInspected(let failures):
             return indeterminate(
                 .memoryCommitment,
                 summary: "Container memory limits: unavailable — \(failures) running container(s)"
                     + " could not be inspected.",
-                detail: nil
+                detail: nil,
+                took: took
             )
         case .inspected(let commitment, let failures):
-            return commitmentCheck(commitment, failures: failures)
+            return commitmentCheck(commitment, failures: failures, took: took)
         }
     }
 
     /// Decisions 5 and 6 in `spec-gaps.md`: over-commitment is amber rather than red, and an
     /// unread host size or a failed inspect is amber because it was not measured.
-    private static func commitmentCheck(_ commitment: MemoryCommitment, failures: Int) -> DiagnosticCheck {
+    private static func commitmentCheck(
+        _ commitment: MemoryCommitment,
+        failures: Int,
+        took: Duration
+    ) -> DiagnosticCheck {
         let trailing = trailingLines(commitment, failures: failures)
         guard commitment.hostBytes > 0 else {
             return indeterminate(
                 .memoryCommitment,
                 summary: "Container memory limits: \(ByteSize.formatted(commitment.configuredBytes))"
                     + " configured (host memory unknown)",
-                detail: trailing.isEmpty ? nil : trailing.joined(separator: "\n")
+                detail: trailing.isEmpty ? nil : trailing.joined(separator: "\n"),
+                took: took
             )
         }
 
@@ -137,12 +154,12 @@ extension DiagnosticRunner {
         // Decision 6's exception: an uninspected limit only adds, so nothing unmeasured can
         // un-exceed a total that already does. The other two verdicts a missing sample can flip.
         guard failures == 0 || commitment.verdict == .exceeding else {
-            return indeterminate(.memoryCommitment, summary: text, detail: detail)
+            return indeterminate(.memoryCommitment, summary: text, detail: detail, took: took)
         }
         guard commitment.verdict == .within else {
-            return warned(.memoryCommitment, summary: text, detail: detail, remedy: remedy)
+            return warned(.memoryCommitment, summary: text, detail: detail, remedy: remedy, took: took)
         }
-        return passed(.memoryCommitment, summary: text, detail: detail)
+        return passed(.memoryCommitment, summary: text, detail: detail, took: took)
     }
 
     /// The two lines the CLI appends after its verdict, each only when it has something to
@@ -172,16 +189,21 @@ extension DiagnosticRunner {
 
     /// The one check with no CLI line behind it: `cstack doctor` never measured ownership,
     /// so this wording is new rather than reproduced (F-003).
-    private static func bridgeCheck(_ measurement: BridgeMeasurement) -> DiagnosticCheck {
+    private static func bridgeCheck(_ measurement: BridgeMeasurement, took: Duration) -> DiagnosticCheck {
         switch measurement {
         case .notAsked:
-            return notRun(.foreignBridge)
+            return notRun(.foreignBridge, took: took)
         case .ours:
-            return passed(.foreignBridge, summary: "Docker bridge: ours", detail: nil)
+            return passed(.foreignBridge, summary: "Docker bridge: ours", detail: nil, took: took)
         case .unmeasurable(let reason):
-            return indeterminate(.foreignBridge, summary: unidentifiedHolder, detail: reason)
+            return indeterminate(.foreignBridge, summary: unidentifiedHolder, detail: reason, took: took)
         case .unseenHolder:
-            return indeterminate(.foreignBridge, summary: unidentifiedHolder, detail: Self.holderOutOfSight)
+            return indeterminate(
+                .foreignBridge,
+                summary: unidentifiedHolder,
+                detail: Self.holderOutOfSight,
+                took: took
+            )
         case .foreign(let socketPath):
             // `resolve` is the only thing that ranks ownership, so a foreign bridge it never
             // saw is reported unjudged rather than condemned twice over (F-013).
@@ -189,7 +211,8 @@ extension DiagnosticRunner {
                 .foreignBridge,
                 summary: unidentifiedHolder,
                 detail: "Another bridge was measured holding \(socketPath), "
-                    + "but the resolved runtime state did not carry it."
+                    + "but the resolved runtime state did not carry it.",
+                took: took
             )
         }
     }
@@ -203,7 +226,7 @@ extension DiagnosticRunner {
 
     /// F-003: `CStackCommands.swift:33-36` prints these four fields as one block, so they stay
     /// one check with the remaining three lines as detail.
-    private static func versionsCheck(_ measurement: VersionsMeasurement) -> DiagnosticCheck {
+    private static func versionsCheck(_ measurement: VersionsMeasurement, took: Duration) -> DiagnosticCheck {
         switch measurement {
         case .measured(let version, let info):
             return passed(
@@ -213,10 +236,16 @@ extension DiagnosticRunner {
                     Engine: \(version.version ?? "unknown")
                     Containers: \(info.containers.map(String.init) ?? "unknown")
                     Images: \(info.images.map(String.init) ?? "unknown")
-                    """
+                    """,
+                took: took
             )
         case .unmeasurable(let reason):
-            return indeterminate(.versions, summary: unmeasuredSummary(for: .versions), detail: reason)
+            return indeterminate(
+                .versions,
+                summary: unmeasuredSummary(for: .versions),
+                detail: reason,
+                took: took
+            )
         }
     }
 
@@ -230,18 +259,27 @@ extension DiagnosticRunner {
 
     /// F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:45`, `:56`, `:63`,
     /// `:67`, `:69`, `:74-75`), copied rather than reworded, because T-016 renders these back out.
-    private static func routesCheck(_ measurement: RoutesMeasurement, ranked: [UnroutableNetwork]) -> DiagnosticCheck {
+    private static func routesCheck(
+        _ measurement: RoutesMeasurement,
+        ranked: [UnroutableNetwork],
+        took: Duration
+    ) -> DiagnosticCheck {
         switch measurement {
         case .notAsked:
-            return notRun(.routes)
+            return notRun(.routes, took: took)
         case .nothingToCheck(let summary):
-            return passed(.routes, summary: summary, detail: nil)
+            return passed(.routes, summary: summary, detail: nil, took: took)
         case .reachable(let networks):
-            return passed(.routes, summary: "Container routes: reachable (\(labels(networks)))", detail: nil)
+            return passed(
+                .routes,
+                summary: "Container routes: reachable (\(labels(networks)))",
+                detail: nil,
+                took: took
+            )
         case .unroutable(let networks):
             // `resolve` is the only thing that ranks unroutability (T-008), so networks it
             // never saw are reported unjudged rather than condemned twice over.
-            guard !ranked.isEmpty else { return unrankedRoutes(networks) }
+            guard !ranked.isEmpty else { return unrankedRoutes(networks, took: took) }
             return failed(
                 .routes,
                 summary: "Container routes: NO ROUTE to \(labels(ranked))",
@@ -249,20 +287,22 @@ extension DiagnosticRunner {
                     Published ports accept connections and then hang.
                     Restarting the containers does not fix it. Run: cstack runtime restart
                     """,
-                remedy: .restartRuntime
+                remedy: .restartRuntime,
+                took: took
             )
         case .unmeasurable(let summary, let reason):
-            return indeterminate(.routes, summary: summary, detail: reason)
+            return indeterminate(.routes, summary: summary, detail: reason, took: took)
         }
     }
 
     /// Reachable only when the runner stops handing `resolve` what the probe found: the
     /// measurement stands, the verdict does not, because nothing ranked it (F-013).
-    private static func unrankedRoutes(_ networks: [UnroutableNetwork]) -> DiagnosticCheck {
+    private static func unrankedRoutes(_ networks: [UnroutableNetwork], took: Duration) -> DiagnosticCheck {
         indeterminate(
             .routes,
             summary: "Container routes: UNKNOWN — \(labels(networks)) was measured but never ranked",
-            detail: "The resolved runtime state did not carry these networks, so no route verdict can be given."
+            detail: "The resolved runtime state did not carry these networks, so no route verdict can be given.",
+            took: took
         )
     }
 

@@ -1,8 +1,33 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ContainerStackCore
 
+/// One fixed step per read, so a measured span is a count of reads rather than elapsed real
+/// time: a duration is assertable without any test waiting for one.
+private final class SteppingTicks: Sendable {
+    private let step: Duration
+    private let reads = Mutex(0)
+
+    init(step: Duration) { self.step = step }
+
+    func callAsFunction() -> Duration {
+        reads.withLock { count in
+            count += 1
+            return step * count
+        }
+    }
+}
+
+/// What the runner logged, in order, so NFR-005's line is assertable without a log stream.
+private final class RecordedLines: Sendable {
+    private let lines = Mutex<[String]>([])
+
+    var all: [String] { lines.withLock { $0 } }
+
+    func record(_ line: String) { lines.withLock { $0.append(line) } }
+}
 /// A runtime that answers every request the UI set makes, so the API branch finishes
 /// while the probes are still parked and the two are told apart.
 private func idleRuntime() -> StubDockerTransport {
@@ -159,5 +184,89 @@ struct DiagnosticRunnerBudgetTests {
             let report = await runner.run(checks: CheckID.uiSet)
             #expect(report.checks.count == CheckID.uiSet.count)
         }
+    }
+}
+
+/// NFR-005: three amber checks and no timings cannot say whether one probe hung for the
+/// whole budget or three were merely slow, which is the question an incident asks first.
+@Suite("A check's duration names the probe that consumed the budget")
+struct DiagnosticRunnerDurationTests {
+    private let budget = Duration.milliseconds(200)
+
+    @Test("a check the budget cut off carries the time it burned, never zero")
+    func anUnfinishedCheckCarriesTheTimeItBurned() async {
+        let probe = GatedSystemProbe(result: .failed(reason: "parked"))
+        let runner = makeRunner(probe: probe, transport: idleRuntime(), budget: budget)
+        let rescuer = rescue(probe)
+
+        let report = await runner.run(checks: CheckID.uiSet)
+
+        // Guards the reason this passes: the budget ended the run, not a probe answering.
+        #expect(await probe.completedCallCount == 0)
+        for id in [CheckID.appRoot, .foreignBridge] {
+            #expect(report.check(id)?.duration != .zero)
+            #expect(report.check(id)?.duration ?? .zero >= budget)
+        }
+        rescuer.cancel()
+        await probe.open()
+    }
+
+    @Test("a check that answered is cheaper than the budget the abandoned ones burned")
+    func aFinishedCheckCostsLessThanTheBudget() async {
+        let probe = GatedSystemProbe(result: .failed(reason: "parked"))
+        let runner = makeRunner(probe: probe, transport: idleRuntime(), budget: budget)
+        let rescuer = rescue(probe)
+
+        let report = await runner.run(checks: CheckID.uiSet)
+
+        #expect(await probe.completedCallCount == 0)
+        #expect(report.check(.socket)?.duration ?? budget < budget)
+        #expect(report.check(.appRoot)?.duration ?? .zero >= budget)
+        rescuer.cancel()
+        await probe.open()
+    }
+
+    @Test("a duration is read from the injected clock, never from the wall clock")
+    func aDurationComesFromTheInjectedClock() async {
+        // An hour a read, against a run that takes microseconds: no elapsed real time can
+        // produce these numbers, and no test waits for them.
+        let ticks = SteppingTicks(step: .seconds(3600))
+        let runner = makeRunner(transport: idleRuntime(), ticks: { ticks() })
+
+        let report = await runner.run(checks: CheckID.uiSet)
+
+        for id in [CheckID.socket, .versions, .appRoot, .foreignBridge, .routes] {
+            #expect(report.check(id)?.duration ?? .zero >= .seconds(3600), "\(id)")
+        }
+        // The one check nothing measures: grey, and zero by construction rather than by clock.
+        #expect(report.check(.dockerContext)?.duration == .zero)
+    }
+
+    @Test("a run with an unmeasured check logs one line naming every one of them")
+    func anIndeterminateRunLogsOneLineNamingTheChecks() async {
+        let lines = RecordedLines()
+        let runner = makeRunner(
+            transport: StubDockerTransport(results: [.failure(UnixSocketError.timedOut)]),
+            log: { lines.record($0) }
+        )
+
+        let report = await runner.run(checks: CheckID.uiSet)
+
+        let unmeasured = report.checks.filter { $0.verdict == .indeterminate }.map(\.id)
+        #expect(unmeasured == [.socket, .versions])
+        #expect(lines.all.count == 1)
+        #expect(lines.all.first?.contains("socket") == true)
+        #expect(lines.all.first?.contains("versions") == true)
+    }
+
+    @Test("a run that measured everything logs nothing")
+    func aFullyMeasuredRunLogsNothing() async {
+        let lines = RecordedLines()
+        let runner = makeRunner(transport: idleRuntime(), log: { lines.record($0) })
+
+        let report = await runner.run(checks: CheckID.uiSet)
+
+        #expect(report.checks.allSatisfy { $0.verdict != .indeterminate })
+        #expect(lines.all.isEmpty)
     }
 }

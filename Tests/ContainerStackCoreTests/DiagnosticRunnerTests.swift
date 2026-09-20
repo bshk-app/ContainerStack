@@ -25,6 +25,8 @@ func makeRunner(
     bridgePath: String = diagnosticBridgePath,
     hostMemoryBytes: Int64? = nil,
     now: Date = diagnosticClockDate,
+    ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
+    log: @escaping @Sendable (String) -> Void = { _ in },
     budget: Duration = DiagnosticRunner.defaultBudget
 ) -> DiagnosticRunner {
     DiagnosticRunner(
@@ -34,6 +36,8 @@ func makeRunner(
         bridgePath: bridgePath,
         hostMemoryBytes: { hostMemoryBytes },
         now: { now },
+        ticks: ticks,
+        log: log,
         budget: budget
     )
 }
@@ -50,6 +54,8 @@ func makeRunner(
     bridgePath: String = diagnosticBridgePath,
     hostMemoryBytes: Int64? = nil,
     now: Date = diagnosticClockDate,
+    ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
+    log: @escaping @Sendable (String) -> Void = { _ in },
     budget: Duration = DiagnosticRunner.defaultBudget
 ) -> DiagnosticRunner {
     makeRunner(
@@ -64,6 +70,8 @@ func makeRunner(
         bridgePath: bridgePath,
         hostMemoryBytes: hostMemoryBytes,
         now: now,
+        ticks: ticks,
+        log: log,
         budget: budget
     )
 }

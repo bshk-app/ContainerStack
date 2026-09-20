@@ -14,6 +14,11 @@ public struct DiagnosticRunner: Sendable {
     private let hostMemoryBytes: @Sendable () -> Int64?
     /// Injected so `ranAt` is assertable; a report never stamps itself from `Date()`.
     private let now: @Sendable () -> Date
+    /// Monotonic and separate from `now`: a wall clock adjusted mid-run would report a check
+    /// as having taken a negative time. Injected so a duration is assertable without waiting.
+    private let ticks: @Sendable () -> Duration
+    /// NFR-005's one line per run. Injected so what it says is assertable.
+    private let log: @Sendable (String) -> Void
     /// The whole run's budget, not one probe's. Injected so a test can expire it without
     /// waiting for it; the clock above stamps a report and schedules nothing.
     private let budget: Duration
@@ -29,6 +34,8 @@ public struct DiagnosticRunner: Sendable {
         bridgePath: String,
         hostMemoryBytes: @escaping @Sendable () -> Int64? = HostMemory.totalBytes,
         now: @escaping @Sendable () -> Date = Date.init,
+        ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
+        log: @escaping @Sendable (String) -> Void = DiagnosticLog.line,
         budget: Duration = DiagnosticRunner.defaultBudget
     ) {
         self.client = client
@@ -37,6 +44,8 @@ public struct DiagnosticRunner: Sendable {
         self.bridgePath = bridgePath
         self.hostMemoryBytes = hostMemoryBytes
         self.now = now
+        self.ticks = ticks
+        self.log = log
         self.budget = budget
     }
 
@@ -45,7 +54,18 @@ public struct DiagnosticRunner: Sendable {
     public func run(checks: Set<CheckID>) async -> DiagnosticReport {
         let ordered = CheckID.allCases.filter(checks.contains)
         let signals = await signals(for: checks)
-        return DiagnosticReport(checks: ordered.map { Self.project(signals, onto: $0) }, ranAt: now())
+        let report = DiagnosticReport(checks: ordered.map { Self.project(signals, onto: $0) }, ranAt: now())
+        logUnmeasured(report)
+        return report
+    }
+
+    /// NFR-005: one line per run naming what could not be measured, so an incident has the
+    /// names and their cost without the report in hand.
+    private func logUnmeasured(_ report: DiagnosticReport) {
+        let unmeasured = report.checks.filter { $0.verdict == .indeterminate }
+        guard !unmeasured.isEmpty else { return }
+        let named = unmeasured.map { "\($0.id.rawValue) after \($0.duration)" }.joined(separator: ", ")
+        log("Diagnostic run could not measure: \(named)")
     }
 
     /// What `resolve` ranked, plus the things it cannot express: that a check was attempted
@@ -58,6 +78,11 @@ public struct DiagnosticRunner: Sendable {
         let routes: RoutesMeasurement
         let bridge: BridgeMeasurement
         let memory: MemoryMeasurement
+        let durations: [CheckID: Duration]
+
+        /// Zero for a check nothing measured: `dockerContext` is answered elsewhere and a
+        /// skipped check spent nothing, neither of which is an unfinished measurement.
+        func duration(of id: CheckID) -> Duration { durations[id] ?? .zero }
     }
 
     /// Each measurement is nil until it answers. The budget reads this once and builds the
@@ -69,6 +94,20 @@ public struct DiagnosticRunner: Sendable {
         var bridge: BridgeMeasurement?
         var routes: RoutesMeasurement?
         var memory: MemoryMeasurement?
+        var durations: [CheckID: Duration] = [:]
+
+        /// The checks no branch answered: the gather was abandoned before it reached them,
+        /// which is the only way a measurement stays nil.
+        var unanswered: [CheckID] {
+            var ids: [CheckID] = []
+            if socket == nil { ids.append(.socket) }
+            if versions == nil { ids.append(.versions) }
+            if appRoot == nil { ids.append(.appRoot) }
+            if bridge == nil { ids.append(.foreignBridge) }
+            if routes == nil { ids.append(.routes) }
+            if memory == nil { ids.append(.memoryCommitment) }
+            return ids
+        }
     }
 
     /// Serialises the writes of three concurrent branches and hands out one snapshot.
@@ -77,12 +116,35 @@ public struct DiagnosticRunner: Sendable {
 
         var taken: Partial { partial }
 
-        func socket(_ value: SocketMeasurement) { partial.socket = value }
-        func versions(_ value: VersionsMeasurement) { partial.versions = value }
-        func appRoot(_ value: AppRootMeasurement) { partial.appRoot = value }
-        func bridge(_ value: BridgeMeasurement) { partial.bridge = value }
-        func routes(_ value: RoutesMeasurement) { partial.routes = value }
-        func memory(_ value: MemoryMeasurement) { partial.memory = value }
+        func socket(_ value: SocketMeasurement, took: Duration) {
+            partial.socket = value
+            partial.durations[.socket] = took
+        }
+
+        func versions(_ value: VersionsMeasurement, took: Duration) {
+            partial.versions = value
+            partial.durations[.versions] = took
+        }
+
+        func appRoot(_ value: AppRootMeasurement, took: Duration) {
+            partial.appRoot = value
+            partial.durations[.appRoot] = took
+        }
+
+        func bridge(_ value: BridgeMeasurement, took: Duration) {
+            partial.bridge = value
+            partial.durations[.foreignBridge] = took
+        }
+
+        func routes(_ value: RoutesMeasurement, took: Duration) {
+            partial.routes = value
+            partial.durations[.routes] = took
+        }
+
+        func memory(_ value: MemoryMeasurement, took: Duration) {
+            partial.memory = value
+            partial.durations[.memoryCommitment] = took
+        }
     }
 
     /// Resumes its one waiter exactly once, whichever of the gathering and the budget gets
@@ -203,6 +265,7 @@ public struct DiagnosticRunner: Sendable {
     private func signals(for checks: Set<CheckID>) async -> Signals {
         let measurements = Measurements()
         let gate = CompletionGate()
+        let started = ticks()
         _ = Task {
             await gather(checks: checks, into: measurements)
             await gate.signal()
@@ -213,7 +276,15 @@ public struct DiagnosticRunner: Sendable {
         }
         await gate.wait()
         expiry.cancel()
-        return resolved(await measurements.taken)
+        return resolved(await measurements.taken, abandonedAfter: ticks() - started)
+    }
+
+    /// What one check's own measurement cost, not its share of the run: the branches overlap,
+    /// so these never sum to the run's elapsed time.
+    private func timed<T>(_ work: () async -> T) async -> (value: T, elapsed: Duration) {
+        let started = ticks()
+        let value = await work()
+        return (value, ticks() - started)
     }
 
     /// The three groups that share no input. Concurrent with each other and sequential
@@ -222,48 +293,54 @@ public struct DiagnosticRunner: Sendable {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.gatherOverTheAPI(checks: checks, into: measurements) }
             group.addTask {
-                await measurements.appRoot(
-                    checks.contains(.appRoot) ? await appRootMeasurement() : .intact
-                )
+                let appRoot = await self.timed { () async -> AppRootMeasurement in
+                    checks.contains(.appRoot) ? await self.appRootMeasurement() : .intact
+                }
+                await measurements.appRoot(appRoot.value, took: appRoot.elapsed)
             }
             group.addTask {
-                await measurements.bridge(
-                    checks.contains(.foreignBridge) ? await bridgeOwnership() : .notAsked
-                )
+                let bridge = await self.timed { () async -> BridgeMeasurement in
+                    checks.contains(.foreignBridge) ? await self.bridgeOwnership() : .notAsked
+                }
+                await measurements.bridge(bridge.value, took: bridge.elapsed)
             }
         }
     }
 
     private func gatherOverTheAPI(checks: Set<CheckID>, into measurements: Measurements) async {
-        let socket = await socketMeasurement()
-        await measurements.socket(socket)
-        await measurements.versions(
-            socket.responds && checks.contains(.versions)
+        let socket = await timed { await socketMeasurement() }
+        await measurements.socket(socket.value, took: socket.elapsed)
+        let versions = await timed { () async -> VersionsMeasurement in
+            socket.value.responds && checks.contains(.versions)
                 ? await versionsMeasurement()
-                : .unmeasurable(reason: socket.failure ?? RuntimeState.genericFailure)
-        )
+                : .unmeasurable(reason: socket.value.failure ?? RuntimeState.genericFailure)
+        }
+        await measurements.versions(versions.value, took: versions.elapsed)
         // Every route signal arrives over the socket, so asking a dead one buys nothing but
         // more waiting inside the same budget (NFR-002).
         let wantsContainers = checks.contains(.routes) || checks.contains(.memoryCommitment)
-        let containers =
-            socket.responds && wantsContainers
-            ? await containersMeasurement()
-            : ContainersMeasurement.notAsked
-        await measurements.routes(
-            socket.responds && checks.contains(.routes)
-                ? await routesMeasurement(containers)
+        let containers = await timed { () async -> ContainersMeasurement in
+            socket.value.responds && wantsContainers ? await containersMeasurement() : .notAsked
+        }
+        let routes = await timed { () async -> RoutesMeasurement in
+            socket.value.responds && checks.contains(.routes)
+                ? await routesMeasurement(containers.value)
                 : .notAsked
-        )
-        await measurements.memory(
-            socket.responds && checks.contains(.memoryCommitment)
-                ? await memoryMeasurement(containers)
+        }
+        // The one listing NFR-001 budgets is charged to both checks that waited on it, which is
+        // the other reason these durations do not sum to the run's.
+        await measurements.routes(routes.value, took: containers.elapsed + routes.elapsed)
+        let memory = await timed { () async -> MemoryMeasurement in
+            socket.value.responds && checks.contains(.memoryCommitment)
+                ? await memoryMeasurement(containers.value)
                 : .notAsked
-        )
+        }
+        await measurements.memory(memory.value, took: containers.elapsed + memory.elapsed)
     }
 
     /// Calls `RuntimeState.resolve` once. Which failure outranks which is decided there and
     /// nowhere else, so nothing here compares two.
-    private func resolved(_ partial: Partial) -> Signals {
+    private func resolved(_ partial: Partial, abandonedAfter: Duration) -> Signals {
         let socket = partial.socket ?? .unmeasurable(reason: Self.budgetExpired)
         let appRoot = partial.appRoot ?? .unmeasurable(reason: Self.budgetExpired)
         let routes = partial.routes ?? .unmeasurable(summary: Self.unfinishedRoutes, reason: Self.budgetExpired)
@@ -281,6 +358,10 @@ public struct DiagnosticRunner: Sendable {
             missingAppRoot: socket.responds ? appRoot.missingRoot : nil,
             foreignBridge: socket.responds ? bridge.foreignSocketPath : nil
         )
+        var durations = partial.durations
+        // A check that never answered carries the budget it burned, which no finished
+        // measurement can be read as and `.zero` would be indistinguishable from instant.
+        for id in partial.unanswered { durations[id] = abandonedAfter }
         return Signals(
             state: state,
             appRoot: appRoot,
@@ -288,7 +369,8 @@ public struct DiagnosticRunner: Sendable {
             versions: partial.versions ?? .unmeasurable(reason: Self.budgetExpired),
             routes: routes,
             bridge: bridge,
-            memory: partial.memory ?? .unmeasurable(reason: Self.budgetExpired)
+            memory: partial.memory ?? .unmeasurable(reason: Self.budgetExpired),
+            durations: durations
         )
     }
 

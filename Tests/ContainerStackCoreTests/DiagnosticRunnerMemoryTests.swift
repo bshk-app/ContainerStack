@@ -169,27 +169,83 @@ struct DiagnosticRunnerMemoryTests {
         #expect(await inspectPaths(of: transport).count == 1)
     }
 
-    // A total that is missing a container is not a total, however healthy the part we read
-    // looks. F-003: `CStackCommands.swift:143`.
-    @Test("one failed inspect among several leaves the whole check unknown and says so")
+    // A total missing a container is not a total where the missing sample could still flip the
+    // answer — `.within` and `.approaching`. F-003: `CStackCommands.swift:143`.
+    @Test("one failed inspect below the exceeding band leaves the whole check unknown and says so")
     func aPartiallyFailedInspectIsIndeterminateAndNamesTheGap() async {
+        for limit in [Int64(1_000_000_000), Int64(10_000_000_000)] {
+            let transport = runtime(
+                containers: ["c0", "c1"],
+                inspects: [
+                    "c0": .success(inspectResponse(id: "c0", memory: limit)),
+                    "c1": .failure(UnixSocketError.timedOut),
+                ]
+            )
+            let check = await makeRunner(transport: transport, hostMemoryBytes: hostBytes)
+                .run(checks: CheckID.cliSet)
+                .check(.memoryCommitment)
+            #expect(check?.verdict == .indeterminate)
+            #expect(check?.verdict != .ok)
+            let measured = "Container memory limits: \(ByteSize.formatted(limit)) in explicit"
+            #expect(check?.summary.hasPrefix(measured) == true)
+            #expect(check?.summary.hasPrefix("Container memory limits: HIGH") == false)
+            #expect(
+                check?.detail?.hasSuffix("1 running container(s) could not be inspected, so the total is incomplete.")
+                    == true
+            )
+        }
+    }
+
+    // Decision 6's exception: over-commitment is monotone, so a limit nobody read can only add to
+    // a total that already exceeds. F-003: `CStackCommands.swift:126-128`, `:143`.
+    @Test("an over-committed total survives a failed inspect as amber with its manual remedy")
+    func anExceedingTotalWithAFailedInspectStaysWarning() async {
         let transport = runtime(
             containers: ["c0", "c1"],
             inspects: [
-                "c0": .success(inspectResponse(id: "c0", memory: 1_000_000_000)),
+                "c0": .success(inspectResponse(id: "c0", memory: 14_000_000_000)),
                 "c1": .failure(UnixSocketError.timedOut),
             ]
         )
-        let check = await makeRunner(transport: transport, hostMemoryBytes: hostBytes)
+        let report = await makeRunner(transport: transport, hostMemoryBytes: hostBytes).run(checks: CheckID.cliSet)
+        let check = report.check(.memoryCommitment)
+        #expect(check?.verdict == .warning)
+        #expect(check?.verdict != .indeterminate)
+        #expect(
+            check?.summary
+                == "Container memory limits: HIGH — 14.0 GB in explicit container limits vs 16.0 GB host memory"
+        )
+        #expect(
+            check?.detail
+                == """
+                Guests do not reserve every byte immediately, but host use can grow toward these limits.
+                Stop a container or recreate it with a smaller --memory.
+                1 running container(s) could not be inspected, so the total is incomplete.
+                """
+        )
+        #expect(check?.remedy == .manual("Stop a container or recreate it with a smaller --memory."))
+        // F-013: the exception also decides what a partly measured over-commitment contributes.
+        #expect(report.verdict == .warning)
+        #expect(report.verdict != .indeterminate)
+    }
+
+    // Decision 6's rule, not its exception: with no host figure there is no comparison for
+    // monotonicity to preserve. F-003: `CStackCommands.swift:132`.
+    @Test("unknown host memory stays unknown however large the measured total is")
+    func unknownHostMemoryIsIndeterminateEvenWithALargeMeasuredTotal() async {
+        let transport = runtime(
+            containers: ["c0", "c1"],
+            inspects: [
+                "c0": .success(inspectResponse(id: "c0", memory: 14_000_000_000)),
+                "c1": .failure(UnixSocketError.timedOut),
+            ]
+        )
+        let check = await makeRunner(transport: transport, hostMemoryBytes: nil)
             .run(checks: CheckID.cliSet)
             .check(.memoryCommitment)
         #expect(check?.verdict == .indeterminate)
-        #expect(check?.verdict != .ok)
-        #expect(check?.summary == "Container memory limits: 1.0 GB in explicit container limits vs 16.0 GB host memory")
-        #expect(
-            check?.detail
-                == "1 running container(s) could not be inspected, so the total is incomplete."
-        )
+        #expect(check?.verdict != .warning)
+        #expect(check?.remedy == nil)
     }
 
     // F-003: `CStackCommands.swift:138`. An unlimited container is an unknown, not a zero.

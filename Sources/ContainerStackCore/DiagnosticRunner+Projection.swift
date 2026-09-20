@@ -134,7 +134,9 @@ extension DiagnosticRunner {
         }
 
         let detail = lines.isEmpty ? nil : lines.joined(separator: "\n")
-        guard failures == 0 else {
+        // Decision 6's exception: an uninspected limit only adds, so nothing unmeasured can
+        // un-exceed a total that already does. The other two verdicts a missing sample can flip.
+        guard failures == 0 || commitment.verdict == .exceeding else {
             return indeterminate(.memoryCommitment, summary: text, detail: detail)
         }
         guard commitment.verdict == .within else {

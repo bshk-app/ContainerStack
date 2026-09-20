@@ -725,6 +725,32 @@ is what turns them into a drift detector instead of a tautology.
 
 ---
 
+### [T-016c] The parse error reaches stdout too
+
+Same defect as T-016b, found by its reviewer and more exposed than
+`UnixSocketError` was. `DockerHTTPParseError` (`DockerHTTPResponse.swift:15`)
+declares `Error, Equatable, Sendable` only, and is thrown at
+`DockerAPIClient.swift:490` inside the single shared
+`request(method:path:body:timeout:)` -- so it rides `ping()`, `/version`,
+`/info`, `/containers/json` and `/networks` alike. `DiagnosticRunner`'s bare
+catches at `:392`, `:410`, `:439` and `:463` each render
+`error.localizedDescription`, so Foundation's bridge text -- module name plus
+enum case index -- can reach four rendered doctor lines today.
+
+**Files:** `Sources/ContainerStackCore/DockerHTTPResponse.swift` and the
+renderer goldens.
+
+Same treatment as T-016b: `LocalizedError` + `CustomStringConvertible` with our
+own wording, `errorDescription` delegating to `description` so the two paths
+cannot diverge, and a test pinning **both** paths per case -- T-016b shipped
+with `CustomStringConvertible` unpinned and its reviewer had to add that.
+
+Goldens covering it must be literals, never interpolations of the error.
+
+**Depends on:** T-016b
+
+---
+
 ### [T-017] CLI becomes a formatter
 
 **Files:** modify `Sources/CStackCLI/CStackCommands.swift:8-145` — `doctor`

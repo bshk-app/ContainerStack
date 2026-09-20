@@ -28,6 +28,37 @@ private final class RecordedLines: Sendable {
 
     func record(_ line: String) { lines.withLock { $0.append(line) } }
 }
+
+/// A clock only a Docker call moves and `ticks` merely reads, so the two probe branches
+/// reading it concurrently cannot perturb the spans the sequential API branch measures.
+private final class BilledClock: Sendable {
+    private let elapsed = Mutex(Duration.zero)
+
+    var now: Duration { elapsed.withLock { $0 } }
+
+    func bill(_ cost: Duration) { elapsed.withLock { $0 += cost } }
+}
+
+/// Answers by path and bills each path its own cost, so a check's span is a sum no other
+/// check's calls can add up to.
+private actor BillingTransport: DockerAPITransport {
+    private let byPath: [String: (body: Data, cost: Duration)]
+    private let clock: BilledClock
+
+    init(byPath: [String: (body: Data, cost: Duration)], clock: BilledClock) {
+        self.byPath = byPath
+        self.clock = clock
+    }
+
+    func send(request: Data) throws -> Data {
+        let fields = String(decoding: request, as: UTF8.self).split(separator: " ")
+        guard fields.count > 1, let keyed = byPath[String(fields[1])] else {
+            throw StubDockerTransport.Exhausted()
+        }
+        clock.bill(keyed.cost)
+        return keyed.body
+    }
+}
 /// A runtime that answers every request the UI set makes, so the API branch finishes
 /// while the probes are still parked and the two are told apart.
 private func idleRuntime() -> StubDockerTransport {
@@ -268,5 +299,46 @@ struct DiagnosticRunnerDurationTests {
 
         #expect(report.checks.allSatisfy { $0.verdict != .indeterminate })
         #expect(lines.all.isEmpty)
+    }
+
+    /// A uniform step proves a duration was measured but not whose it is: every span is the
+    /// same number, so two checks trading spans reads exactly like two checks keeping them.
+    @Test("a check's duration is the span it earned, never another check's")
+    func eachDurationIsPairedWithTheCheckThatEarnedIt() async {
+        let clock = BilledClock()
+        let runner = DiagnosticRunner(
+            client: DockerAPIClient(
+                transport: BillingTransport(
+                    byPath: [
+                        "/_ping": (jsonResponse("OK"), .seconds(1)),
+                        "/version": (jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#), .seconds(2)),
+                        "/info": (jsonResponse(#"{"Containers":0,"Images":0}"#), .seconds(4)),
+                        "/containers/json": (jsonResponse("[]"), .seconds(8)),
+                        "/networks": (jsonResponse("[]"), .seconds(16)),
+                    ],
+                    clock: clock
+                )
+            ),
+            probe: RecordingSystemProbe(
+                runtimeStatus: .output(""),
+                routingTable: .output(""),
+                socketHolder: .output(ourBridgeLsofOutput),
+                processTable: .output(ourBridgeProcessTable)
+            ),
+            socketPath: diagnosticSocketPath,
+            bridgePath: diagnosticBridgePath,
+            hostMemoryBytes: { nil },
+            now: { diagnosticClockDate },
+            ticks: { clock.now },
+            log: { _ in }
+        )
+
+        let report = await runner.run(checks: CheckID.uiSet)
+
+        // Distinct sums of powers of two: a check wearing another's span carries a number its
+        // own calls could not have billed, so a swap fails here rather than passing unnoticed.
+        #expect(report.check(.socket)?.duration == .seconds(1))
+        #expect(report.check(.versions)?.duration == .seconds(6))
+        #expect(report.check(.routes)?.duration == .seconds(24))
     }
 }

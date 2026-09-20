@@ -599,8 +599,7 @@ overall deadline.
 
 ---
 
-### [T-015b] Per-check `duration` (NFR-005)
-### [T-014a] `.exceeding` survives a partial inspect failure
+### [T-014a] `.exceeding` survives a partial inspect failure  `[DONE:2026-09-18]`
 
 **Files:** modify `Sources/ContainerStackCore/DiagnosticRunner.swift` (the
 `commitmentCheck`/`memoryCheck` path) and
@@ -625,6 +624,8 @@ it, and re-check it still fails if the whole exception is removed.
 **Depends on:** T-014
 
 ---
+
+### [T-015b] Per-check `duration` (NFR-005)
 
 
 `DiagnosticRunner+Verdicts.swift` passes `duration: .zero` at all six projection
@@ -699,7 +700,6 @@ appear.
 
 ---
 
-### [T-019] `repairDockerContextRecord() async -> Bool`
 ### [T-018a] A test-support target both test targets can import
 
 **Blocks T-020.** `Package.swift:56-64` gives `ContainerStackAppTests` a
@@ -727,6 +727,7 @@ the moved file.
 
 ---
 
+### [T-019] `repairDockerContextRecord() async -> Bool`
 
 **Files:** modify `Sources/ContainerStackApp/RuntimeViewModel+DockerContext.swift:160-188`.
 Extract the repair so it returns success; the polled caller keeps ignoring the

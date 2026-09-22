@@ -52,8 +52,8 @@ user asking "is my environment healthy?" before anything visibly breaks.
   The rule is now:
 
   1. **For every state today's `cstack doctor` actually prints, stdout stays
-     byte-identical.** This is the part that protects users' scripts and is
-     pinned by goldens.
+     byte-identical, except the stopped-socket/missing-root combination below.**
+     This protects users' scripts and is pinned by goldens.
   2. **States where today's binary aborts instead of printing gain new lines.**
      They are enumerated below; nothing may be added to this list without
      amending the spec, so a golden can never bless wording nobody chose.
@@ -61,7 +61,17 @@ user asking "is my environment healthy?" before anything visibly breaks.
      which prints a bridge-ownership line and skips the checks it makes
      meaningless. This was the originally sanctioned diff.
 
-  Sanctioned new lines, all from `DiagnosticRunner`:
+  **Stopped-socket decision (T-017a):** A refusing socket resolves to `.offline`;
+  all requested checks stay `.skipped` with reasons (F-010). When that produces
+  no visible checks, the CLI renderer prints `Docker socket: not responding`
+  instead of an empty line. This is the same first line the old CLI printed.
+  If `container system status` also reports a missing app root, the old CLI
+  appended three storage lines even though the socket was down; the new CLI
+  omits them. A missing root is gated on an answering socket in both the app
+  and Doctor's `RuntimeState.resolve` call, so claiming `.detached` or offering
+  a restart in this state would contradict the shared precedence rule. This
+  is an explicit exception to rule 1, not an unreviewed golden change.
+  Enumerated lines (runner checks, except the stopped-socket renderer fallback):
 
   | State | Line | Today's CLI |
   |---|---|---|
@@ -73,17 +83,18 @@ user asking "is my environment healthy?" before anything visibly breaks.
   | bridge holder unidentifiable | `Docker bridge: UNKNOWN — the process holding the socket could not be identified.` | no such check |
   | no running containers | `Container memory limits: no running containers to check` | returns at `:46` before the memory report |
   | container listing failed | `Container memory limits: UNKNOWN — the Docker API did not answer.` | aborts at `:43` |
+  | refusing socket | `Docker socket: not responding` (all checks remain `.skipped`) | same socket line; may also print missing-root lines, per exception above |
 
   Consequence to accept deliberately: `cstack doctor` **stops exiting non-zero
   by throwing** in these states, and reports them instead. That is the point — a
   diagnostic that dies when the runtime hangs fails exactly when it is needed.
 
   *Acceptance:* golden-output tests over fixtures for healthy,
-  missing-app-root, unroutable-network, **and foreign-bridge** states, plus one
-  golden per row of the table above. The first three goldens are pinned from
-  today's binary before the refactor; the rest are new and are pinned to this
-  table. Rendering is a pure function so no stdout capture is needed — see
-  F-012.
+  missing-app-root, unroutable-network, **foreign-bridge**, and a refusing
+  socket both with and without a measured missing app root, plus one golden
+  per row of the table above. The first three goldens are pinned from today's
+  binary before the refactor; the rest are new or explicitly excepted above.
+  Rendering is a pure function so no stdout capture is needed — see F-012.
 
 - **[F-004]** Precedence is **not re-derived**. The runner gathers the signals
   for the requested checks, calls `RuntimeState.resolve`

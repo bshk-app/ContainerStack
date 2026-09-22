@@ -789,7 +789,7 @@ All parsing and branching leaves the CLI.
 
 ---
 
-### [T-017a] A dead socket makes `cstack doctor` print nothing
+### [T-017a] A dead socket makes `cstack doctor` print nothing  `[DONE:2026-09-22]`
 
 Found by the T-017 reviewer, reproduced against the binary:
 `cstack doctor --socket /tmp/nonexistent.sock` writes **one byte** — `print`'s
@@ -812,6 +812,14 @@ which F-003's rule 1 does not permit.
 The gating is deliberate — it is how `RuntimeViewModel.applyState` calls
 `resolve`, and F-004 keeps one ranking — so the repair is a spec decision about
 whether a missing app root outranks a dead socket, not a projection tweak.
+
+**Decision:** Keep stopped checks `.skipped` (F-010). When the renderer has no
+visible checks and the socket was requested but skipped, print the old socket
+line instead of silence. Do not project a missing root as a failure behind a
+refusing socket: explicitly except the old CLI's three storage lines in F-003.
+Two runner-to-renderer goldens pin both a plain stopped socket and a stopped
+socket with a measured missing root. No CLI branching or second precedence
+rule.
 
 **Depends on:** T-017
 

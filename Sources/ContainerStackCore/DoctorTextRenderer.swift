@@ -4,7 +4,13 @@ import Foundation
 /// `print(DoctorTextRenderer.render(report))`, so the trailing newline is `print`'s.
 public enum DoctorTextRenderer {
     public static func render(_ report: DiagnosticReport) -> String {
-        inPrintOrder(report.checks).flatMap(lines(of:)).joined(separator: "\n")
+        let text = inPrintOrder(report.checks).flatMap(lines(of:)).joined(separator: "\n")
+        // A stopped runtime deliberately skips its checks, but silence is not a useful
+        // CLI diagnosis. Keep the stopped verdict grey while preserving the socket line.
+        if text.isEmpty, report.check(.socket)?.verdict == .skipped {
+            return "Docker socket: not responding"
+        }
+        return text
     }
 
     /// The order `cstack doctor` prints (`CStackCommands.swift:24-84`), which is not `CheckID`'s

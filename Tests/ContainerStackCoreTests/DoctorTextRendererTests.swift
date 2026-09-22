@@ -105,6 +105,23 @@ struct DoctorTextRendererTests {
         return DoctorTextRenderer.render(report)
     }
 
+    // A refused socket is deliberately `.skipped` in the report (F-010), but a CLI
+    // invocation must still say why it printed no other checks.
+    @Test("a stopped runtime still tells the CLI user the socket is not responding")
+    func aStoppedRuntimeNeverRendersAsSilence() async {
+        let text = await rendered(transport: StubDockerTransport(byPath: [:]))
+        #expect(text == "Docker socket: not responding")
+    }
+
+    @Test("a measured missing root does not turn a stopped runtime into a detachable one")
+    func aStoppedRuntimeWithAMissingRootReportsOnlyTheSocket() async {
+        let text = await rendered(
+            runtimeStatus: .output(statusWithMissingRoot),
+            transport: StubDockerTransport(byPath: [:])
+        )
+        #expect(text == "Docker socket: not responding")
+    }
+
     // Derived from `CStackCommands.swift:32-36`, `:38` and `:56`, `:120`, in the order the CLI
     // prints them: storage follows the version block rather than leading the report.
     @Test("a healthy runtime renders the CLI's block in the CLI's order")

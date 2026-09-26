@@ -877,7 +877,7 @@ the moved file.
 
 ---
 
-### [T-019] `repairDockerContextRecord() async -> Bool`
+### [T-019] `repairDockerContextRecord() async -> Bool`  `[DONE:2026-09-26]`
 
 **Files:** modify `Sources/ContainerStackApp/RuntimeViewModel+DockerContext.swift:160-188`.
 Extract the repair so it returns success; the polled caller keeps ignoring the

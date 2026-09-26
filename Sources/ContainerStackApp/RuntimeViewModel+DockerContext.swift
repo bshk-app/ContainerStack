@@ -158,6 +158,7 @@ extension RuntimeViewModel {
     /// `shouldAdopt` deliberately never activates an installed-but-inactive context; this repairs
     /// its record anyway, without ever running `context use`.
     func repairDockerContextRecord(
+        takeoverPreference: DockerContextTakeoverPreference? = nil,
         recordedSocketPath: @escaping @Sendable (String) throws -> String? = {
             try DockerCLI.recordedSocketPath(for: $0)
         },
@@ -165,7 +166,8 @@ extension RuntimeViewModel {
             try DockerCLI.repairRecord(socketPath: $0)
         }
     ) async -> Bool {
-        guard takesOverDockerContext, isDockerContextInstalled == true,
+        let preference = takeoverPreference ?? dockerContextTakeoverPreference
+        guard preference.isEnabled, isDockerContextInstalled == true,
             activeDockerContext != DockerContext.name
         else { return false }
         let currentSocketPath = socketPath
@@ -176,7 +178,7 @@ extension RuntimeViewModel {
             DockerContext.shouldRepairStaleRecord(
                 activeContext: activeDockerContext,
                 installed: isDockerContextInstalled,
-                takeoverEnabled: takesOverDockerContext,
+                takeoverEnabled: preference.isEnabled,
                 recordedSocketPath: recorded,
                 currentSocketPath: currentSocketPath
             )
@@ -188,7 +190,7 @@ extension RuntimeViewModel {
         // Re-checked after the slot is granted: an uninstall could have run first and cleared
         // ownership.
         guard activeDockerContext != DockerContext.name, isDockerContextInstalled == true,
-            takesOverDockerContext
+            preference.isEnabled
         else { return false }
         do {
             try await Task.detached { try repairRecord(currentSocketPath) }.value

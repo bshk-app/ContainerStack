@@ -1,5 +1,0 @@
-## [T-019] `repairDockerContextRecord() async -> Bool` — done 2026-09-26T13:21:51Z
-- Files: `Sources/ContainerStackApp/RuntimeViewModel+DockerContext.swift`, `Sources/ContainerStackApp/RuntimeViewModel.swift`, `Tests/ContainerStackAppTests/DockerContextRecordRepairTests.swift`, `progress.md`
-- Test: `swift test --filter DockerContextRecordRepairTests` — PASS (4 tests)
-- Lint: `swiftlint --strict --quiet` — PASS
-- Notes: `RuntimeViewModel.swift` is outside the plan's Files section: a defaulted preference initializer parameter is required so tests never alter the user's actual takeover preference; CLI read/write are injected narrowly into the repair method so tests never touch the user's Docker context. No imports or dependencies added. The polled caller discards the result. Plan status intentionally unchanged pending independent review. `progress.md` records this exception under the worker protocol. The poll's live Docker CLI refresh is not exercised in tests to avoid touching real context; direct repair and slot guards are tested with injected operations.

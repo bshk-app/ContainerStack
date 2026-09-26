@@ -148,7 +148,7 @@ extension RuntimeViewModel {
                 takeoverEnabled: takesOverDockerContext
             )
         else {
-            await repairStaleContextRecordIfNeeded()
+            _ = await repairDockerContextRecord()
             return
         }
         guard let initialState = dockerContextPreferenceSequencer.request(true) else { return }
@@ -157,13 +157,20 @@ extension RuntimeViewModel {
 
     /// `shouldAdopt` deliberately never activates an installed-but-inactive context; this repairs
     /// its record anyway, without ever running `context use`.
-    private func repairStaleContextRecordIfNeeded() async {
+    func repairDockerContextRecord(
+        recordedSocketPath: @escaping @Sendable (String) throws -> String? = {
+            try DockerCLI.recordedSocketPath(for: $0)
+        },
+        repairRecord: @escaping @Sendable (String) throws -> Void = {
+            try DockerCLI.repairRecord(socketPath: $0)
+        }
+    ) async -> Bool {
         guard takesOverDockerContext, isDockerContextInstalled == true,
             activeDockerContext != DockerContext.name
-        else { return }
+        else { return false }
         let currentSocketPath = socketPath
         let recorded = await Task.detached {
-            try? DockerCLI.recordedSocketPath(for: DockerContext.name)
+            try? recordedSocketPath(DockerContext.name)
         }.value
         guard
             DockerContext.shouldRepairStaleRecord(
@@ -173,7 +180,7 @@ extension RuntimeViewModel {
                 recordedSocketPath: recorded,
                 currentSocketPath: currentSocketPath
             )
-        else { return }
+        else { return false }
         // Shares install/uninstall's mutation slot so the two never write to the context store at
         // the same time; never touches dockerContextPreferenceSequencer itself.
         await acquireDockerContextMutationSlot()
@@ -182,13 +189,15 @@ extension RuntimeViewModel {
         // ownership.
         guard activeDockerContext != DockerContext.name, isDockerContextInstalled == true,
             takesOverDockerContext
-        else { return }
+        else { return false }
         do {
-            try await Task.detached { try DockerCLI.repairRecord(socketPath: currentSocketPath) }.value
+            try await Task.detached { try repairRecord(currentSocketPath) }.value
             serviceMessage =
                 "Docker context '\(DockerContext.name)' pointed at a retired socket; repaired the record without switching to it."
+            return true
         } catch {
-            // Best-effort: retried on the next launch, not worth surfacing as an error.
+            // Best-effort for the poll: retried on the next launch, not surfaced as an error.
+            return false
         }
     }
 

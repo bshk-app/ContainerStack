@@ -33,7 +33,7 @@ final class RuntimeViewModel {
     var isMutatingDockerContext = false
     /// FIFO queue for callers waiting on `isMutatingDockerContext`.
     var dockerContextMutationWaiters: [CheckedContinuation<Void, Never>] = []
-    let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
+    let dockerContextTakeoverPreference: DockerContextTakeoverPreference
     internal(set) var runtimeFailure: String?
     internal(set) var isRestarting = false
     /// Raised by a stop that lost the XPC connection, consumed by the monitor poll: the poll is the
@@ -120,13 +120,12 @@ final class RuntimeViewModel {
 
     init(
         socketPath: String = RuntimeViewModel.defaultSocketPath,
-        startsRuntime: Bool = true
+        startsRuntime: Bool = true,
+        dockerContextTakeoverPreference: DockerContextTakeoverPreference = DockerContextTakeoverPreference()
     ) {
         self.socketPath = socketPath
-        client = DockerAPIClient(
-            socketPath: socketPath,
-            retryPolicy: DockerRetryPolicy(maxAttempts: 3, delay: .milliseconds(250))
-        )
+        self.dockerContextTakeoverPreference = dockerContextTakeoverPreference
+        client = DockerAPIClient(socketPath: socketPath, retryPolicy: .init(maxAttempts: 3, delay: .milliseconds(250)))
         guard startsRuntime else { return }
         isStarting = true
         runtimeState = .starting

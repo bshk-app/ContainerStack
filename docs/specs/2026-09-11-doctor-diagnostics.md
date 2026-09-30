@@ -137,7 +137,7 @@ user asking "is my environment healthy?" before anything visibly breaks.
   are never two.
 
   Rationale: overlap would be worst exactly when it hurts most. A run costs
-  five uncancellable spawns in the UI set (NFR-001) and can occupy the full 20s
+  up to five uncancellable spawns in the UI set (NFR-001) and can occupy the full 20s
   (NFR-002) precisely when the runtime is wedged; letting a second start would
   multiply spawns against an already-stuck system.
   *Acceptance:* with a gated probe fake suspending run A, requesting another
@@ -205,13 +205,20 @@ user asking "is my environment healthy?" before anything visibly breaks.
 
 ### 2.2 Non-functional requirements
 
-- **[NFR-001] Performance.** Process spawns per run are fixed and independent of
-  container count:
-  - CLI set: **four** — `container system status`, `netstat -rn -f inet`,
+- **[NFR-001] Performance.** Process spawns per run are bounded by the check set
+  and never grow with container count:
+  - CLI set: **at most four** — `container system status`, `netstat -rn -f inet`,
     `/usr/sbin/lsof -Fpcn -- <socketPath>`, `/bin/ps -A -o pid=,command=`.
-  - UI set: **five** — those four plus `docker context ls --format ...`, which
-    `DockerCLI.recordedSocketPath(for:)` (`DockerCLI.swift:152`) shells for the
-    `dockerContext` check.
+  - UI set: **at most five** — those four plus `docker context ls --format ...`,
+    which `DockerCLI.recordedSocketPath(for:)` (`DockerCLI.swift:152`) shells for
+    the `dockerContext` check.
+
+  **Amended at T-018:** the bound is reached only when there is a route to judge.
+  `netstat` is spawned only when a running container publishes on a network with a
+  subnet (T-012); with nothing running, nothing publishing, or no subnet reported,
+  the routes check has no table to read and the run spawns one process fewer. The
+  listing is likewise not spawned when the caller gives no context setting. The
+  original wording said "fixed", which that behaviour never was.
 
   The `lsof`/`ps` pair is what bridge ownership costs, because the Docker API
   cannot answer it (`RuntimeViewModel+Staleness.swift:110-112`); the CLI pays
@@ -220,12 +227,16 @@ user asking "is my environment healthy?" before anything visibly breaks.
   Docker API calls: `health()` plus `listContainers` and `listNetworks` for
   both sets; the CLI set adds one `inspectContainer` **per running container**
   for `memoryCommitment`, which is exactly why the UI omits it.
-  *Acceptance:* a recording `SystemProbe` fake counts spawns and the stub
-  counts request paths; assert exact counts (`spawns == 4` for the CLI set and
-  `== 5` for the UI set, and the UI set's API paths equal
-  `["/_ping", "/version", "/info", "/containers/json", "/networks"]` in
-  order), and assert neither count changes between 0 and 20 running containers
-  for the UI set.
+  *Acceptance:* a recording `SystemProbe` fake counts probe spawns, the
+  `dockerContext` check's injected listing counts its own (decision 8 keeps it out
+  of `SystemProbe`), and the stub counts request paths. With a running container
+  publishing on a network with a subnet, assert exact counts (`spawns == 4` for the
+  CLI set and `== 5` for the UI set); with no running container, assert the same
+  sets without `netstat` (`== 3` / `== 4`). The UI set's API paths equal
+  `["/_ping", "/version", "/info", "/containers/json", "/networks"]` in order.
+  Neither count may change between 1 and 20 publishing containers, and the UI
+  set's API paths may not change between 0 and 20 running containers (the CLI set
+  adds one `inspectContainer` per running container by design).
 - **[NFR-002] Total time budget.** The whole run is bounded at **20s**, not per
   probe. Three facts force this, all verified:
   - `health()` is three retried calls, not one (`DockerAPIClient.swift:313,
@@ -289,7 +300,11 @@ DockerAPIClient (actor) ─────────────────┘  
   - *Depends on:* `DockerAPIClient` (`DockerAPIClient.swift:291`), `SystemProbe`,
     `NetworkRouteHealth`, `RuntimeStatusParser`
     (`RuntimeProcessConfiguration.swift:177`), `MemoryCommitment`
-    (`MemoryCommitment.swift:14`) and `HostMemory` (`:70`) for the CLI check set.
+    (`MemoryCommitment.swift:14`) and `HostMemory` (`:70`) for the CLI check set;
+    `DockerCLI.recordedSocketPath(for:)` (`DockerCLI.swift:152`) and
+    `DockerContext.shouldRepairStaleRecord` (`DockerContext.swift:63`) for the UI
+    check set's `dockerContext` (decision 8), with the takeover preference,
+    installation and active context supplied by the caller rather than spawned.
 
 - **`SystemProbe`** (new protocol, Core; production impl over
   `ProcessRunner.run`, `ProcessRunner.swift:104`)

@@ -74,7 +74,8 @@ below; all five remaining open questions are genuinely optional.
    It must not call `repairStaleContextRecordIfNeeded()` — a diagnostic that
    repairs while reporting is not a diagnostic. Costs the fifth spawn
    (`docker context ls`), so NFR-001 is now four spawns for the CLI set and
-   five for the UI set. (Closes OQ-2.)
+   five for the UI set. (Closes OQ-2.) *Later refined at T-018: these are upper
+   bounds, not exact counts — see NFR-001's amendment.*
 
 ## Still open — do not guess during implementation
 

@@ -8,6 +8,7 @@ enum DashboardDestination: String, CaseIterable, Hashable, Identifiable {
     case volumes
     case networks
     case stacks
+    case doctor
 
     var id: Self { self }
 
@@ -19,6 +20,7 @@ enum DashboardDestination: String, CaseIterable, Hashable, Identifiable {
         case .volumes: "Volumes"
         case .networks: "Networks"
         case .stacks: "Stacks"
+        case .doctor: "Doctor"
         }
     }
 
@@ -31,6 +33,15 @@ struct DashboardView: View {
     @State private var isConfirmingPrune = false
     @State private var searchText = ""
     @State private var focusImagePull = false
+    /// Outlives the section's view, so a run in flight when the section is left is still the one
+    /// a return visit joins (F-007), and the 30s window holds across visits (F-011).
+    @State private var doctor: DoctorViewModel
+
+    init(model: RuntimeViewModel, resourceSettings: ContainerResourceSettings) {
+        self.model = model
+        self.resourceSettings = resourceSettings
+        _doctor = State(initialValue: DoctorViewModel(runtime: model))
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -62,6 +73,8 @@ struct DashboardView: View {
                         NetworksView(model: model, searchText: searchText)
                     case .stacks:
                         StacksView(model: model, searchText: searchText)
+                    case .doctor:
+                        DoctorView(doctor: doctor)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -135,6 +148,8 @@ struct DashboardView: View {
             return "\(model.networks.count) networks"
         case .overview:
             return model.statusTitle
+        case .doctor:
+            return doctor.statusLine
         }
     }
 

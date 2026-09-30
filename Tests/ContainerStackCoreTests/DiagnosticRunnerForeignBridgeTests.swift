@@ -1,3 +1,4 @@
+import DiagnosticTestSupport
 import Foundation
 import Testing
 

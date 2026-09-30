@@ -752,7 +752,7 @@ Goldens covering it must be literals, never interpolations of the error.
 
 ---
 
-### [T-016d] `CancellationError` wording — app surface only, not the CLI
+### [T-016d] `CancellationError` wording — app surface only, not the CLI  `[MOVED TO BACKLOG:2026-09-30]`
 
 The T-016c reviewer listed `CancellationError` as the last type able to reach
 `DiagnosticRunner`'s generic `error.localizedDescription` catches (`:392`,
@@ -775,6 +775,17 @@ same client is used. Worth doing for that reason alone, at ordinary priority:
 wrap the retry-loop cancellation in a `DockerAPIError` case with chosen wording.
 Scope it to the app's error presentation and pin both description paths, as
 T-016b/c did.
+
+**Moved to backlog (2026-09-30), not done.** The wrap above would regress the
+app. `RuntimeViewModel.refresh()` catches `CancellationError` and returns
+quietly. A wrapped cancellation would fall into its general `catch`, which clears
+the inventory and raises a runtime failure every time a `.task` refresh is
+cancelled. The fix belongs at the app's call sites, not in the client:
+`refreshImages` and `refreshContainers` (`RuntimeViewModel+Containers.swift`)
+should leave their state untouched on cancellation instead of showing
+"…could not be listed: CancellationError()". `probeRuntime` records a cancelled
+`ping()` as a failed probe. That fix lives in `RuntimeViewModel.swift`, where
+NFR-003 allows no new lines, and none of it is part of this spec. See Backlog.
 
 **Depends on:** T-016c
 
@@ -999,3 +1010,9 @@ Each rule has a test that fails when the rule is removed.
   deadline" (0.3s deadline) failed once under load during T-020's gates, then
   passed 5/5 alone and in the full re-run. It is timing-sensitive and unrelated
   to the Doctor work.
+- A cancelled app request reads as a failure (was T-016d). A `.task` refresh
+  cancelled during the retry loop's sleep leaves "Images/Containers could not be
+  listed: CancellationError()" on screen. A cancelled monitor `ping()` counts as
+  a failed probe. Fix at the call sites by treating `CancellationError` as no
+  result, as `refresh()` already does. Do not wrap it in `DockerAPIError`, which
+  would defeat that `catch`.

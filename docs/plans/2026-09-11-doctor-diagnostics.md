@@ -932,7 +932,7 @@ the view offers "Check again" instead. F-008's view-model half is left to T-022.
 
 ---
 
-### [T-021] Sidebar destination (F-006)
+### [T-021] Sidebar destination (F-006)  `[DONE:2026-09-30]`
 
 **Files:** modify `Sources/ContainerStackApp/DashboardView.swift:4-22` (add
 `.doctor`) and `Sources/ContainerStackApp/AppChrome.swift:95-97` (add it to
@@ -940,19 +940,28 @@ the view offers "Check again" instead. F-008's view-model half is left to T-022.
 
 **Step 1 — RED:** `#expect(DashboardDestination.dockerItems.contains(.doctor))`.
 
+**Done (079aa15), with part of T-022 moved in:** adding the case forces the
+exhaustive detail switch in `DashboardView` to render something, and a
+placeholder would ship a stub. So the read-only `DoctorView` landed here:
+- rows with an icon and tint per verdict (G-03);
+- manual advice shown as text;
+- a header with the `ranAt` stamp and "Check again" (F-011).
+
+The hidden-row parsing moved into static helpers on `DashboardDestination` (same
+key, same format) so F-006's hide and persist clauses are asserted.
+
 **Depends on:** T-020
 
 ---
 
-### [T-022] DoctorView rows
+### [T-022] Remedy buttons and the repair in progress (F-008)
 
-**Files:** create `Sources/ContainerStackApp/DoctorView.swift`; modify
-`Sources/ContainerStackApp/DoctorViewModel.swift` and its tests for F-008's
-view-model half: invoking a remedy, one operation for two taps, and no
-automatic re-run until the repair settles. F-008's acceptance is a view-model
-test, and T-020 covered only F-007/F-011.
-Icon per verdict — `.indeterminate` renders amber, never grey (G-03). Button
-only for an in-process remedy, bound to `canRestartRuntime`, disabled while
+**Files:** modify `Sources/ContainerStackApp/DoctorView.swift` (created at
+T-021 with the read-only rows) and `Sources/ContainerStackApp/DoctorViewModel.swift`
+and its tests for F-008's view-model half: invoking a remedy, one operation for
+two taps, and no automatic re-run until the repair settles. F-008's acceptance is
+a view-model test, and T-020 covered only F-007/F-011.
+Button only for an in-process remedy, bound to `canRestartRuntime`, disabled while
 `isRestarting` (F-008).
 
 **Depends on:** T-021

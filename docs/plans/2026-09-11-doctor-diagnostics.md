@@ -902,7 +902,7 @@ result (its empty `catch` was deliberate), Doctor renders failure.
 
 ---
 
-### [T-020] DoctorViewModel: single-flight + cadence (F-007, F-011)
+### [T-020] DoctorViewModel: single-flight + cadence (F-007, F-011)  `[DONE:2026-09-30]`
 
 **Files:**
 - Create: `Sources/ContainerStackApp/DoctorViewModel.swift`
@@ -920,6 +920,13 @@ check with `git diff --exit-code Sources/ContainerStackApp/RuntimeViewModel.swif
 own state (`takesOverDockerContext`, `isDockerContextInstalled`,
 `activeDockerContext`). The default is nil, which renders the context row amber on
 every run.
+
+**Done (e0192f0):** `appeared()` / `checkAgain()` / `disappeared()`. Returning
+while a run is still going adopts it (its generation becomes the current one), so
+the result is shown and no second run starts. A discarded run still holds the
+30s window. The audit rejected resetting the window on a discard: on a wedged
+runtime every return visit would then buy another five uncancellable spawns. So
+the view offers "Check again" instead. F-008's view-model half is left to T-022.
 
 **Depends on:** T-015, T-018, T-018a, T-019
 
@@ -939,7 +946,11 @@ every run.
 
 ### [T-022] DoctorView rows
 
-**Files:** create `Sources/ContainerStackApp/DoctorView.swift`.
+**Files:** create `Sources/ContainerStackApp/DoctorView.swift`; modify
+`Sources/ContainerStackApp/DoctorViewModel.swift` and its tests for F-008's
+view-model half: invoking a remedy, one operation for two taps, and no
+automatic re-run until the repair settles. F-008's acceptance is a view-model
+test, and T-020 covered only F-007/F-011.
 Icon per verdict — `.indeterminate` renders amber, never grey (G-03). Button
 only for an in-process remedy, bound to `canRestartRuntime`, disabled while
 `isRestarting` (F-008).
@@ -958,3 +969,7 @@ only for an in-process remedy, bound to `canRestartRuntime`, disabled while
   shutting down") but pass under `swift test`. Found at T-018a, and identical on
   the commit before it, so pre-existing: some test leaves `ProcessRunner`'s
   shutdown flag set in the shared test process.
+- `ProcessRunnerTests` "a descendant that inherits stdout cannot outlive the
+  deadline" (0.3s deadline) failed once under load during T-020's gates, then
+  passed 5/5 alone and in the full re-run. It is timing-sensitive and unrelated
+  to the Doctor work.

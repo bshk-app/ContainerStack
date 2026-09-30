@@ -38,7 +38,8 @@ New deps: **none**. Everything used already exists in-tree: `ProcessRunner`,
 
 Nothing. OQ-2 blocked T-018 in the first draft of this plan and has since been
 closed (spec-gaps decision 8): Doctor gets its own read-only context check. The
-five remaining open questions do not gate any task here.
+five remaining open questions do not gate any task here. (T-022 had to render a
+repair in progress and closed OQ-6 as decision 9; four remain.)
 
 ## Ordering note
 
@@ -954,7 +955,7 @@ key, same format) so F-006's hide and persist clauses are asserted.
 
 ---
 
-### [T-022] Remedy buttons and the repair in progress (F-008)
+### [T-022] Remedy buttons and the repair in progress (F-008)  `[DONE:2026-09-30]`
 
 **Files:** modify `Sources/ContainerStackApp/DoctorView.swift` (created at
 T-021 with the read-only rows) and `Sources/ContainerStackApp/DoctorViewModel.swift`
@@ -963,6 +964,22 @@ two taps, and no automatic re-run until the repair settles. F-008's acceptance i
 a view-model test, and T-020 covered only F-007/F-011.
 Button only for an in-process remedy, bound to `canRestartRuntime`, disabled while
 `isRestarting` (F-008).
+
+**Done:** closes OQ-6 as spec-gaps decision 9 (the user was asked and gave no
+answer). Touches only the listed files. Findings from review and audit rounds:
+- A restart started from the sidebar makes the report as stale as the section's
+  own, so it drops the report too.
+- A run already in flight when a restart begins is never shown, and one fresh run
+  follows it.
+- A section that is not open starts nothing (§7). It owes the run to its next
+  visit, which pays it at once.
+- The model watches the app's restart flag through observation, not a view's
+  `onChange`. A restart that fails at its first step can flip the flag and back
+  before anything renders.
+- `perform` waits for the model's look at its own restart's edges, so they leave
+  nothing owed.
+
+Each rule has a test that fails when the rule is removed.
 
 **Depends on:** T-021
 

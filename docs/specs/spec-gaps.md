@@ -14,7 +14,8 @@ file said YES while OQ-2 was still open, which was wrong: `dockerContext` is a
 **mandatory** member of the UI check set (F-002), and its only existing entry
 point repairs as a side effect of polling. A plan written against that would
 have had to invent a seam or make the diagnostic mutate. OQ-2 is now decision 8
-below; all five remaining open questions are genuinely optional.
+below; all five remaining open questions are genuinely optional. (OQ-6 was
+later closed at T-022 as decision 9; four remain.)
 
 ---
 
@@ -76,6 +77,14 @@ below; all five remaining open questions are genuinely optional.
    (`docker context ls`), so NFR-001 is now four spawns for the CLI set and
    five for the UI set. (Closes OQ-2.) *Later refined at T-018: these are upper
    bounds, not exact counts — see NFR-001's amendment.*
+9. **Presentation while a repair runs: a dedicated in-progress state.** Decided
+   at T-022. The user was asked and gave no answer, so the recommended option was
+   taken and can be revisited. When a repair starts, the report is dropped,
+   because every verdict in it predates the repair. The section shows the
+   repair's progress instead, then runs the report again when the repair settles.
+   A restart started from the sidebar shows the same state, since it leaves every
+   row just as stale. The alternative, the old rows greyed under a banner, was
+   rejected: a dimmed verdict still reads as current. (Closes OQ-6.)
 
 ## Still open — do not guess during implementation
 
@@ -84,7 +93,7 @@ below; all five remaining open questions are genuinely optional.
 - *(OQ-2 closed — see decision 8.)*
 - **OQ-3** v2: memory commitment behind its own button in the UI.
 - **OQ-5** `CheckID` granularity for "versions" (today one printed block).
-- **OQ-6** presentation while a repair runs.
+- *(OQ-6 closed — see decision 9.)*
 - **OQ-8** whether the 20s budget applies to the CLI, which has no section to
   block and a human waiting at a prompt.
 

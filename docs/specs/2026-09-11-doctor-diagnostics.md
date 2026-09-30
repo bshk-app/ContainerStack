@@ -494,9 +494,9 @@ are part of the work, not preconditions someone else supplies:
 5. Exact `CheckID` granularity for "versions": today the CLI prints API version,
    engine version, container count and image count as one block. One check or
    several?
-6. What does the sidebar row show while a repair is running — the stale report
-   greyed, or a dedicated in-progress state? F-008 requires "not a stale
-   verdict" but does not pick the presentation.
+6. ~~Presentation while a repair runs.~~ **Resolved at T-022 (spec-gaps decision
+   9): a dedicated in-progress state.** The report is dropped when a repair
+   starts and re-run when it settles. A sidebar restart shows the same state.
 7. `repairStaleContextRecordIfNeeded()` is `private` and swallows its error in
    an empty `catch` (`RuntimeViewModel+DockerContext.swift:186-188`, comment:
    "Best-effort: retried on the next launch"). Doctor's button needs an outcome,

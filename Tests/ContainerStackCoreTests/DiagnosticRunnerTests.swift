@@ -18,11 +18,21 @@ let ourBridgeProcessTable = """
       777 \(diagnosticBridgePath) --socket \(diagnosticSocketPath)
     """
 
+/// The app manages its context and another one is active: the setting in which a stale record
+/// is the repair's to fix, so a fixture's recorded endpoint alone decides the verdict.
+let managedDockerContext = DiagnosticRunner.DockerContextSetting(
+    takeoverEnabled: true,
+    installed: true,
+    activeContext: DockerContext.fallbackName
+)
+
 func makeRunner(
     probe: any SystemProbe,
     transport: StubDockerTransport = StubDockerTransport(byPath: [:]),
     socketPath: String = diagnosticSocketPath,
     bridgePath: String = diagnosticBridgePath,
+    dockerContextSetting: DiagnosticRunner.DockerContextSetting? = managedDockerContext,
+    recordedSocketPath: @escaping @Sendable (String) throws -> String? = { _ in diagnosticSocketPath },
     hostMemoryBytes: Int64? = nil,
     now: Date = diagnosticClockDate,
     ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
@@ -34,6 +44,8 @@ func makeRunner(
         probe: probe,
         socketPath: socketPath,
         bridgePath: bridgePath,
+        dockerContextSetting: { dockerContextSetting },
+        recordedSocketPath: recordedSocketPath,
         hostMemoryBytes: { hostMemoryBytes },
         now: { now },
         ticks: ticks,
@@ -52,6 +64,8 @@ func makeRunner(
     transport: StubDockerTransport = StubDockerTransport(byPath: [:]),
     socketPath: String = diagnosticSocketPath,
     bridgePath: String = diagnosticBridgePath,
+    dockerContextSetting: DiagnosticRunner.DockerContextSetting? = managedDockerContext,
+    recordedSocketPath: @escaping @Sendable (String) throws -> String? = { _ in diagnosticSocketPath },
     hostMemoryBytes: Int64? = nil,
     now: Date = diagnosticClockDate,
     ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
@@ -68,6 +82,8 @@ func makeRunner(
         transport: transport,
         socketPath: socketPath,
         bridgePath: bridgePath,
+        dockerContextSetting: dockerContextSetting,
+        recordedSocketPath: recordedSocketPath,
         hostMemoryBytes: hostMemoryBytes,
         now: now,
         ticks: ticks,
@@ -354,8 +370,9 @@ struct DiagnosticRunnerProbeFailureTests {
                 checks: checks
             )
             // Exact rather than `allSatisfy`: F-009 governs the checks that depend on the dead
-            // probe, and the socket and the bridge each answered from a probe of their own.
-            #expect(report.checks.filter { $0.verdict == .ok }.map(\.id) == [.foreignBridge, .socket])
+            // probe, and the socket, the bridge and the context record each answered from their own.
+            let ownProbes: [CheckID] = [.foreignBridge, .socket, .dockerContext].filter(checks.contains)
+            #expect(report.checks.filter { $0.verdict == .ok }.map(\.id) == ownProbes)
             #expect(report.check(.versions)?.verdict == .indeterminate)
             #expect(report.check(.appRoot)?.verdict == .indeterminate)
             #expect(report.checks.allSatisfy { !$0.summary.isEmpty })

@@ -29,7 +29,7 @@ private final class RecordedLines: Sendable {
     func record(_ line: String) { lines.withLock { $0.append(line) } }
 }
 
-/// A clock only a Docker call moves and `ticks` merely reads, so the two probe branches
+/// A clock only a Docker call moves and `ticks` merely reads, so the other branches
 /// reading it concurrently cannot perturb the spans the sequential API branch measures.
 private final class BilledClock: Sendable {
     private let elapsed = Mutex(Duration.zero)
@@ -266,11 +266,9 @@ struct DiagnosticRunnerDurationTests {
 
         let report = await runner.run(checks: CheckID.uiSet)
 
-        for id in [CheckID.socket, .versions, .appRoot, .foreignBridge, .routes] {
+        for id in [CheckID.socket, .versions, .appRoot, .foreignBridge, .routes, .dockerContext] {
             #expect(report.check(id)?.duration ?? .zero >= .seconds(3600), "\(id)")
         }
-        // The one check nothing measures: grey, and zero by construction rather than by clock.
-        #expect(report.check(.dockerContext)?.duration == .zero)
     }
 
     @Test("a run with an unmeasured check logs one line naming every one of them")

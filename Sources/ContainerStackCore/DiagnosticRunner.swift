@@ -9,6 +9,12 @@ public struct DiagnosticRunner: Sendable {
     /// Which bridge counts as ours: `lsof` names the pid holding the socket, and only
     /// the process table can say whether that pid is the helper this build ships.
     private let bridgePath: String
+    /// Asked for at run time rather than captured, so a runner that outlives a change to the
+    /// takeover preference judges the record against the preference as it now stands.
+    private let dockerContextSetting: @Sendable () async -> DockerContextSetting?
+    /// The read the repair makes before it writes. Injected because its command runner is the
+    /// one place a test can see every `docker` command the check spawned.
+    private let recordedSocketPath: @Sendable (String) throws -> String?
     /// Injected so the "host memory unknown" branch is reachable in a test; nil is the
     /// sysctl's own answer when it could not be read, never a guess.
     private let hostMemoryBytes: @Sendable () -> Int64?
@@ -27,11 +33,29 @@ public struct DiagnosticRunner: Sendable {
     /// so a per-probe bound is no bound at all.
     public static let defaultBudget: Duration = .seconds(20)
 
+    /// The inputs of `DockerContext.shouldRepairStaleRecord` a report cannot measure: the takeover
+    /// preference is the app's, and asking `docker context show` would be a sixth spawn (NFR-001).
+    public struct DockerContextSetting: Equatable, Sendable {
+        public let takeoverEnabled: Bool
+        public let installed: Bool?
+        public let activeContext: String?
+
+        public init(takeoverEnabled: Bool, installed: Bool?, activeContext: String?) {
+            self.takeoverEnabled = takeoverEnabled
+            self.installed = installed
+            self.activeContext = activeContext
+        }
+    }
+
     public init(
         client: DockerAPIClient,
         probe: any SystemProbe,
         socketPath: String,
         bridgePath: String,
+        dockerContextSetting: @escaping @Sendable () async -> DockerContextSetting? = { nil },
+        recordedSocketPath: @escaping @Sendable (String) throws -> String? = {
+            try DockerCLI.recordedSocketPath(for: $0)
+        },
         hostMemoryBytes: @escaping @Sendable () -> Int64? = HostMemory.totalBytes,
         now: @escaping @Sendable () -> Date = Date.init,
         ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
@@ -42,6 +66,8 @@ public struct DiagnosticRunner: Sendable {
         self.probe = probe
         self.socketPath = socketPath
         self.bridgePath = bridgePath
+        self.dockerContextSetting = dockerContextSetting
+        self.recordedSocketPath = recordedSocketPath
         self.hostMemoryBytes = hostMemoryBytes
         self.now = now
         self.ticks = ticks
@@ -78,10 +104,11 @@ public struct DiagnosticRunner: Sendable {
         let routes: RoutesMeasurement
         let bridge: BridgeMeasurement
         let memory: MemoryMeasurement
+        let context: ContextMeasurement
         let durations: [CheckID: Duration]
 
-        /// Zero for a check nothing measured: `dockerContext` is answered elsewhere and a
-        /// skipped check spent nothing, neither of which is an unfinished measurement.
+        /// Zero for a check nothing measured: a skipped check spent nothing, which is not an
+        /// unfinished measurement.
         func duration(of id: CheckID) -> Duration { durations[id] ?? .zero }
     }
 
@@ -94,6 +121,7 @@ public struct DiagnosticRunner: Sendable {
         var bridge: BridgeMeasurement?
         var routes: RoutesMeasurement?
         var memory: MemoryMeasurement?
+        var context: ContextMeasurement?
         var durations: [CheckID: Duration] = [:]
 
         /// The checks no branch answered: the gather was abandoned before it reached them,
@@ -106,11 +134,12 @@ public struct DiagnosticRunner: Sendable {
             if bridge == nil { ids.append(.foreignBridge) }
             if routes == nil { ids.append(.routes) }
             if memory == nil { ids.append(.memoryCommitment) }
+            if context == nil { ids.append(.dockerContext) }
             return ids
         }
     }
 
-    /// Serialises the writes of three concurrent branches and hands out one snapshot.
+    /// Serialises the writes of the concurrent branches and hands out one snapshot.
     private actor Measurements {
         private var partial = Partial()
 
@@ -144,6 +173,11 @@ public struct DiagnosticRunner: Sendable {
         func memory(_ value: MemoryMeasurement, took: Duration) {
             partial.memory = value
             partial.durations[.memoryCommitment] = took
+        }
+
+        func context(_ value: ContextMeasurement, took: Duration) {
+            partial.context = value
+            partial.durations[.dockerContext] = took
         }
     }
 
@@ -264,6 +298,15 @@ public struct DiagnosticRunner: Sendable {
         case unmeasurable(reason: String)
     }
 
+    /// Judged by the rule the repair acts on, so Doctor offers `.repairDockerContext` exactly
+    /// when `repairDockerContextRecord()` would rewrite something.
+    enum ContextMeasurement {
+        case notAsked
+        case nothingToRepair
+        case stale(recorded: String, current: String)
+        case unmeasurable(reason: String)
+    }
+
     /// Abandoned rather than cancelled: `ProcessRunner.run` blocks on a semaphore no
     /// cancellation reaches, so the budget stops waiting and never stops the probe.
     private func signals(for checks: Set<CheckID>) async -> Signals {
@@ -291,7 +334,7 @@ public struct DiagnosticRunner: Sendable {
         return (value, ticks() - started)
     }
 
-    /// The three groups that share no input. Concurrent with each other and sequential
+    /// The groups that share no input. Concurrent with each other and sequential
     /// inside, so the request order NFR-001 pins is the order one socket still sees.
     private func gather(checks: Set<CheckID>, into measurements: Measurements) async {
         await withTaskGroup(of: Void.self) { group in
@@ -307,6 +350,12 @@ public struct DiagnosticRunner: Sendable {
                     checks.contains(.foreignBridge) ? await self.bridgeOwnership() : .notAsked
                 }
                 await measurements.bridge(bridge.value, took: bridge.elapsed)
+            }
+            group.addTask {
+                let context = await self.timed { () async -> ContextMeasurement in
+                    checks.contains(.dockerContext) ? await self.contextMeasurement() : .notAsked
+                }
+                await measurements.context(context.value, took: context.elapsed)
             }
         }
     }
@@ -374,12 +423,71 @@ public struct DiagnosticRunner: Sendable {
             routes: routes,
             bridge: bridge,
             memory: partial.memory ?? .unmeasurable(reason: Self.budgetExpired),
+            context: partial.context ?? .unmeasurable(reason: Self.budgetExpired),
             durations: durations
         )
     }
 
     static let budgetExpired = "The run's time budget expired before this check answered."
     private static let unfinishedRoutes = "Container routes: UNKNOWN — the check did not finish in time."
+    private static let contextSettingUnknown =
+        "The app did not say whether ContainerStack manages the Docker context."
+    private static let noRecordedSocket =
+        "docker context ls named no unix socket for \(DockerContext.name), so its record could not be compared."
+    private static let installationUnknown =
+        "The app has not yet read whether the \(DockerContext.name) context is installed."
+
+    /// Reads and never writes (decision 8): the listing is the repair's own first step, and
+    /// nothing here reaches its second.
+    private func contextMeasurement() async -> ContextMeasurement {
+        guard let setting = await dockerContextSetting() else {
+            return .unmeasurable(reason: Self.contextSettingUnknown)
+        }
+        let recorded: String?
+        do {
+            recorded = try await Self.offTheCooperativePool { [recordedSocketPath] in
+                try recordedSocketPath(DockerContext.name)
+            }
+        } catch {
+            // Not `localizedDescription`: neither `DockerCLIError` nor `ProcessRunnerError` is a
+            // `LocalizedError`, so that would be Foundation's bridge text (T-016b).
+            return .unmeasurable(reason: String(describing: error))
+        }
+        if let recorded, isStale(setting, installed: setting.installed, recorded: recorded) {
+            return .stale(recorded: recorded, current: socketPath)
+        }
+        // The rule reads `nil` as "decline" for both of these unknowns. Asked again with them assumed
+        // stale (a NUL ends no path, so it matches no socket), it says whether it answered or missed.
+        let couldBeStale = isStale(
+            setting,
+            installed: setting.installed ?? true,
+            recorded: recorded ?? socketPath + "\u{0}"
+        )
+        guard couldBeStale else { return .nothingToRepair }
+        return .unmeasurable(reason: recorded == nil ? Self.noRecordedSocket : Self.installationUnknown)
+    }
+
+    private func isStale(_ setting: DockerContextSetting, installed: Bool?, recorded: String?) -> Bool {
+        DockerContext.shouldRepairStaleRecord(
+            activeContext: setting.activeContext,
+            installed: installed,
+            takeoverEnabled: setting.takeoverEnabled,
+            recordedSocketPath: recorded,
+            currentSocketPath: socketPath
+        )
+    }
+
+    /// `ProcessRunner.run` holds its thread until the child exits. On the cooperative pool that can
+    /// be the thread the budget's timer needs, and the run outlasts its own deadline (NFR-002).
+    private static func offTheCooperativePool<T: Sendable>(
+        _ work: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result { try work() })
+            }
+        }
+    }
 
     /// `ping` retries only what costs a syscall to re-ask (`DockerAPIClient.failsImmediately`), so
     /// a hang is reported after one wait rather than three (NFR-002).

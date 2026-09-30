@@ -80,7 +80,35 @@ extension DiagnosticRunner {
         if id == .routes { return routesCheck(signals.routes, ranked: ranked, took: took) }
         if id == .foreignBridge { return bridgeCheck(signals.bridge, took: took) }
         if id == .memoryCommitment { return memoryCheck(signals.memory, took: took) }
+        if id == .dockerContext { return contextCheck(signals.context, took: took) }
         return notRun(id, took: took)
+    }
+
+    /// Wording with no CLI line behind it: `cstack doctor` never asks (F-002). The warning keeps
+    /// its remedy because the repair it names is the app's own (T-019).
+    private static func contextCheck(_ measurement: ContextMeasurement, took: Duration) -> DiagnosticCheck {
+        switch measurement {
+        case .notAsked:
+            return notRun(.dockerContext, took: took)
+        case .nothingToRepair:
+            return passed(.dockerContext, summary: "Docker context: no stale record to repair", detail: nil, took: took)
+        case .stale(let recorded, let current):
+            return warned(
+                .dockerContext,
+                summary: "Docker context: \(DockerContext.name) points at a retired socket",
+                detail: "It records \(recorded), not \(current)."
+                    + " The repair rewrites the record without switching to it.",
+                remedy: .repairDockerContext,
+                took: took
+            )
+        case .unmeasurable(let reason):
+            return indeterminate(
+                .dockerContext,
+                summary: "Docker context: UNKNOWN — the context record could not be checked.",
+                detail: reason,
+                took: took
+            )
+        }
     }
 
     /// F-003: `CStackCommands.swift:37-38` prints storage only when the status named a root, and

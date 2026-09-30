@@ -825,7 +825,7 @@ rule.
 
 ---
 
-### [T-018] Read-only docker-context check (UI set)
+### [T-018] Read-only docker-context check (UI set)  `[DONE:2026-09-30]`
 
 **Files:** modify `Sources/ContainerStackCore/DiagnosticRunner.swift`;
 test in `Tests/ContainerStackCoreTests/DiagnosticRunnerTests.swift`.
@@ -845,6 +845,15 @@ a third where the command runner throws asserts `.indeterminate`.
 **Also assert the check performs no repair** — the injected runner records the
 commands it was asked to run, and `context use` / `context update` must not
 appear.
+
+**Done (2c4c790):** `shouldRepairStaleRecord` also needs the takeover preference,
+the installation and the active context. The runner cannot measure the first, and
+spawning for the last would be a sixth process. So the caller supplies all three
+as `DiagnosticRunner.DockerContextSetting`, and nil makes the check
+`.indeterminate`. The review added two more rules: an input the rule cannot judge
+is `.indeterminate`, never `.ok`, and the listing runs off the cooperative pool.
+The audit found NFR-001's "fixed" spawn count had not held since T-012, and the
+spec now states it as a bound (c1303aa).
 
 **Depends on:** T-008, T-019
 
@@ -901,7 +910,12 @@ run's worth of spawns; the explicit button issues a second.
 **NFR-003:** this file is new. `RuntimeViewModel.swift` must not gain a line —
 check with `git diff --exit-code Sources/ContainerStackApp/RuntimeViewModel.swift`.
 
-**Depends on:** T-015, T-018a, T-019
+**From T-018:** build the runner with `dockerContextSetting:` read from the app's
+own state (`takesOverDockerContext`, `isDockerContextInstalled`,
+`activeDockerContext`). The default is nil, which renders the context row amber on
+every run.
+
+**Depends on:** T-015, T-018, T-018a, T-019
 
 ---
 

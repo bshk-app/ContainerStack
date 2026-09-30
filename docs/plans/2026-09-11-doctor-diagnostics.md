@@ -859,7 +859,7 @@ spec now states it as a bound (c1303aa).
 
 ---
 
-### [T-018a] A test-support target both test targets can import
+### [T-018a] A test-support target both test targets can import  `[DONE:2026-09-30]`
 
 **Blocks T-020.** `Package.swift:56-64` gives `ContainerStackAppTests` a
 dependency on `ContainerStackApp` only, and SwiftPM has no way for one test
@@ -881,6 +881,12 @@ new module and constructs `GatedSystemProbe`; it fails to compile today.
 Confirm it does not enter any of the three shipped products, and that
 `swiftlint --strict` and the `file_length`/`type_body_length` caps still pass on
 the moved file.
+
+**Done (d041e7c):** the file list above was one short. `Project.swift` (Tuist)
+needs the same target, because `scripts/smoke-test.sh` builds the core tests
+from `Tests/ContainerStackCoreTests/**` there. It is a static framework with
+`ENABLE_TESTING_SEARCH_PATHS`, since the fakes import `Testing`. The old file
+keeps only the fakes' own tests, as `SystemProbeFakeTests.swift`.
 
 **Depends on:** T-004
 
@@ -948,3 +954,7 @@ only for an in-process remedy, bound to `canRestartRuntime`, disabled while
 - Aggregate verdict / sidebar badge (OQ-1).
 - Memory commitment in the UI behind its own button (OQ-3, v2).
 - `CheckID` granularity for "versions" (OQ-5).
+- Two `ShellSystemProbeTests` fail under Tuist + xcodebuild ("this process is
+  shutting down") but pass under `swift test`. Found at T-018a, and identical on
+  the commit before it, so pre-existing: some test leaves `ProcessRunner`'s
+  shutdown flag set in the shared test process.

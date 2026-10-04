@@ -114,7 +114,9 @@ user asking "is my environment healthy?" before anything visibly breaks.
   consequence of the projection in F-004, not a second rule.
   *Acceptance:* test asserts `foreignBridge` wins and that no remedy naming a
   local runtime restart is emitted — in **both** the CLI and UI check sets,
-  since the CLI now measures bridge ownership too.
+  since the CLI now measures bridge ownership too. *Amended by F-014:* a
+  holder that is another ContainerStack copy's bridge gets `.restartRuntime`,
+  because that restart now stops it.
 
 - **[F-006]** Doctor is a new `DashboardDestination` case **added to
   `DashboardDestination.dockerItems`** (`AppChrome.swift:95-97`). `CaseIterable`
@@ -203,6 +205,44 @@ user asking "is my environment healthy?" before anything visibly breaks.
   Table-driven cases pin the ordering, including the two empty/all-skipped
   edges.
 
+- **[F-014]** **Another ContainerStack copy's bridge.** Ownership was decided by
+  the exact path of this build's bridge, so every other copy of ContainerStack
+  (the installed app against a dev build, or two installs) read as foreign.
+  Measured on 2026-10-03: the installed app's `socktainer` had held
+  `~/.containerstack/docker.sock` for 25 days with launchd as its parent and no
+  app or agent left to stop it, and the dev build could only report it.
+  The holder of the socket is now one of three things:
+  - **ours**: a pid of this build's bridge, as before;
+  - **a sibling**: its executable is `<bundle>/Contents/Helpers/socktainer` and
+    that bundle's identifier is `app.bshk.containerstack`;
+  - **foreign**: anything else, including a holder `lsof` could not name.
+  Both non-ours kinds keep `RuntimeState.foreignBridge`, and so keep its
+  precedence and its closed mutation gate (F-004, F-005). The state carries the
+  holder's pid and command, and the sibling's bundle path.
+  The `foreignBridge` check names the holder by pid and command. For a sibling
+  its remedy is `.restartRuntime`. The restart's bridge stop
+  (`RuntimeControlStep.stopBridge`, in the app and in `cstack runtime`) sends
+  `SIGTERM` to this build's bridge and to the socket's holder when that holder
+  is a sibling, and to nothing else. A foreign holder keeps the `.manual`
+  remedy, which now names its pid.
+  Nothing stops a sibling unless a person asks: no poll, no report and no
+  helper start does it. A sibling supervised by another copy's registered
+  LaunchAgent can be started again by launchd. If it takes the socket back, the
+  next report names it again.
+  *Acceptance:* classification tests for all three kinds, including a bundle
+  path with a space and a bundle whose identifier differs. A projection test
+  asserts a sibling gets `.restartRuntime` and a foreign holder gets a
+  `.manual` remedy naming its pid. A stop-plan test asserts the sibling's pid
+  is signalled and a foreign holder's is not.
+
+- **[F-015]** A `.skipped` check names itself. Its summary is
+  `<check title>: not checked`, and the reason moves to `detail`. Measured on
+  2026-10-01: under a foreign bridge the UI showed five identical grey rows,
+  and nothing said which check each row was. The CLI prints no skipped check
+  (F-003), so its output does not change.
+  *Acceptance:* a projection test asserts every skipped check's summary starts
+  with its own title and carries the reason in `detail`.
+
 ### 2.2 Non-functional requirements
 
 - **[NFR-001] Performance.** Process spawns per run are bounded by the check set
@@ -262,8 +302,10 @@ user asking "is my environment healthy?" before anything visibly breaks.
   `Sources/ContainerStackApp/RuntimeViewModel.swift`, which is at exactly 690
   lines against `file_length: warning: 690` under `--strict`.
   *Acceptance:* `git diff` shows that file untouched; SwiftLint passes.
-- **[NFR-004] Safety.** Doctor terminates no process. A foreign bridge is named,
-  never evicted.
+- **[NFR-004] Safety.** Doctor terminates no process. A foreign bridge is named
+  by its pid and command, not only by the socket, and is never evicted.
+  *Amended by F-014:* the restart a person presses stops another ContainerStack
+  copy's bridge. A report never does.
 - **[NFR-005] Observability.** `DiagnosticReport` is `Codable`, so a future
   "copy report" affordance needs no re-modelling. No such UI in v1. Each
   `DiagnosticCheck` carries a `duration`, so an incident can name which probe
@@ -438,7 +480,8 @@ returns `""`. The Core probe does not reuse it.
 ## 7. Non-goals
 
 - Memory commitment in the **UI** v1 (it stays in the CLI check set).
-- Any new repair: restoring a missing app root, evicting a foreign bridge,
+- Any new repair: restoring a missing app root, evicting a foreign bridge
+  (another ContainerStack copy's bridge is the F-014 exception),
   rewriting a docker context beyond the existing repair.
 - A "copy diagnostics" button.
 - Removing or consolidating the nine existing per-screen message properties on

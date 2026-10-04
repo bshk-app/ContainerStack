@@ -85,6 +85,13 @@ later closed at T-022 as decision 9; four remain.)
    A restart started from the sidebar shows the same state, since it leaves every
    row just as stale. The alternative, the old rows greyed under a banner, was
    rejected: a dimmed verdict still reads as current. (Closes OQ-6.)
+10. **Another ContainerStack copy's bridge is replaceable on request.** Decided
+    on 2026-10-04: the user picked this over only naming the holder. The
+    installed app's orphaned bridge blocked a dev build, and neither the app
+    nor the spec offered a way out. A bridge from a bundle with ContainerStack's
+    identifier is stopped by the restart a person presses. Any other holder is
+    still only named. Skipped rows name their check, decided the same day.
+    (F-014, F-015.)
 
 ## Still open — do not guess during implementation
 

@@ -996,6 +996,36 @@ Each rule has a test that fails when the rule is removed.
 
 ---
 
+### [T-023] Skipped rows name their check (F-015)
+
+**Files:** `Sources/ContainerStackCore/DiagnosticReport.swift` (`CheckID.title`),
+`Sources/ContainerStackCore/DiagnosticRunner+Verdicts.swift` (`skipped`), and the
+tests that pinned the old summary.
+
+**Step 1 — RED:** under a foreign bridge, every skipped check's summary starts
+with its own title and its `detail` is the reason.
+
+**Depends on:** T-022
+
+---
+
+### [T-024] Another ContainerStack copy's bridge (F-014)
+
+**Files:** `Sources/ContainerStackCore/BridgeOwnership.swift` (classification and
+`ForeignBridge`), `RuntimeState.swift` (payload, title, detail),
+`RuntimeControl.swift` (`stopBridge` carries the socket; what it signals),
+`DiagnosticRunner.swift` and `+Projection.swift`, the app's
+`RuntimeViewModel+Staleness.swift` and `+Control.swift`, `CStackRuntimeControl.swift`.
+`RuntimeViewModel.swift` changes in place only (NFR-003).
+
+**Step 1 — RED:** classification of ours, sibling and foreign holders; the
+projection's remedy per kind; the stop plan signals a sibling and never a
+foreign holder.
+
+**Depends on:** T-023
+
+---
+
 ## Backlog (out of scope, recorded not planned)
 
 - Split `SystemProbe` for interface segregation (architecture review; deferred).

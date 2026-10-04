@@ -996,7 +996,7 @@ Each rule has a test that fails when the rule is removed.
 
 ---
 
-### [T-023] Skipped rows name their check (F-015)
+### [T-023] Skipped rows name their check (F-015)  `[DONE:2026-10-04]`
 
 **Files:** `Sources/ContainerStackCore/DiagnosticReport.swift` (`CheckID.title`),
 `Sources/ContainerStackCore/DiagnosticRunner+Verdicts.swift` (`skipped`), and the
@@ -1005,11 +1005,14 @@ tests that pinned the old summary.
 **Step 1 — RED:** under a foreign bridge, every skipped check's summary starts
 with its own title and its `detail` is the reason.
 
+**Done (1b95433).** `notRun` leads with the title too and keeps no detail; F-015
+was narrowed to say so after review.
+
 **Depends on:** T-022
 
 ---
 
-### [T-024] Another ContainerStack copy's bridge (F-014)
+### [T-024] Another ContainerStack copy's bridge (F-014)  `[DONE:2026-10-04]`
 
 **Files:** `Sources/ContainerStackCore/BridgeOwnership.swift` (classification and
 `ForeignBridge`), `RuntimeState.swift` (payload, title, detail),
@@ -1021,6 +1024,16 @@ with its own title and its `detail` is the reason.
 **Step 1 — RED:** classification of ours, sibling and foreign holders; the
 projection's remedy per kind; the stop plan signals a sibling and never a
 foreign holder.
+
+**Done.** Codex reviewed the change. Two of its findings were real and are fixed,
+each with a test that fails without it:
+- The poll's automatic recovery would have stopped a sibling. The plan now takes
+  `replacingSibling`, and only a person's request passes `true`.
+- The stop read only the first pid `lsof` listed. It now looks at every one.
+Three were rejected. Doctor reading an unnamed holder as unknown, not foreign,
+predates this change and has its own test. The bare restart hint matches every
+other restart hint (backlog). `notRun` has no reason to carry (F-015 narrowed).
+`RuntimeViewModel.swift` changed type only, line for line (NFR-003 amended).
 
 **Depends on:** T-023
 
@@ -1040,6 +1053,15 @@ foreign holder.
   deadline" (0.3s deadline) failed once under load during T-020's gates, then
   passed 5/5 alone and in the full re-run. It is timing-sensitive and unrelated
   to the Doctor work.
+- Restart hints ignore `cstack --socket` (found in T-024's review). Every
+  "Run: cstack runtime restart" line is printed bare, so `cstack --socket X
+  doctor` points at a restart of the default socket. That restart stops and
+  starts the bridge there, not on `X`. Print `--socket X` whenever the report's
+  socket is not the default.
+- Ownership reads only the first pid `lsof` lists (found in T-024's review).
+  A wedged bridge whose socket file was replaced still lists under the path,
+  ahead of the bridge now serving it, so ownership can read "ours" while a
+  sibling serves. The bridge stop already looks at every listed pid.
 - A cancelled app request reads as a failure (was T-016d). A `.task` refresh
   cancelled during the retry loop's sleep leaves "Images/Containers could not be
   listed: CancellationError()" on screen. A cancelled monitor `ping()` counts as

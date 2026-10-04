@@ -223,26 +223,34 @@ user asking "is my environment healthy?" before anything visibly breaks.
   its remedy is `.restartRuntime`. The restart's bridge stop
   (`RuntimeControlStep.stopBridge`, in the app and in `cstack runtime`; a stop
   runs the same step) sends
-  `SIGTERM` to this build's bridge and to the socket's holder when that holder
-  is a sibling, and to nothing else. A foreign holder keeps the `.manual`
-  remedy, which now names its pid.
+  `SIGTERM` to this build's bridge and to every holder `lsof` lists that is a
+  sibling, and to nothing else. A foreign holder keeps the `.manual` remedy,
+  which now names its pid.
   Nothing stops a sibling unless a person asks: no poll, no report and no
-  helper start does it. A sibling supervised by another copy's registered
+  helper start does it. The plan carries this as `replacingSibling`. It is
+  true only for the sidebar's Restart and Stop, the Doctor's remedy and
+  `cstack runtime`. The poll's automatic recovery and the stale-build restart
+  at launch run the same plan with it false. A sibling supervised by another copy's registered
   LaunchAgent can be started again by launchd. If it takes the socket back, the
   next report names it again.
   *Acceptance:* classification tests for all three kinds, including a bundle
   path with a space and a bundle whose identifier differs. A projection test
   asserts a sibling gets `.restartRuntime` and a foreign holder gets a
   `.manual` remedy naming its pid. A stop-plan test asserts the sibling's pid
-  is signalled and a foreign holder's is not.
+  is signalled and a foreign holder's is not, including a sibling listed after
+  another holder. A restart-plan test asserts only `replacingSibling: true`
+  carries the socket to the bridge stop.
 
 - **[F-015]** A `.skipped` check names itself. Its summary is
-  `<check title>: not checked`, and the reason moves to `detail`. Measured on
+  `<check title>: not checked`. When a higher-precedence state decided, its
+  reason moves to `detail`. A check with nothing measured, such as storage
+  when the status names no root, has no detail, as before. Measured on
   2026-10-01: under a foreign bridge the UI showed five identical grey rows,
   and nothing said which check each row was. The CLI prints no skipped check
   (F-003), so its output does not change.
-  *Acceptance:* a projection test asserts every skipped check's summary starts
-  with its own title and carries the reason in `detail`.
+  *Acceptance:* a projection test asserts every check skipped by a foreign
+  bridge or a stopped runtime leads with its own title and carries the reason
+  in `detail`.
 
 ### 2.2 Non-functional requirements
 

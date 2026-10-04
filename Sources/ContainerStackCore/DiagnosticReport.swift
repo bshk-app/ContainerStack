@@ -17,6 +17,19 @@ extension CheckID {
     public static let uiSet: Set<CheckID> = [
         .appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext,
     ]
+
+    /// The prefix every measured summary already leads with, so a skipped row reads the same way.
+    public var title: String {
+        switch self {
+        case .foreignBridge: "Docker bridge"
+        case .appRoot: "Runtime storage"
+        case .socket: "Docker socket"
+        case .versions: "API version"
+        case .routes: "Container routes"
+        case .dockerContext: "Docker context"
+        case .memoryCommitment: "Container memory limits"
+        }
+    }
 }
 
 public enum Verdict: Codable, Equatable, Sendable {

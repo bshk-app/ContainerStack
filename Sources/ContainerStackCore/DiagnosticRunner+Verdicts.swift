@@ -70,13 +70,14 @@ extension DiagnosticRunner {
     }
 
     /// A reason, never a bare "not applicable": the check below a failure is grey because
-    /// something above it already decided, and the report has to say what.
+    /// something above it already decided, and the report has to say what. F-015: the summary
+    /// names the check, because the reason is the same on every row it greys.
     static func skipped(_ id: CheckID, because reason: String, took duration: Duration) -> DiagnosticCheck {
         DiagnosticCheck(
             id: id,
             verdict: .skipped,
-            summary: reason,
-            detail: nil,
+            summary: notChecked(id),
+            detail: reason,
             remedy: nil,
             duration: duration
         )
@@ -88,10 +89,14 @@ extension DiagnosticRunner {
         DiagnosticCheck(
             id: id,
             verdict: .skipped,
-            summary: "Not run.",
+            summary: notChecked(id),
             detail: nil,
             remedy: nil,
             duration: duration
         )
+    }
+
+    private static func notChecked(_ id: CheckID) -> String {
+        "\(id.title): not checked"
     }
 }

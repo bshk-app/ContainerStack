@@ -194,7 +194,7 @@ struct DiagnosticRunnerPrecedenceTests {
         #expect(report.check(.foreignBridge)?.verdict == .failure)
         #expect(report.check(.appRoot)?.verdict == .skipped)
         #expect(report.check(.socket)?.verdict == .skipped)
-        #expect(report.check(.appRoot)?.summary.contains(diagnosticSocketPath) == true)
+        #expect(report.check(.appRoot)?.detail?.contains(diagnosticSocketPath) == true)
     }
 
     // F-005 in both sets: the CLI measures bridge ownership too, and a local restart
@@ -226,7 +226,7 @@ struct DiagnosticRunnerPrecedenceTests {
         #expect(report.check(.socket)?.verdict == .ok)
         #expect(report.check(.socket)?.summary == "Docker socket: healthy")
         #expect(report.check(.versions)?.verdict == .skipped)
-        #expect(report.check(.versions)?.summary.contains(missingRoot) == true)
+        #expect(report.check(.versions)?.detail?.contains(missingRoot) == true)
     }
 
     // F-003 forbids drift: these are the bytes `cstack doctor` prints today
@@ -274,6 +274,20 @@ struct DiagnosticRunnerPrecedenceTests {
         #expect(report.check(.foreignBridge)?.detail == state.detail)
     }
 
+    // F-015: measured on 2026-10-01, five grey rows sharing one reason read as one row repeated.
+    @Test("a skipped check names itself and keeps the reason as its detail")
+    func aSkippedCheckNamesItself() async {
+        let wedged = await wedgedByAForeignBridge(checks: CheckID.uiSet)
+        let stopped = await makeRunner().run(checks: CheckID.uiSet)
+        let skipped = (wedged.checks + stopped.checks).filter { $0.verdict == .skipped }
+        // Every check but the failing ownership one, then every check of the stopped run.
+        #expect(skipped.count == 2 * CheckID.uiSet.count - 1)
+        for check in skipped {
+            #expect(check.summary == "\(check.id.title): not checked")
+            #expect(check.detail?.isEmpty == false)
+        }
+    }
+
     // F-010: a runtime that is not there is grey with a reason, not red.
     @Test("a socket that does not answer skips every check with a reason")
     func anUnreachableSocketSkipsEveryCheck() async {
@@ -314,8 +328,8 @@ struct DiagnosticRunnerPrecedenceTests {
         ).run(checks: CheckID.uiSet)
         #expect(report.checks.allSatisfy { $0.verdict != .ok })
         #expect(report.checks.allSatisfy { $0.summary != RuntimeState.starting.detail })
-        #expect(report.check(.socket)?.summary == RuntimeState.genericFailure)
-        #expect(report.check(.appRoot)?.summary == RuntimeState.genericFailure)
+        #expect(report.check(.socket)?.detail == RuntimeState.genericFailure)
+        #expect(report.check(.appRoot)?.detail == RuntimeState.genericFailure)
     }
 }
 
@@ -417,7 +431,7 @@ struct DiagnosticRunnerProbeFailureTests {
         )
         #expect(report.check(.foreignBridge)?.verdict == .failure)
         #expect(report.check(.appRoot)?.verdict == .skipped)
-        #expect(report.check(.appRoot)?.summary.contains(diagnosticSocketPath) == true)
+        #expect(report.check(.appRoot)?.detail?.contains(diagnosticSocketPath) == true)
         #expect(report.checks.allSatisfy { $0.verdict != .ok })
     }
 

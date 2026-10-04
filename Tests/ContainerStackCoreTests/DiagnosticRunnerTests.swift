@@ -38,7 +38,8 @@ func makeRunner(
     now: Date = diagnosticClockDate,
     ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
     log: @escaping @Sendable (String) -> Void = { _ in },
-    budget: Duration = DiagnosticRunner.defaultBudget
+    budget: Duration = DiagnosticRunner.defaultBudget,
+    bundleIdentifier: @escaping @Sendable (String) -> String? = { _ in nil }
 ) -> DiagnosticRunner {
     DiagnosticRunner(
         client: DockerAPIClient(transport: transport),
@@ -51,7 +52,8 @@ func makeRunner(
         now: { now },
         ticks: ticks,
         log: log,
-        budget: budget
+        budget: budget,
+        bundleIdentifier: bundleIdentifier
     )
 }
 
@@ -71,7 +73,8 @@ func makeRunner(
     now: Date = diagnosticClockDate,
     ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
     log: @escaping @Sendable (String) -> Void = { _ in },
-    budget: Duration = DiagnosticRunner.defaultBudget
+    budget: Duration = DiagnosticRunner.defaultBudget,
+    bundleIdentifier: @escaping @Sendable (String) -> String? = { _ in nil }
 ) -> DiagnosticRunner {
     makeRunner(
         probe: RecordingSystemProbe(
@@ -89,7 +92,8 @@ func makeRunner(
         now: now,
         ticks: ticks,
         log: log,
-        budget: budget
+        budget: budget,
+        bundleIdentifier: bundleIdentifier
     )
 }
 
@@ -259,15 +263,16 @@ struct DiagnosticRunnerPrecedenceTests {
     // `resolve` itself, so a change there moves this fixture rather than contradicting it.
     @Test("the failing check is the one resolve names, for the same signals")
     func theProjectedFailureIsWhateverResolveNames() async {
+        let holder = ForeignBridge(socketPath: diagnosticSocketPath, pid: 4242, command: "", siblingBundlePath: nil)
         let state = RuntimeState.resolve(
             socketResponds: true,
             helperRunning: true,
             isStarting: false,
             failure: nil,
             missingAppRoot: missingRoot,
-            foreignBridge: diagnosticSocketPath
+            foreignBridge: holder
         )
-        #expect(state == .foreignBridge(socketPath: diagnosticSocketPath))
+        #expect(state == .foreignBridge(holder))
         let report = await wedgedByAForeignBridge(checks: CheckID.uiSet)
         #expect(report.checks.filter { $0.verdict == .failure }.map(\.id) == [.foreignBridge])
         #expect(report.check(.foreignBridge)?.summary == state.title)

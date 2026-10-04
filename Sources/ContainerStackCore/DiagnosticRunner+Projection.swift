@@ -11,21 +11,23 @@ extension DiagnosticRunner {
         // precedence order made moot still spent whatever it spent before that was known.
         let took = signals.duration(of: id)
         switch state {
-        case .foreignBridge(let socketPath):
+        case .foreignBridge(let bridge):
             guard id == .foreignBridge else {
-                return skipped(id, because: "Another Docker bridge holds \(socketPath).", took: took)
+                return skipped(id, because: "Another Docker bridge holds \(bridge.socketPath).", took: took)
+            }
+            // F-014: the restart stops another ContainerStack copy's bridge, so that one gets it.
+            if bridge.siblingBundlePath != nil {
+                return failed(
+                    id,
+                    summary: state.title,
+                    detail: [state.detail, "Run: cstack runtime restart"].compactMap { $0 }.joined(separator: "\n"),
+                    remedy: .restartRuntime,
+                    took: took
+                )
             }
             // F-005: a restart of our runtime cannot evict a process it did not start, so the
             // only honest repair is one the person performs.
-            return failed(
-                id,
-                summary: state.title,
-                detail: state.detail,
-                remedy: .manual(
-                    "Stop the other Docker bridge holding \(socketPath), then start the runtime again."
-                ),
-                took: took
-            )
+            return failed(id, summary: state.title, detail: state.detail, remedy: .manual(bridge.advice), took: took)
         case .detached(let appRoot):
             // `resolve` reaches this state only with the socket answering, so the socket check keeps
             // the answer it already has (`CStackCommands.swift:24`) instead of being made moot.
@@ -248,13 +250,13 @@ extension DiagnosticRunner {
                 detail: Self.holderOutOfSight,
                 took: took
             )
-        case .foreign(let socketPath):
+        case .foreign(let bridge):
             // `resolve` is the only thing that ranks ownership, so a foreign bridge it never
             // saw is reported unjudged rather than condemned twice over (F-013).
             return indeterminate(
                 .foreignBridge,
                 summary: unidentifiedHolder,
-                detail: "Another bridge was measured holding \(socketPath), "
+                detail: "Another bridge was measured holding \(bridge.socketPath), "
                     + "but the resolved runtime state did not carry it.",
                 took: took
             )

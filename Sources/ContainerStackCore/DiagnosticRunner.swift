@@ -28,6 +28,9 @@ public struct DiagnosticRunner: Sendable {
     /// The whole run's budget, not one probe's. Injected so a test can expire it without
     /// waiting for it; the clock above stamps a report and schedules nothing.
     private let budget: Duration
+    /// Tells another ContainerStack copy's bridge from anyone else's (F-014). Injected because
+    /// the default reads the bundle on disk, and a developer's machine has one installed.
+    private let bundleIdentifier: @Sendable (String) -> String?
 
     /// NFR-002: four probes at `ProcessRunner.diagnosticTimeout` (10s) are 40s in sequence,
     /// so a per-probe bound is no bound at all.
@@ -60,7 +63,8 @@ public struct DiagnosticRunner: Sendable {
         now: @escaping @Sendable () -> Date = Date.init,
         ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
         log: @escaping @Sendable (String) -> Void = DiagnosticLog.line,
-        budget: Duration = DiagnosticRunner.defaultBudget
+        budget: Duration = DiagnosticRunner.defaultBudget,
+        bundleIdentifier: @escaping @Sendable (String) -> String? = BridgeOwnership.bundleIdentifier(atPath:)
     ) {
         self.client = client
         self.probe = probe
@@ -73,6 +77,7 @@ public struct DiagnosticRunner: Sendable {
         self.ticks = ticks
         self.log = log
         self.budget = budget
+        self.bundleIdentifier = bundleIdentifier
     }
 
     /// Answers every requested id and only those: a check that was not run is
@@ -268,14 +273,14 @@ public struct DiagnosticRunner: Sendable {
     enum BridgeMeasurement {
         case notAsked
         case ours
-        case foreign(socketPath: String)
+        case foreign(ForeignBridge)
         case unseenHolder
         case unmeasurable(reason: String)
 
         /// Only a bridge the probes named: `resolve` ranks ownership it was told about,
         /// and an unreadable probe tells it nothing.
-        var foreignSocketPath: String? {
-            if case .foreign(let socketPath) = self { return socketPath }
+        var foreignBridge: ForeignBridge? {
+            if case .foreign(let bridge) = self { return bridge }
             return nil
         }
     }
@@ -409,7 +414,7 @@ public struct DiagnosticRunner: Sendable {
             // Gated exactly as `RuntimeViewModel.applyState` gates them, so both callers hand
             // `resolve` the same inputs. The app's call convention, not a second ranking.
             missingAppRoot: socket.responds ? appRoot.missingRoot : nil,
-            foreignBridge: socket.responds ? bridge.foreignSocketPath : nil
+            foreignBridge: socket.responds ? bridge.foreignBridge : nil
         )
         var durations = partial.durations
         // A check that never answered carries the budget it burned, which no finished
@@ -660,9 +665,13 @@ public struct DiagnosticRunner: Sendable {
         }
 
         guard let holder = BridgeOwnership.holder(lsofOutput: lsof) else { return .unseenHolder }
-        let ourPIDs = ProcessTable.pids(forExecutable: bridgePath, in: listing)
-        return BridgeOwnership.isOurs(holder: holder, ourPIDs: ourPIDs)
-            ? .ours
-            : .foreign(socketPath: socketPath)
+        let foreign = BridgeOwnership.foreignBridge(
+            socketPath: socketPath,
+            holder: holder,
+            ourBridgePath: bridgePath,
+            listing: listing,
+            bundleIdentifier: bundleIdentifier
+        )
+        return foreign.map(BridgeMeasurement.foreign) ?? .ours
     }
 }

@@ -221,7 +221,8 @@ user asking "is my environment healthy?" before anything visibly breaks.
   holder's pid and command, and the sibling's bundle path.
   The `foreignBridge` check names the holder by pid and command. For a sibling
   its remedy is `.restartRuntime`. The restart's bridge stop
-  (`RuntimeControlStep.stopBridge`, in the app and in `cstack runtime`) sends
+  (`RuntimeControlStep.stopBridge`, in the app and in `cstack runtime`; a stop
+  runs the same step) sends
   `SIGTERM` to this build's bridge and to the socket's holder when that holder
   is a sibling, and to nothing else. A foreign holder keeps the `.manual`
   remedy, which now names its pid.
@@ -302,6 +303,9 @@ user asking "is my environment healthy?" before anything visibly breaks.
   `Sources/ContainerStackApp/RuntimeViewModel.swift`, which is at exactly 690
   lines against `file_length: warning: 690` under `--strict`.
   *Acceptance:* `git diff` shows that file untouched; SwiftLint passes.
+  *Amended by F-014:* the foreign-bridge cache there changes type from the
+  socket path to `ForeignBridge`, line for line, so the banner can name the
+  holder. The file stays at 690 lines and nothing else in it changes.
 - **[NFR-004] Safety.** Doctor terminates no process. A foreign bridge is named
   by its pid and command, not only by the socket, and is never evicted.
   *Amended by F-014:* the restart a person presses stops another ContainerStack

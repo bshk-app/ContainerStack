@@ -214,9 +214,8 @@ struct DoctorTextRendererTests {
         #expect(
             text == """
                 Another Docker bridge is in use
-                Another Docker bridge holds \(diagnosticSocketPath), so starting and stopping containers can hang. \
-                Stop it, then start the runtime again.
-                Stop the other Docker bridge holding \(diagnosticSocketPath), then start the runtime again.
+                Process 4242 holds \(diagnosticSocketPath), so starting and stopping containers can hang. \
+                Stop process 4242, then start the runtime again.
                 """
         )
         #expect(!text.contains("Docker socket:"))

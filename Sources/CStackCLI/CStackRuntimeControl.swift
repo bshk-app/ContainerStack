@@ -36,9 +36,14 @@ enum CommandShell {
         return result?.output ?? ""
     }
 
-    static func terminate(executablePath: String) -> Int {
-        let listing = output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
-        let pids = ProcessTable.pids(forExecutable: executablePath, in: listing)
+    /// F-014: this build's bridge, and another ContainerStack copy's when it holds the socket.
+    static func terminateBridge(executablePath: String, socketPath: String?) -> Int {
+        let pids = BridgeOwnership.pidsToStop(
+            bridgePath: executablePath,
+            lsofOutput: socketPath.map { output(executablePath: "/usr/sbin/lsof", arguments: ["-Fpcn", "--", $0]) }
+                ?? "",
+            listing: output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
+        )
         for pid in pids {
             kill(pid, SIGTERM)
         }
@@ -64,7 +69,11 @@ extension CStackCLI {
         switch invocation.positional.first {
         case "restart", .none:
             let failed = try apply(
-                RuntimeRestartPlan.steps(configuration: configuration, agentRegistered: agentRegistered()),
+                RuntimeRestartPlan.steps(
+                    configuration: configuration,
+                    agentRegistered: agentRegistered(),
+                    replacingSibling: true
+                ),
                 configuration: configuration
             )
             guard failed.isEmpty else {
@@ -72,7 +81,10 @@ extension CStackCLI {
             }
             print("Runtime restarted. Check with: cstack doctor")
         case "stop":
-            try apply(RuntimeRestartPlan.stopSteps(configuration: configuration), configuration: configuration)
+            try apply(
+                RuntimeRestartPlan.stopSteps(configuration: configuration, replacingSibling: true),
+                configuration: configuration
+            )
             print("Docker bridge stopped. Apple Container is still running.")
         case "start":
             try apply([.startBridge], configuration: configuration)
@@ -95,8 +107,8 @@ extension CStackCLI {
         var failed: [String] = []
         for step in steps {
             switch step {
-            case .stopBridge(let executablePath):
-                let stopped = CommandShell.terminate(executablePath: executablePath)
+            case .stopBridge(let executablePath, let socketPath):
+                let stopped = CommandShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
                 print("Stopped \(stopped) bridge process(es)")
             case .stopContainers(let executablePath, let graceSeconds):
                 // Advisory on purpose, and so deliberately absent from `failed`: an idle machine has

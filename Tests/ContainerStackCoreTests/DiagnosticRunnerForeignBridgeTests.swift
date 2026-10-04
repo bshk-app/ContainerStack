@@ -54,18 +54,36 @@ struct DiagnosticRunnerForeignBridgeTests {
     }
 
     // F-005: restarting our runtime does not evict a process it did not start, so the
-    // only honest repair is one the person performs.
-    @Test("a foreign holder fails with a manual remedy, never a local restart")
+    // only honest repair is one the person performs. NFR-004: that process is named.
+    @Test("a foreign holder fails with a manual remedy naming it, never a local restart")
     func aForeignHolderCarriesAManualRemedy() async {
         let check = await ownershipCheck(
             socketHolder: .output(foreignLsofOutput),
             processTable: .output(ourBridgeProcessTable)
         )
-        let expected =
-            "Stop the other Docker bridge holding \(diagnosticSocketPath), then start the runtime again."
         #expect(check?.verdict == .failure)
-        #expect(check?.remedy == .manual(expected))
+        #expect(check?.remedy == .manual("Stop process 4242, then start the runtime again."))
         #expect(check?.remedy != .restartRuntime)
+    }
+
+    // F-014: another ContainerStack copy's bridge is the one holder the restart now stops.
+    @Test("another ContainerStack copy's bridge fails with the restart as its remedy")
+    func aSiblingCarriesTheRestart() async {
+        let installed = "/Users/me/Applications/ContainerStack.app"
+        let report = await makeRunner(
+            socketHolder: .output(foreignLsofOutput),
+            processTable: .output(
+                "\(ourBridgeProcessTable)\n4242 \(installed)/Contents/Helpers/socktainer --socket \(diagnosticSocketPath)"
+            ),
+            transport: idleRuntime(),
+            bundleIdentifier: { $0 == installed ? BridgeOwnership.containerStackBundleIdentifier : nil }
+        ).run(checks: CheckID.cliSet)
+        let check = report.check(.foreignBridge)
+        #expect(check?.verdict == .failure)
+        #expect(check?.remedy == .restartRuntime)
+        #expect(check?.summary == "Another ContainerStack bridge is in use")
+        #expect(check?.detail?.contains("\(installed) (process 4242)") == true)
+        #expect(check?.detail?.hasSuffix("Run: cstack runtime restart") == true)
     }
 
     @Test("an lsof that could not run leaves ownership unknown, not ours")

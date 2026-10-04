@@ -282,7 +282,7 @@ extension DoctorRepairs {
     /// The app's own: its restart, its context-record repair, and its restart state.
     init(runtime: RuntimeViewModel) {
         self.init(
-            restartRuntime: { [weak runtime] in await runtime?.restartRuntime() ?? false },
+            restartRuntime: { [weak runtime] in await runtime?.restartRuntime(replacingSibling: true) ?? false },
             repairDockerContext: { [weak runtime] in await runtime?.repairDockerContextRecord() ?? false },
             canRestartRuntime: { [weak runtime] in runtime?.canRestartRuntime ?? false },
             isRuntimeRestarting: { [weak runtime] in runtime?.isRestarting ?? false }

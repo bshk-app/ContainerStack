@@ -23,7 +23,7 @@ final class RuntimeViewModel {
     /// Same cadence and the same reason: answering "who holds the socket" costs
     /// an `lsof` and a `ps`, which is too much for a 3-second poll.
     private var bridgeOwnerCadence = DiagnosticCadence(interval: .seconds(30))
-    private var lastForeignBridge: String?
+    private var lastForeignBridge: ForeignBridge?
     /// Weighs consecutive probe answers, so one unanswered ping cannot condemn the runtime.
     /// Internal so a test can seed the silence a stopped runtime accumulates.
     var livenessFilter = RuntimeLivenessFilter()
@@ -430,12 +430,12 @@ final class RuntimeViewModel {
         return lastMissingAppRoot
     }
 
-    /// The socket path when a bridge that is not ours holds it, otherwise nil.
+    /// The bridge holding the socket when it is not ours, otherwise nil.
     /// Re-asked on the cadence so the banner clears by itself once the other
     /// bridge is gone - the reported case sat there for hours with nothing to see.
-    private func throttledForeignBridge() -> String? {
+    private func throttledForeignBridge() -> ForeignBridge? {
         if bridgeOwnerCadence.shouldRun() {
-            lastForeignBridge = servesOurBridge() ? nil : socketPath
+            lastForeignBridge = currentForeignBridge()
         }
         return lastForeignBridge
     }
@@ -443,8 +443,8 @@ final class RuntimeViewModel {
     /// Probes now and feeds the same cache, for the same reason `freshMissingAppRoot`
     /// does: a refresh that answered from nothing would clear the banner the poll
     /// had just raised.
-    private func freshForeignBridge() -> String? {
-        lastForeignBridge = servesOurBridge() ? nil : socketPath
+    private func freshForeignBridge() -> ForeignBridge? {
+        lastForeignBridge = currentForeignBridge()
         bridgeOwnerCadence.recordRun()
         return lastForeignBridge
     }
@@ -524,7 +524,7 @@ final class RuntimeViewModel {
         socketResponds: Bool,
         unroutableNetworks: [UnroutableNetwork] = [],
         missingAppRoot: String? = nil,
-        foreignBridge: String? = nil
+        foreignBridge: ForeignBridge? = nil
     ) {
         runtimeState = RuntimeState.resolve(
             socketResponds: socketResponds,

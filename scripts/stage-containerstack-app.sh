@@ -95,9 +95,13 @@ fi
 #
 # `ditto` keeps the framework's version symlinks intact; cp -R would flatten
 # Versions/Current and codesign refuses to seal the result.
+#
+# The artifact cache sits at the scratch root, which is not a fixed distance
+# from bin_path: .build/<triple>/release under the native build system,
+# .build/out/Products/Release under swiftbuild, which Swift 6.4 uses unasked.
 sparkle_framework="$(
-    find "$(dirname "$(dirname "$bin_path")")/artifacts" \
-        -type d -name 'Sparkle.framework' -path '*macos*' -print -quit 2>/dev/null
+    find "${bin_path%%/.build/*}/.build/artifacts" \
+        -type d -name 'Sparkle.framework' -path '*macos*' -print -quit 2>/dev/null || true
 )"
 [[ -n "$sparkle_framework" ]] || {
     printf 'error: Sparkle.framework not found; run swift build first\n' >&2

@@ -20,7 +20,7 @@ extension RuntimeViewModel {
             loadCurrent: { self.bundledBridgeIdentity() },
             restart: { await self.restartRuntime() },
             recordIdentity: { self.recordBridgeIdentity() },
-            servesOurBridge: { self.servesOurBridge() }
+            foreignBridge: { self.currentForeignBridge() }
         )
     }
 
@@ -29,7 +29,7 @@ extension RuntimeViewModel {
         loadCurrent: () -> RuntimeHelperIdentity?,
         restart: () async -> Bool,
         recordIdentity: () -> Void,
-        servesOurBridge: () -> Bool = { true }
+        foreignBridge: () -> ForeignBridge? = { nil }
     ) async {
         guard !hasCheckedBridgeIdentity else { return }
         await adoptBridgeIfStale(
@@ -37,14 +37,8 @@ extension RuntimeViewModel {
             current: loadCurrent(),
             restart: restart,
             recordIdentity: recordIdentity,
-            servesOurBridge: servesOurBridge
+            foreignBridge: foreignBridge
         )
-    }
-
-    /// The banner owns this wording; the launch-time discovery reuses it so the
-    /// two cannot drift apart.
-    var foreignBridgeMessage: String {
-        RuntimeState.foreignBridge(socketPath: socketPath).detail ?? ""
     }
 
     func adoptBridgeIfStale(
@@ -52,7 +46,7 @@ extension RuntimeViewModel {
         current: RuntimeHelperIdentity?,
         restart: () async -> Bool,
         recordIdentity: () -> Void,
-        servesOurBridge: () -> Bool = { true }
+        foreignBridge: () -> ForeignBridge? = { nil }
     ) async {
         guard !hasCheckedBridgeIdentity else { return }
         hasCheckedBridgeIdentity = true
@@ -65,8 +59,8 @@ extension RuntimeViewModel {
         // passes, and lifecycle calls hang with nothing to look at.
         guard runtimeState.isHealthy else { return }
 
-        guard servesOurBridge() else {
-            serviceMessage = foreignBridgeMessage
+        if let foreign = foreignBridge() {
+            serviceMessage = Self.foreignBridgeMessage(foreign)
             return
         }
 
@@ -94,8 +88,8 @@ extension RuntimeViewModel {
         // socktainer someone runs from elsewhere is theirs. So a restart can
         // "succeed" while a foreign bridge has taken the socket in the meantime,
         // and recording our identity there would declare the mismatch resolved.
-        guard servesOurBridge() else {
-            serviceMessage = foreignBridgeMessage
+        if let foreign = foreignBridge() {
+            serviceMessage = Self.foreignBridgeMessage(foreign)
             return
         }
 
@@ -106,25 +100,30 @@ extension RuntimeViewModel {
         }
     }
 
-    /// Whether the bridge this bundle ships is the process holding the socket.
+    /// The banner owns this wording; the launch-time discovery reuses it so the
+    /// two cannot drift apart.
+    static func foreignBridgeMessage(_ bridge: ForeignBridge) -> String {
+        RuntimeState.foreignBridge(bridge).detail ?? ""
+    }
+
+    /// Who holds the socket when it is not the bridge this bundle ships, named so the banner
+    /// can say which process it is and whether a restart replaces it (F-014).
     /// The Docker API cannot answer this - every socktainer replies the same - and
     /// neither can "is our binary running", since the bridge takes a `--socket`
     /// argument and ours may be serving a different path.
-    func servesOurBridge() -> Bool {
-        let plan = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL)
-        return BridgeOwnership.isOurs(
+    func currentForeignBridge() -> ForeignBridge? {
+        BridgeOwnership.foreignBridge(
+            socketPath: socketPath,
             holder: BridgeOwnership.holder(
                 lsofOutput: RuntimeShell.output(
                     executablePath: "/usr/sbin/lsof",
                     arguments: ["-Fpcn", "--", socketPath]
                 )
             ),
-            ourPIDs: ProcessTable.pids(
-                forExecutable: plan.bridgePath,
-                in: RuntimeShell.output(
-                    executablePath: "/bin/ps",
-                    arguments: ["-A", "-o", "pid=,command="]
-                )
+            ourBridgePath: RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL).bridgePath,
+            listing: RuntimeShell.output(
+                executablePath: "/bin/ps",
+                arguments: ["-A", "-o", "pid=,command="]
             )
         )
     }

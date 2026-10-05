@@ -254,6 +254,13 @@ extension DockerAPIClient {
         return try await decode(ContainerDetailPayload.self, response: response).detail
     }
 
+    /// The diagnostic read of the micro-VM size: `requestRetryingImmediateFailures` excludes
+    /// `.timedOut`, so a wedged socket is waited on once per container, not three times (NFR-002).
+    func memoryLimitBytes(containerID: String) async throws -> Int64? {
+        let response = try await requestRetryingImmediateFailures(path: "/containers/\(containerID)/json")
+        return try await decode(ContainerDetailPayload.self, response: response).detail.memoryLimitBytes
+    }
+
     public func containerLogs(id: String, tail: Int? = nil) async throws -> String {
         var path = "/containers/\(id)/logs?stdout=1&stderr=1"
         if let tail {

@@ -58,7 +58,7 @@ struct RuntimeStalenessMessageTests {
             current: shipped,
             restart: { true },
             recordIdentity: { recordedIdentity = true },
-            servesOurBridge: { false }
+            foreignBridge: { ForeignBridge(socketPath: "/tmp/socket") }
         )
 
         #expect(recordedIdentity == false)
@@ -83,12 +83,37 @@ struct RuntimeStalenessMessageTests {
                 return true
             },
             recordIdentity: { recordedIdentity = true },
-            servesOurBridge: { false }
+            foreignBridge: { ForeignBridge(socketPath: "/tmp/socket") }
         )
 
         #expect(restarted == false)
         #expect(recordedIdentity == false)
-        #expect(model.serviceMessage == model.foreignBridgeMessage)
+        #expect(model.serviceMessage?.contains("Another Docker bridge holds") == true)
+    }
+
+    /// F-014: another ContainerStack copy is named as one, with the restart that replaces it,
+    /// rather than told to be stopped by hand.
+    @Test("Another copy's bridge is named with the restart that replaces it")
+    func siblingBridgeIsNamedWithTheRestart() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        let sibling = ForeignBridge(
+            socketPath: "/tmp/socket",
+            pid: 63819,
+            command: "/Applications/ContainerStack.app/Contents/Helpers/socktainer",
+            siblingBundlePath: "/Applications/ContainerStack.app"
+        )
+
+        await model.adoptBridgeIfStale(
+            recorded: shipped,
+            current: shipped,
+            restart: { true },
+            recordIdentity: {},
+            foreignBridge: { sibling }
+        )
+
+        #expect(model.serviceMessage == RuntimeState.foreignBridge(sibling).detail)
+        #expect(model.serviceMessage?.contains("Restart the runtime") == true)
     }
 
     @Test("A message produced while restarting is not erased")

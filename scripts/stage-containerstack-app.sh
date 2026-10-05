@@ -76,13 +76,26 @@ install -m 0644 "$ROOT/Packaging/socktainer.LICENSE" \
 # SwiftPM emits a flat resource directory with a `.bundle` suffix. Re-house it
 # as a valid macOS resource bundle so zamokctl/codesign can traverse it while
 # Bundle.url(forResource:) keeps finding the same paths.
+#
+# swiftbuild already nests the resources under Contents/Resources, with an
+# Info.plist whose identifier comes from the checkout's directory name. Take
+# only its resources so the nesting is not doubled and our identifier stays.
 swiftpm_bundle="$bin_path/ContainerStack_ContainerStackApp.bundle"
 resource_bundle="$output_bundle/Contents/Resources/ContainerStack_ContainerStackApp.bundle"
+swiftpm_resources="$swiftpm_bundle"
+if [[ -d "$swiftpm_bundle/Contents/Resources" ]]; then
+    swiftpm_resources="$swiftpm_bundle/Contents/Resources"
+fi
 if [[ -d "$swiftpm_bundle" ]]; then
     mkdir -p "$resource_bundle/Contents/Resources"
-    ditto "$swiftpm_bundle" "$resource_bundle/Contents/Resources"
+    ditto "$swiftpm_resources" "$resource_bundle/Contents/Resources"
     install -m 0644 "$ROOT/Packaging/ContainerStackResources-Info.plist" \
         "$resource_bundle/Contents/Info.plist"
+    # A release build draws a placeholder for a missing icon instead of failing.
+    [[ -d "$resource_bundle/Contents/Resources/Lucide" ]] || {
+        printf 'error: Lucide icons missing from %s\n' "$resource_bundle" >&2
+        exit 1
+    }
 else
     echo "error: missing ContainerStack_ContainerStackApp.bundle next to $bin_path/ContainerStack" >&2
     exit 1

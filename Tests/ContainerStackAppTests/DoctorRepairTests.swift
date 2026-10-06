@@ -29,12 +29,14 @@ struct DoctorRepairTests {
 
     /// Runs pass `runs` (opened by each test that wants them to finish); both repairs pass
     /// `repairGate`, so its call count is the number of repair operations performed.
-    private func model() -> DoctorViewModel {
+    private func model(
+        run: (@Sendable () async -> DiagnosticReport)? = nil
+    ) -> DoctorViewModel {
         let runs = runs
         let repairGate = repairGate
         let app = app
         return DoctorViewModel(
-            run: {
+            run: run ?? {
                 _ = await runs.runtimeStatus()
                 return Self.report(await runs.callCount)
             },
@@ -200,7 +202,15 @@ struct DoctorRepairTests {
     // overlap (F-007).
     @Test("a run that outlives a sidebar restart is not shown, and a fresh one follows it")
     func aRunOutlivingTheRestartIsReplaced() async throws {
-        let doctor = model()
+        // The fresh run waits at a gate of its own. Through the shared one, already open, it could
+        // finish and publish before the check below that the stale result was dropped.
+        let fresh = GatedSystemProbe(result: .output(""))
+        let runs = runs
+        let doctor = model(run: {
+            let ordinal = await runs.callCount + fresh.callCount + 1
+            _ = await (ordinal == 1 ? runs : fresh).runtimeStatus()
+            return Self.report(ordinal)
+        })
         doctor.appeared()
         await runs.waitUntilCalled()
         let stale = try #require(doctor.inFlight)
@@ -214,8 +224,10 @@ struct DoctorRepairTests {
         await runs.open()
         await stale.value
         #expect(doctor.report == nil, "measured before the restart")
+        await fresh.open()
         await doctor.inFlight?.value
-        #expect(await runs.callCount == 2)
+        #expect(await runs.callCount == 1)
+        #expect(await fresh.callCount == 1)
         #expect(doctor.report == Self.report(2))
     }
 

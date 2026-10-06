@@ -115,6 +115,19 @@ extension RuntimeViewModel {
         }
     }
 
+    /// Only the window shows the context, and each refresh spawns `docker`, so this runs for the
+    /// life of the window's task instead of in the process-long monitor.
+    func refreshDockerContextUntilCancelled(interval: Duration = .seconds(3)) async {
+        while true {
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                return
+            }
+            await refreshDockerContext(includeInstalledContext: false)
+        }
+    }
+
     func refreshDockerContext(includeInstalledContext: Bool = true) async {
         let generation = dockerContextRefreshSequencer.begin()
         let state = await Task.detached {

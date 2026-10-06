@@ -233,22 +233,18 @@ final class RuntimeViewModel {
 
     /// Polls the Docker socket so the UI tracks the runtime even when the helper is not ours:
     /// another ContainerStack instance, a LaunchAgent or a manually started bridge all count.
+    /// Runs for the life of the process: the menu bar extra and automatic recovery depend on it
+    /// after the window closes.
     func startMonitoring(interval: Duration = .seconds(3)) {
         guard monitorTask == nil else { return }
 
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.probeRuntime()
-                await self?.refreshDockerContext(includeInstalledContext: false)
                 self?.expireServiceMessage()
                 try? await Task.sleep(for: interval)
             }
         }
-    }
-
-    func stopMonitoring() {
-        monitorTask?.cancel()
-        monitorTask = nil
     }
 
     func expireServiceMessage(now: Date = Date()) {

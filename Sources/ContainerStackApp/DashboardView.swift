@@ -123,9 +123,7 @@ struct DashboardView: View {
             await model.refreshStacks()
             await model.adoptDockerContextIfEnabled()
             model.startMonitoring()
-        }
-        .onDisappear {
-            model.stopMonitoring()
+            await model.refreshDockerContextUntilCancelled()
         }
         .sheet(isPresented: logsBinding) {
             ContainerLogsSheet(model: model)

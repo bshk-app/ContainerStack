@@ -20,7 +20,7 @@ extension RuntimeViewModel {
         runtimeFailure = nil
         defer { isRestarting = false }
         // A helper still alive here would make the `.startBridge` step a silent no-op (#71).
-        await endRuntimeHelper()
+        await endRuntimeHelperForRestart()
 
         let configuration = runtimeConfiguration()
         let steps = RuntimeRestartPlan.steps(
@@ -130,6 +130,26 @@ extension RuntimeViewModel {
         return false
     }
 
+    /// Retiring the helper also retires the wait that would have ended its start, and the
+    /// LaunchAgent path launches no replacement to end it instead.
+    func endRuntimeHelperForRestart() async {
+        if await endRuntimeHelper() {
+            isStarting = false
+        }
+    }
+
+    /// The version check is the launch's longest await. A Stop during it wins over whatever the
+    /// check found, failure included: publishing that would overwrite "Docker bridge stopped."
+    func acceptLaunchPreflight(since stops: Int, complaint: String?) -> Bool {
+        guard stopRequests == stops else { return false }
+        if let complaint {
+            isStarting = false
+            failRuntime(complaint)
+            return false
+        }
+        return true
+    }
+
     func cancelPendingStart() {
         stopRequests &+= 1
         isStarting = false
@@ -137,16 +157,18 @@ extension RuntimeViewModel {
 
     /// Stop and a replacing Start both need the helper this app spawned gone, not just signalled:
     /// a helper still inside `container system start` brings the bridge up after either of them.
-    func endRuntimeHelper(grace: Duration = .seconds(2)) async {
-        guard let process = runtimeProcess else { return }
+    @discardableResult
+    func endRuntimeHelper(grace: Duration = .seconds(2)) async -> Bool {
+        guard let process = runtimeProcess else { return false }
         runtimeProcess = nil
-        guard process.isRunning else { return }
+        guard process.isRunning else { return true }
 
         process.terminate()
         if await !Self.waitForExit(of: process, within: grace) {
             kill(process.processIdentifier, SIGKILL)
             _ = await Self.waitForExit(of: process, within: grace)
         }
+        return true
     }
 
     private static func waitForExit(of process: Process, within limit: Duration) async -> Bool {

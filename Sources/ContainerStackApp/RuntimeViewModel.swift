@@ -310,15 +310,11 @@ final class RuntimeViewModel {
         // ten seconds: run on the main actor, a wedged binary freezes the window for all of it.
         let configuration = runtimeConfiguration()
         let verdict = await Task.detached { ContainerVersionCheck.run(configuration) }.value
-        if let complaint = verdict.userFacingMessage {
-            isStarting = false
-            failRuntime(complaint)
-            return
-        }
+        guard acceptLaunchPreflight(since: stops, complaint: verdict.userFacingMessage) else { return }
 
         // The await above is a window: something else may have started the helper while the
         // version was being read, and a second one would fight the first for the socket.
-        guard runtimeProcess?.isRunning != true, stopRequests == stops else { return }
+        guard runtimeProcess?.isRunning != true else { return }
 
         do {
             let logURL = try runtimeLogURL()
@@ -352,6 +348,7 @@ final class RuntimeViewModel {
 
     private func probeRuntime() async {
         let epoch = inventoryEpoch
+        let stops = stopRequests
         let responds: Bool
         let probeError: Error?
         do {
@@ -381,7 +378,8 @@ final class RuntimeViewModel {
             apiserverRunning: apiserverRunning,
             isStarting: isStarting,
             isRestarting: isRestarting,
-            hasRuntimeFailure: runtimeFailure != nil
+            hasRuntimeFailure: runtimeFailure != nil,
+            stoppedSinceProbeBegan: stopRequests != stops
         ) {
             runtimeMessage = "Apple Container API server stopped. Restarting runtime…"
             await completeAutomaticRuntimeRecovery(restart: { await self.restartRuntime() })

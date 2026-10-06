@@ -56,6 +56,44 @@ struct RuntimeHelperLifecycleTests {
         #expect(model.runtimeFailure == nil)
     }
 
+    /// Codex reproduced this with a fake CLI: the check fails or times out after the user stopped,
+    /// and its complaint overwrote "Docker bridge stopped."
+    @Test("A stop during the version check publishes nothing the check found (#70)")
+    func stopDuringVersionCheckPublishesNoFailure() {
+        let model = makeModel()
+        let stops = model.stopRequests
+        model.cancelPendingStart()
+
+        #expect(!model.acceptLaunchPreflight(since: stops, complaint: "container 1.2.0 is too old"))
+        #expect(model.runtimeFailure == nil)
+    }
+
+    @Test("Without a stop, the version check's complaint is published and the launch ends")
+    func versionComplaintIsPublished() {
+        let model = makeModel()
+
+        #expect(model.acceptLaunchPreflight(since: model.stopRequests, complaint: nil))
+        #expect(!model.acceptLaunchPreflight(since: model.stopRequests, complaint: "too old"))
+        #expect(model.runtimeFailure == "too old")
+    }
+
+    /// With the LaunchAgent registered, Restart kickstarts it and launches no helper of its own, so
+    /// nothing else would ever end the start the retired helper's wait was tracking.
+    @Test("Restart ends the start of the helper it retires (#71)")
+    func restartEndsRetiredHelpersStart() async throws {
+        let model = makeModel()
+        let helper = try Self.spawn("/bin/sleep", "60")
+        defer { helper.terminate() }
+        model.runtimeProcess = helper
+        model.isStarting = true
+
+        let wait = Task { await model.waitForRuntime(on: helper) }
+        await model.endRuntimeHelperForRestart()
+        await wait.value
+
+        #expect(!model.isStarting)
+    }
+
     @Test("Ending the helper stops one that honours SIGTERM")
     func endingHelperTerminates() async throws {
         let model = makeModel()

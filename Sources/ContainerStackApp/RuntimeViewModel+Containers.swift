@@ -110,9 +110,12 @@ enum RuntimeConnectionRecovery {
         apiserverRunning: Bool?,
         isStarting _: Bool,
         isRestarting: Bool,
-        hasRuntimeFailure: Bool
+        hasRuntimeFailure: Bool,
+        stoppedSinceProbeBegan: Bool = false
     ) -> Bool {
-        guard !isRestarting, !hasRuntimeFailure else { return false }
+        // A probe can await `system status` across a whole Stop; its "not running" then describes
+        // the stop the user asked for, not a failure to recover from (#70).
+        guard !isRestarting, !hasRuntimeFailure, !stoppedSinceProbeBegan else { return false }
         return apiserverRunning == false
     }
 

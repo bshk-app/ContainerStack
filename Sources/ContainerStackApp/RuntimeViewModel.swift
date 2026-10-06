@@ -14,7 +14,8 @@ final class RuntimeViewModel {
     nonisolated static let launchAgentPlistName = "com.containerstack.runtime.plist"
     private let service = SMAppService.agent(plistName: RuntimeViewModel.launchAgentPlistName)
     var runtimeProcess: Process?
-    /// Bumped by every Stop. An action begun before one asks for no recovery after it (#70).
+    /// Bumped when a Stop begins and again when it ends, so work begun before or during one asks
+    /// for no recovery after it (#70).
     @ObservationIgnored var stopRequests = 0
     /// Bumped by every start and every Stop. A start goes on past each await only while its attempt
     /// is still the current one, and only that attempt may end `isStarting`: the user's last

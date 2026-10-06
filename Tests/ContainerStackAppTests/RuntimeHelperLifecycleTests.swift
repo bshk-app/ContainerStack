@@ -133,6 +133,28 @@ struct RuntimeHelperLifecycleTests {
         #expect(model.runtimeFailure == nil)
     }
 
+    /// Codex reproduced this with the monitor now running after the window closes: a probe began
+    /// while a Stop ran, its system status came back "not running" after the Stop ended, and the
+    /// recovery it started undid the Stop.
+    @Test("A probe begun while a Stop runs cannot restart the runtime after it (#70)")
+    func probeDuringStopCannotRestartAfterIt() {
+        let model = makeModel()
+        model.cancelPendingStart()
+        let stopsSeenByProbe = model.stopRequests
+
+        model.finishStopRequest()
+
+        #expect(
+            !RuntimeConnectionRecovery.shouldAttemptRestart(
+                apiserverRunning: false,
+                isStarting: false,
+                isRestarting: false,
+                hasRuntimeFailure: false,
+                stoppedSinceProbeBegan: model.stopRequests != stopsSeenByProbe
+            )
+        )
+    }
+
     @Test("A Stop before the launch-time start runs keeps it from starting (#70)")
     func stopBeforeInitialStartKeepsItStopped() async throws {
         let model = RuntimeViewModel(

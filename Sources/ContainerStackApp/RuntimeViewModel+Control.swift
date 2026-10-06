@@ -149,6 +149,12 @@ extension RuntimeViewModel {
         return true
     }
 
+    /// A probe begun while a Stop ran saw a runtime being stopped; its late verdict must not act
+    /// once the Stop is over either.
+    func finishStopRequest() {
+        stopRequests &+= 1
+    }
+
     func cancelPendingStart() {
         stopRequests &+= 1
         startAttempts &+= 1
@@ -187,7 +193,10 @@ extension RuntimeViewModel {
 
         isRestarting = true
         runtimeMessage = "Stopping Docker bridge…"
-        defer { isRestarting = false }
+        defer {
+            isRestarting = false
+            finishStopRequest()
+        }
         await endRuntimeHelper()
 
         let steps = RuntimeRestartPlan.stopSteps(

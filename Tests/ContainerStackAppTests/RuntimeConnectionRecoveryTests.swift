@@ -39,6 +39,21 @@ struct RuntimeConnectionRecoveryTests {
         )
     }
 
+    /// Codex reproduced this: a probe awaiting `system status` across a whole Stop came back with
+    /// "not running" and restarted the runtime the user had just stopped.
+    @Test
+    func stopDuringProbeIsNotUndoneByRecovery() {
+        #expect(
+            !RuntimeConnectionRecovery.shouldAttemptRestart(
+                apiserverRunning: false,
+                isStarting: false,
+                isRestarting: false,
+                hasRuntimeFailure: false,
+                stoppedSinceProbeBegan: true
+            )
+        )
+    }
+
     @Test
     func runningAPIServerDoesNotRestart() {
         #expect(

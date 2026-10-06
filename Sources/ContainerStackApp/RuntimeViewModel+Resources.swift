@@ -230,6 +230,7 @@ extension RuntimeViewModel {
         busyContainerIDs.insert(container.id)
         containerMessage = "\(action) \(container.name)…"
         defer { busyContainerIDs.remove(container.id) }
+        let stops = stopRequests
 
         do {
             try await body()
@@ -240,10 +241,13 @@ extension RuntimeViewModel {
                 containerMessage = completion
             }
         } catch let error
-            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
+            where recoversRuntime && stopRequests == stops
+            && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             // Losing the runtime's XPC connection while stopping is not a container failure: raise
             // the recovery request and let the monitor poll prove whether the API server is gone.
+            // Not once a Stop has landed meanwhile: that loss is the stop, and recovering from it
+            // would start the runtime the user just stopped (#70).
             runtimeRecoveryRequested = true
             containerMessage = Self.checkingRuntimeMessage
         } catch {
@@ -262,11 +266,13 @@ extension RuntimeViewModel {
         busyResource = id
         resourceMessage = message
         defer { busyResource = nil }
+        let stops = stopRequests
 
         do {
             try await body()
         } catch let error
-            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
+            where recoversRuntime && stopRequests == stops
+            && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             runtimeRecoveryRequested = true
             resourceMessage = Self.checkingRuntimeMessage

@@ -19,6 +19,8 @@ extension RuntimeViewModel {
         isRestarting = true
         runtimeFailure = nil
         defer { isRestarting = false }
+        // A helper still alive here would make the `.startBridge` step a silent no-op (#71).
+        await endRuntimeHelper()
 
         let configuration = runtimeConfiguration()
         let steps = RuntimeRestartPlan.steps(
@@ -128,13 +130,74 @@ extension RuntimeViewModel {
         return false
     }
 
+    @discardableResult
+    func beginStartAttempt() -> Int {
+        startAttempts &+= 1
+        isStarting = true
+        return startAttempts
+    }
+
+    /// The version check is the launch's longest await. A Stop or a newer start during it wins over
+    /// whatever the check found, failure included: publishing that would overwrite theirs.
+    func acceptLaunchPreflight(attempt: Int?, complaint: String?) -> Bool {
+        if let attempt, startAttempts != attempt { return false }
+        if let complaint {
+            isStarting = false
+            failRuntime(complaint)
+            return false
+        }
+        return true
+    }
+
+    /// A probe begun while a Stop ran saw a runtime being stopped; its late verdict must not act
+    /// once the Stop is over either.
+    func finishStopRequest() {
+        stopRequests &+= 1
+    }
+
+    func cancelPendingStart() {
+        stopRequests &+= 1
+        startAttempts &+= 1
+        isStarting = false
+    }
+
+    /// Stop and a replacing Start both need the helper this app spawned gone, not just signalled:
+    /// a helper still inside `container system start` brings the bridge up after either of them.
+    @discardableResult
+    func endRuntimeHelper(grace: Duration = .seconds(2)) async -> Bool {
+        guard let process = runtimeProcess else { return false }
+        runtimeProcess = nil
+        guard process.isRunning else { return true }
+
+        process.terminate()
+        if await !Self.waitForExit(of: process, within: grace) {
+            kill(process.processIdentifier, SIGKILL)
+            _ = await Self.waitForExit(of: process, within: grace)
+        }
+        return true
+    }
+
+    private static func waitForExit(of process: Process, within limit: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while process.isRunning {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return true
+    }
+
     func stopRuntime(replacingSibling: Bool = false) async {
         guard !isRestarting else { return }
         runtimeRecoveryRequested = false
+        cancelPendingStart()
 
         isRestarting = true
         runtimeMessage = "Stopping Docker bridge…"
-        defer { isRestarting = false }
+        defer {
+            isRestarting = false
+            finishStopRequest()
+        }
+        await endRuntimeHelper()
 
         let steps = RuntimeRestartPlan.stopSteps(
             configuration: runtimeConfiguration(),
@@ -203,7 +266,7 @@ extension RuntimeViewModel {
                 try RuntimeShell.run(executablePath: executablePath, arguments: arguments)
             }.value
         case .startBridge:
-            await launchRuntimeHelperForRestart()
+            await launchRuntimeHelper(attempt: nil)
         case .kickstartAgent(let label):
             try await Task.detached {
                 try RuntimeShell.run(

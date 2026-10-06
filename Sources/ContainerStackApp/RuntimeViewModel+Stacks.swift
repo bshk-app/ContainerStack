@@ -166,12 +166,14 @@ extension RuntimeViewModel {
         busyStackID = stack.id
         stackMessage = "\(verb) \(stack.name)…"
         defer { busyStackID = nil }
+        let stops = stopRequests
         do {
             let output = try await operation()
             stackMessage = output.isEmpty ? "\(stack.name) \(pastTense)." : output
             await refreshStackStatus(stack)
         } catch let error
-            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
+            where recoversRuntime && stopRequests == stops
+            && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             runtimeRecoveryRequested = true
             stackMessage = Self.checkingRuntimeMessage

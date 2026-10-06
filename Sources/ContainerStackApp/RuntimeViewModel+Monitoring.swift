@@ -24,6 +24,7 @@ extension RuntimeViewModel {
     /// reads slower than the tick would never get through.
     func monitorTick() async {
         await probeRuntime()
+        settleFinishedRuntimeCheck()
         if isDashboardOpen, !isAdoptingDockerContext {
             await refreshDockerContext(includeInstalledContext: false)
         }

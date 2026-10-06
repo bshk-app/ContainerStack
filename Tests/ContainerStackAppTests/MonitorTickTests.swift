@@ -36,6 +36,18 @@ struct MonitorTickTests {
         #expect(model.activeDockerContext == nil)
     }
 
+    /// #94 settled leftover checks from the loop this tick replaced; merging the two dropped the
+    /// call once, silently.
+    @Test("The tick settles a runtime check that is over")
+    func tickSettlesFinishedCheck() async {
+        let model = makeModel()
+        model.stackMessage = RuntimeViewModel.checkingRuntimeMessage
+
+        await model.monitorTick()
+
+        #expect(model.stackMessage == "Stack action failed; the runtime is offline.")
+    }
+
     @Test("With the window closed, the tick does not read the Docker context")
     func closedWindowSkipsContextRead() async {
         let model = makeModel()

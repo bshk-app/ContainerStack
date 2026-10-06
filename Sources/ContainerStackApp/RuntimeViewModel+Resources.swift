@@ -18,9 +18,13 @@ extension RuntimeViewModel {
     }
 
     func stop(group: ContainerGroup) async {
+        await stop(group: group, stopContainer: { try await self.client.stopContainer(id: $0) })
+    }
+
+    func stop(group: ContainerGroup, stopContainer: @escaping (String) async throws -> Void) async {
         await withResource(group.id, message: "Stopping \(group.title)…", recoversRuntime: true) {
             for container in group.containers where container.isRunning {
-                try await self.client.stopContainer(id: container.id)
+                try await stopContainer(container.id)
             }
             self.resourceMessage = "Stopped \(group.title)."
             await self.refreshContainers()
@@ -247,7 +251,7 @@ extension RuntimeViewModel {
         }
     }
 
-    func withResource(
+    private func withResource(
         _ id: String,
         message: String,
         recoversRuntime: Bool = false,

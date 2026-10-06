@@ -239,6 +239,7 @@ final class RuntimeViewModel {
         monitorTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.probeRuntime()
+                self?.settleFinishedRuntimeCheck()
                 await self?.refreshDockerContext(includeInstalledContext: false)
                 self?.expireServiceMessage()
                 try? await Task.sleep(for: interval)
@@ -348,7 +349,7 @@ final class RuntimeViewModel {
         let hasGoneQuiet = livenessFilter.recordProbe(responds: responds)
 
         if responds, runtimeRecoveryRequested {
-            completeRecoveryCheckWithRuntimeAvailable()
+            runtimeRecoveryRequested = false
         }
         let shouldCheckSystemStatus = RuntimeConnectionRecovery.shouldCheckSystemStatus(
             after: probeError,

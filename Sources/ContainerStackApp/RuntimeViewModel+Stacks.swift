@@ -118,10 +118,20 @@ extension RuntimeViewModel {
 
     func downStack(_ stack: ComposeStack, removeVolumes: Bool) async {
         let runner = stackRunner
+        await downStack(stack, removeVolumes: removeVolumes) {
+            try await runner.down(stack: $0, removeVolumes: $1)
+        }
+    }
+
+    func downStack(
+        _ stack: ComposeStack,
+        removeVolumes: Bool,
+        down: (ComposeStack, Bool) async throws -> String
+    ) async {
         await runStackAction(
             stack, verb: "Taking down", pastTense: "is down", recoversRuntime: true
         ) {
-            try await runner.down(stack: stack, removeVolumes: removeVolumes)
+            try await down(stack, removeVolumes)
         }
     }
 
@@ -145,7 +155,7 @@ extension RuntimeViewModel {
         }
     }
 
-    func runStackAction(
+    private func runStackAction(
         _ stack: ComposeStack,
         verb: String,
         pastTense: String,

@@ -47,13 +47,24 @@ extension RuntimeViewModel {
 
     static let checkingRuntimeMessage = "Runtime connection lost. Checking the runtime…"
 
-    func completeRecoveryCheckWithRuntimeAvailable() {
-        runtimeRecoveryRequested = false
-        resolveRuntimeCheck(
-            container: "Container stop timed out; runtime remains available.",
-            resource: "Stop timed out; runtime remains available.",
-            stack: "Stack action failed; runtime remains available."
-        )
+    /// The poll consumes a recovery request on several paths, and a manual restart or stop clears
+    /// it too. Whichever ended the check, a "Checking the runtime…" left behind is settled here by
+    /// the state the runtime is actually in.
+    func settleFinishedRuntimeCheck() {
+        guard !runtimeRecoveryRequested, !isRestarting, !isStarting else { return }
+        if runtimeState.isHealthy {
+            resolveRuntimeCheck(
+                container: "Container stop timed out; runtime remains available.",
+                resource: "Stop timed out; runtime remains available.",
+                stack: "Stack action failed; runtime remains available."
+            )
+        } else {
+            resolveRuntimeCheck(
+                container: "Container stop failed; the runtime is offline.",
+                resource: "Stop failed; the runtime is offline.",
+                stack: "Stack action failed; the runtime is offline."
+            )
+        }
     }
 
     /// The recovery request is global, so only the screens that announced the check get its

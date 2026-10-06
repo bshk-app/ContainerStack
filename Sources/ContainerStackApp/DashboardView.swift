@@ -123,9 +123,12 @@ struct DashboardView: View {
             await model.refreshStacks()
             await model.adoptDockerContextIfEnabled()
             model.startMonitoring()
+            // Closed while this ran: `onDisappear` already cleared the flag.
+            guard !Task.isCancelled else { return }
+            model.isDashboardOpen = true
         }
         .onDisappear {
-            model.stopMonitoring()
+            model.isDashboardOpen = false
         }
         .sheet(isPresented: logsBinding) {
             ContainerLogsSheet(model: model)

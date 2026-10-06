@@ -21,7 +21,7 @@ final class RuntimeViewModel {
     /// instruction wins, and an older wait cannot end a newer start (#70).
     @ObservationIgnored var startAttempts = 0
     private var runtimeLogHandle: FileHandle?
-    private var monitorTask: Task<Void, Never>?
+    @ObservationIgnored var monitorTask: Task<Void, Never>?
     /// `container system status` costs a CLI spawn plus an XPC round trip, so the poll reuses
     /// its last answer between checks instead of asking on every 3s tick.
     private var appRootCadence = DiagnosticCadence(interval: .seconds(30))
@@ -35,11 +35,18 @@ final class RuntimeViewModel {
     var livenessFilter = RuntimeLivenessFilter()
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
+    /// Set by the window: only it shows the Docker context, and each read spawns `docker`.
+    @ObservationIgnored var isDashboardOpen = false
+    @ObservationIgnored var isAdoptingDockerContext = false
+    @ObservationIgnored var isDockerContextAdoptionPending = false
+    @ObservationIgnored var readDockerContext: @Sendable (Bool) -> DockerContextReading = {
+        RuntimeViewModel.readDockerContextFromCLI(includeInstalledContext: $0)
+    }
     /// Held while a Docker context CLI mutation is running; see `acquireDockerContextMutationSlot`.
     var isMutatingDockerContext = false
     /// FIFO queue for callers waiting on `isMutatingDockerContext`.
     var dockerContextMutationWaiters: [CheckedContinuation<Void, Never>] = []
-    let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
+    let dockerContextTakeoverPreference: DockerContextTakeoverPreference
     internal(set) var runtimeFailure: String?
     internal(set) var isRestarting = false
     /// Raised by a stop that lost the XPC connection, consumed by the monitor poll: the poll is the
@@ -126,9 +133,11 @@ final class RuntimeViewModel {
 
     init(
         socketPath: String = RuntimeViewModel.defaultSocketPath,
-        startsRuntime: Bool = true
+        startsRuntime: Bool = true,
+        dockerContextTakeoverPreference: DockerContextTakeoverPreference = DockerContextTakeoverPreference()
     ) {
         self.socketPath = socketPath
+        self.dockerContextTakeoverPreference = dockerContextTakeoverPreference
         client = DockerAPIClient(
             socketPath: socketPath,
             retryPolicy: DockerRetryPolicy(maxAttempts: 3, delay: .milliseconds(250))
@@ -245,33 +254,6 @@ final class RuntimeViewModel {
         }
     }
 
-    /// Polls the Docker socket so the UI tracks the runtime even when the helper is not ours:
-    /// another ContainerStack instance, a LaunchAgent or a manually started bridge all count.
-    func startMonitoring(interval: Duration = .seconds(3)) {
-        guard monitorTask == nil else { return }
-
-        monitorTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.probeRuntime()
-                self?.settleFinishedRuntimeCheck()
-                await self?.refreshDockerContext(includeInstalledContext: false)
-                self?.expireServiceMessage()
-                try? await Task.sleep(for: interval)
-            }
-        }
-    }
-
-    func stopMonitoring() {
-        monitorTask?.cancel()
-        monitorTask = nil
-    }
-
-    func expireServiceMessage(now: Date = Date()) {
-        guard serviceMessage != nil, let serviceMessageExpiresAt, now >= serviceMessageExpiresAt
-        else { return }
-        serviceMessage = nil
-    }
-
     func startRuntimeIfSocketIsDown(
         attempt: Int,
         ping: () async -> Bool,
@@ -357,7 +339,7 @@ final class RuntimeViewModel {
         }
     }
 
-    private func probeRuntime() async {
+    func probeRuntime() async {
         let epoch = inventoryEpoch
         let stops = stopRequests
         let responds: Bool

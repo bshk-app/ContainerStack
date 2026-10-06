@@ -15,7 +15,7 @@ final class RuntimeViewModel {
     private let service = SMAppService.agent(plistName: RuntimeViewModel.launchAgentPlistName)
     private var runtimeProcess: Process?
     private var runtimeLogHandle: FileHandle?
-    private var monitorTask: Task<Void, Never>?
+    @ObservationIgnored var monitorTask: Task<Void, Never>?
     /// `container system status` costs a CLI spawn plus an XPC round trip, so the poll reuses
     /// its last answer between checks instead of asking on every 3s tick.
     private var appRootCadence = DiagnosticCadence(interval: .seconds(30))
@@ -29,6 +29,11 @@ final class RuntimeViewModel {
     var livenessFilter = RuntimeLivenessFilter()
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
+    /// Set by the window: only it shows the Docker context, and each read spawns `docker`.
+    @ObservationIgnored var isDashboardOpen = false
+    @ObservationIgnored var readDockerContext: @Sendable (Bool) -> DockerContextReading = {
+        RuntimeViewModel.readDockerContextFromCLI(includeInstalledContext: $0)
+    }
     /// Held while a Docker context CLI mutation is running; see `acquireDockerContextMutationSlot`.
     var isMutatingDockerContext = false
     /// FIFO queue for callers waiting on `isMutatingDockerContext`.
@@ -231,28 +236,6 @@ final class RuntimeViewModel {
         }
     }
 
-    /// Polls the Docker socket so the UI tracks the runtime even when the helper is not ours:
-    /// another ContainerStack instance, a LaunchAgent or a manually started bridge all count.
-    /// Runs for the life of the process: the menu bar extra and automatic recovery depend on it
-    /// after the window closes.
-    func startMonitoring(interval: Duration = .seconds(3)) {
-        guard monitorTask == nil else { return }
-
-        monitorTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.probeRuntime()
-                self?.expireServiceMessage()
-                try? await Task.sleep(for: interval)
-            }
-        }
-    }
-
-    func expireServiceMessage(now: Date = Date()) {
-        guard serviceMessage != nil, let serviceMessageExpiresAt, now >= serviceMessageExpiresAt
-        else { return }
-        serviceMessage = nil
-    }
-
     private func startRuntimeIfSocketIsDown() async {
         let epoch = inventoryEpoch
         if await socketResponds() {
@@ -329,7 +312,7 @@ final class RuntimeViewModel {
         }
     }
 
-    private func probeRuntime() async {
+    func probeRuntime() async {
         let epoch = inventoryEpoch
         let responds: Bool
         let probeError: Error?

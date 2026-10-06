@@ -34,6 +34,12 @@ final class DockerContextTakeoverPreference {
     }
 }
 
+struct DockerContextReading: Sendable {
+    let active: String?
+    let installed: Bool?
+    let defaultSocket: DockerSocketStatus
+}
+
 struct DockerContextPreferenceSequencer {
     private var desiredState: Bool?
     private var isApplying = false
@@ -115,32 +121,10 @@ extension RuntimeViewModel {
         }
     }
 
-    /// Only the window shows the context, and each refresh spawns `docker`, so this runs for the
-    /// life of the window's task instead of in the process-long monitor.
-    func refreshDockerContextUntilCancelled(interval: Duration = .seconds(3)) async {
-        while true {
-            do {
-                try await Task.sleep(for: interval)
-            } catch {
-                return
-            }
-            await refreshDockerContext(includeInstalledContext: false)
-        }
-    }
-
     func refreshDockerContext(includeInstalledContext: Bool = true) async {
         let generation = dockerContextRefreshSequencer.begin()
-        let state = await Task.detached {
-            let active = DockerCLI.activeContext()
-            let installed: Bool?
-            if includeInstalledContext {
-                installed = try? DockerCLI.installedContexts().contains(DockerContext.name)
-            } else {
-                installed = nil
-            }
-            let defaultSocket = DockerContext.socketStatus(atPath: "/var/run/docker.sock")
-            return (active: active, installed: installed, defaultSocket: defaultSocket)
-        }.value
+        let read = readDockerContext
+        let state = await Task.detached { read(includeInstalledContext) }.value
         guard dockerContextRefreshSequencer.isCurrent(generation) else { return }
         activeDockerContext = state.active
         dockerContextTakeoverPreference.preserveActiveContextIfUnconfigured(state.active)
@@ -148,6 +132,22 @@ extension RuntimeViewModel {
             isDockerContextInstalled = installed
         }
         defaultDockerSocketStatus = state.defaultSocket
+    }
+
+    nonisolated static func readDockerContextFromCLI(
+        includeInstalledContext: Bool
+    ) -> DockerContextReading {
+        let installed: Bool?
+        if includeInstalledContext {
+            installed = try? DockerCLI.installedContexts().contains(DockerContext.name)
+        } else {
+            installed = nil
+        }
+        return DockerContextReading(
+            active: DockerCLI.activeContext(),
+            installed: installed,
+            defaultSocket: DockerContext.socketStatus(atPath: "/var/run/docker.sock")
+        )
     }
 
     /// A missing context is first-run setup. An existing context that is no longer active is a

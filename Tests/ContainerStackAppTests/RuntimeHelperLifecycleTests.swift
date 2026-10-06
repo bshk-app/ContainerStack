@@ -1,3 +1,4 @@
+import ContainerStackCore
 import Foundation
 import Testing
 
@@ -49,7 +50,8 @@ struct RuntimeHelperLifecycleTests {
         helper.waitUntilExit()
         model.runtimeProcess = helper
 
-        let wait = Task { await model.waitForRuntime(on: helper) }
+        let launch = model.beginStartAttempt()
+        let wait = Task { await model.waitForRuntime(on: helper, launch: launch) }
         await model.endRuntimeHelper()
         await wait.value
 
@@ -79,19 +81,57 @@ struct RuntimeHelperLifecycleTests {
 
     /// With the LaunchAgent registered, Restart kickstarts it and launches no helper of its own, so
     /// nothing else would ever end the start the retired helper's wait was tracking.
-    @Test("Restart ends the start of the helper it retires (#71)")
-    func restartEndsRetiredHelpersStart() async throws {
+    @Test("A wait whose helper Restart retired still ends its own start (#71)")
+    func retiredWaitEndsItsOwnStart() async throws {
         let model = makeModel()
         let helper = try Self.spawn("/bin/sleep", "60")
         defer { helper.terminate() }
         model.runtimeProcess = helper
-        model.isStarting = true
+        let launch = model.beginStartAttempt()
 
-        let wait = Task { await model.waitForRuntime(on: helper) }
-        await model.endRuntimeHelperForRestart()
+        let wait = Task { await model.waitForRuntime(on: helper, launch: launch) }
+        await model.endRuntimeHelper()
         await wait.value
 
         #expect(!model.isStarting)
+    }
+
+    /// Codex reproduced both: an old wait, or Restart's cleanup, ended the start a Start clicked
+    /// meanwhile had begun, turning `.starting` into offline while that Start was still running.
+    @Test("A wait for a retired helper leaves a newer start alone")
+    func retiredWaitLeavesNewerStartAlone() async throws {
+        let model = makeModel()
+        let helper = try Self.spawn("/bin/sleep", "60")
+        defer { helper.terminate() }
+        model.runtimeProcess = helper
+        let launch = model.beginStartAttempt()
+
+        let wait = Task { await model.waitForRuntime(on: helper, launch: launch) }
+        await model.endRuntimeHelper()
+        model.beginStartAttempt()
+        await wait.value
+
+        #expect(model.isStarting)
+    }
+
+    /// Codex reproduced this: a stop begun before Stop failed after it with the connection gone,
+    /// and the recovery it asked for started the runtime the user had just stopped.
+    @Test("An action that fails after a Stop asks for no recovery (#70)")
+    func actionFailingAfterStopRequestsNoRecovery() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        let container = try JSONDecoder().decode(
+            DockerContainerSummary.self,
+            from: Data(#"{"Id":"web","Names":["/web"],"State":"running"}"#.utf8)
+        )
+
+        await model.withContainer(container, action: "Stopping", recoversRuntime: true) {
+            model.cancelPendingStart()
+            throw DockerAPIError.httpStatus(500, message: "XPC connection error: Connection invalid")
+        }
+
+        #expect(!model.runtimeRecoveryRequested)
+        #expect(model.containerMessage?.hasPrefix("Container action failed") == true)
     }
 
     @Test("Ending the helper stops one that honours SIGTERM")

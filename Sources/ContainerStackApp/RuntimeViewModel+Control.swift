@@ -20,7 +20,7 @@ extension RuntimeViewModel {
         runtimeFailure = nil
         defer { isRestarting = false }
         // A helper still alive here would make the `.startBridge` step a silent no-op (#71).
-        await endRuntimeHelperForRestart()
+        await endRuntimeHelper()
 
         let configuration = runtimeConfiguration()
         let steps = RuntimeRestartPlan.steps(
@@ -130,12 +130,11 @@ extension RuntimeViewModel {
         return false
     }
 
-    /// Retiring the helper also retires the wait that would have ended its start, and the
-    /// LaunchAgent path launches no replacement to end it instead.
-    func endRuntimeHelperForRestart() async {
-        if await endRuntimeHelper() {
-            isStarting = false
-        }
+    @discardableResult
+    func beginStartAttempt() -> Int {
+        startAttempts &+= 1
+        isStarting = true
+        return startAttempts
     }
 
     /// The version check is the launch's longest await. A Stop during it wins over whatever the

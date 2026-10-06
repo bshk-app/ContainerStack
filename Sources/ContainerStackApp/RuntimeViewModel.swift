@@ -17,6 +17,9 @@ final class RuntimeViewModel {
     /// Bumped by every Stop. A start remembers the count it began with and launches nothing once
     /// it has moved: the user's last instruction wins (#70).
     @ObservationIgnored var stopRequests = 0
+    /// Bumped by every start. Only the attempt still current may end `isStarting`, so a wait for an
+    /// older helper cannot end a start begun since.
+    @ObservationIgnored var startAttempts = 0
     private var runtimeLogHandle: FileHandle?
     private var monitorTask: Task<Void, Never>?
     /// `container system status` costs a CLI spawn plus an XPC round trip, so the poll reuses
@@ -223,7 +226,7 @@ final class RuntimeViewModel {
         // already given up on, which only Start can clear (#71).
         guard runtimeProcess?.isRunning != true || runtimeFailure != nil else { return }
 
-        isStarting = true
+        beginStartAttempt()
         // Cleared as the attempt begins, matching the launch path and the manual restart: now that an
         // explicit failure outranks `.starting`, a leftover reason would surface as offline here.
         runtimeFailure = nil
@@ -331,14 +334,14 @@ final class RuntimeViewModel {
             runtimeProcess = process
             runtimeLogHandle = logHandle
             runtimeLogPath = logURL.path
-            isStarting = true
+            let launch = beginStartAttempt()
             runtimeFailure = nil
             errorMessage = nil
             runtimeMessage = "Starting Apple Container and Docker bridge…"
             applyState(socketResponds: false)
 
             Task { [weak self] in
-                await self?.waitForRuntime(on: process)
+                await self?.waitForRuntime(on: process, launch: launch)
             }
         } catch {
             isStarting = false
@@ -640,11 +643,10 @@ final class RuntimeViewModel {
         }
     }
 
-    func waitForRuntime(on process: Process) async {
+    func waitForRuntime(on process: Process, launch: Int) async {
         let epoch = inventoryEpoch
-        var retired = false
         defer {
-            if !retired {
+            if startAttempts == launch {
                 isStarting = false
                 applyState(socketResponds: runtimeState.isHealthy)
             }
@@ -655,12 +657,9 @@ final class RuntimeViewModel {
             guard !Task.isCancelled else { return }
 
             let responds = await socketResponds()
-            // Stop and a replacing Start retire the helper this wait is for: what it does next is
-            // theirs to report, and the state is theirs to publish.
-            guard runtimeProcess === process else {
-                retired = true
-                return
-            }
+            // Stop, Restart and a replacing Start retire the helper this wait is for: what it does
+            // next is theirs to report.
+            guard runtimeProcess === process else { return }
             if responds {
                 guard inventoryEpochIsCurrent(epoch) else { return }
                 runtimeFailure = nil

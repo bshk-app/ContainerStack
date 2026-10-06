@@ -12,6 +12,56 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.7.0](https://github.com/bshk-app/ContainerStack/compare/v0.6.1...v0.7.0) (2026-10-06)
+
+ContainerStack gets a Doctor: the checks `cstack doctor` runs, now in the sidebar, with a button
+for each problem the app can fix itself. Around it, a round of fixes to how the app starts, stops
+and watches the runtime.
+
+### Added
+
+- **Doctor** in the sidebar. It runs when you open it, at most once every 30 seconds, and again
+  whenever you ask. Each check shows its verdict, and one with a known fix gets a button: Restart
+  Runtime or Repair Docker Context. The window and `cstack doctor` share one report, so they
+  cannot disagree; the CLI's text, flags and exit codes are unchanged.
+- A stopped runtime shows which checks were skipped and why, instead of nothing or a false pass.
+- When another ContainerStack copy's bridge holds the Docker socket — `/Applications` beside a
+  development build, say — Doctor names its path and process, and Restart Runtime replaces it.
+  A bridge from any other program is named, never stopped.
+
+### Fixed
+
+- The menu bar keeps tracking the runtime after you close the window. Closing it used to stop
+  the 3-second monitor, which froze the status and turned off automatic recovery for as long as
+  the app lived in the menu bar alone.
+- Stop stays stopped. A start still under way no longer launches the runtime after you stop it,
+  and nothing begun before or during the Stop — a status check, a container stop that fails
+  afterwards — restarts it once the Stop is done. A deliberate stop is no longer reported as
+  "Runtime helper exited".
+- Start works after a start got stuck. It used to do nothing, without a word, while the helper
+  the app had given up on was still running; Start and Restart now end that helper and launch a
+  fresh one.
+- Stopping a group of containers or taking a stack down hands a lost runtime connection to
+  automatic recovery, as stopping a single container already did. "Checking the runtime…" no
+  longer stays on screen once the check is over, and a message on one screen no longer replaces
+  another screen's.
+- A runtime that has just recovered no longer goes blank because a check started before the
+  recovery came back late.
+- Uninstalling with Homebrew boots out the runtime LaunchAgent, which otherwise kept relaunching
+  a helper that was no longer there.
+- Adding a volume onto a container path that already has one from a different source is refused,
+  instead of reporting success and changing nothing.
+
+### Known limitations
+
+- Published ports still need a runtime restart if a bridge-created network's vmnet helper dies;
+  restarting only the containers does not repair the host route. Doctor now spots it and offers
+  the restart.
+- Running an image from the Images screen still waits for the container to exit before it
+  returns.
+- A Stop clicked while a restart is in progress, including one the app started on its own, is
+  lost.
+
 ## [0.6.1](https://github.com/bshk-app/ContainerStack/compare/v0.6.0...v0.6.1) (2026-09-06)
 
 

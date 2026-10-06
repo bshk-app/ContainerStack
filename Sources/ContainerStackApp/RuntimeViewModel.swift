@@ -33,7 +33,7 @@ final class RuntimeViewModel {
     @ObservationIgnored var isDashboardOpen = false
     @ObservationIgnored var isAdoptingDockerContext = false
     @ObservationIgnored var isDockerContextAdoptionPending = false
-    @ObservationIgnored var readDockerContext: @Sendable (Bool) -> DockerContextReading = {
+    @ObservationIgnored var readDockerContext: @Sendable (Bool) async -> DockerContextReading = {
         RuntimeViewModel.readDockerContextFromCLI(includeInstalledContext: $0)
     }
     /// Held while a Docker context CLI mutation is running; see `acquireDockerContextMutationSlot`.

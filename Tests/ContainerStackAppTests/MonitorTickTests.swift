@@ -68,7 +68,7 @@ struct MonitorTickTests {
         model.readDockerContext = { _ in Self.reading(active: DockerContext.name, installed: true) }
         await model.refreshDockerContext()
         let gate = ReadGate()
-        model.readDockerContext = { _ in gate.read(Self.reading(active: "orbstack", installed: true)) }
+        model.readDockerContext = { _ in await gate.read(Self.reading(active: "orbstack", installed: true)) }
 
         let outcome = await Self.overtakeAdoption(of: model, gate: gate)
 
@@ -84,7 +84,7 @@ struct MonitorTickTests {
         let (model, cleanup) = try makeModelWithTakeover()
         defer { cleanup() }
         let gate = ReadGate()
-        model.readDockerContext = { _ in gate.read(Self.reading(active: "default", installed: false)) }
+        model.readDockerContext = { _ in await gate.read(Self.reading(active: "default", installed: false)) }
 
         let outcome = await Self.overtakeAdoption(of: model, gate: gate)
 
@@ -96,15 +96,15 @@ struct MonitorTickTests {
         let (model, cleanup) = try makeModelWithTakeover()
         defer { cleanup() }
         let gate = ReadGate()
-        defer { gate.releaseAll() }
-        model.readDockerContext = { _ in gate.read(Self.reading(active: "orbstack", installed: true)) }
+        defer { Task { await gate.releaseAll() } }
+        model.readDockerContext = { _ in await gate.read(Self.reading(active: "orbstack", installed: true)) }
         let repairs = Counter()
         let firstReturned = Counter()
         Task {
             await model.adoptDockerContextIfEnabled(adopt: { _ in }, repair: { repairs.value += 1 })
             firstReturned.value += 1
         }
-        #expect(await Self.eventually { gate.started == 1 })
+        #expect(await Self.eventually { await gate.started == 1 })
 
         // Run beside the first, its read would overtake the first's and the two could trade
         // places for as long as their timing lines up.
@@ -114,11 +114,11 @@ struct MonitorTickTests {
             secondReturned.value += 1
         }
         #expect(await Self.eventually(within: .milliseconds(500)) { secondReturned.value == 1 })
-        #expect(gate.started == 1)
+        #expect(await gate.started == 1)
 
-        gate.release(1)
-        #expect(await Self.eventually { gate.started == 2 })
-        gate.release(2)
+        await gate.release(1)
+        #expect(await Self.eventually { await gate.started == 2 })
+        await gate.release(2)
         #expect(await Self.eventually { firstReturned.value == 1 })
         #expect(repairs.value == 2)
     }
@@ -128,22 +128,22 @@ struct MonitorTickTests {
     private static func overtakeAdoption(
         of model: RuntimeViewModel, gate: ReadGate
     ) async -> (adoptions: Int, repairs: Int) {
-        defer { gate.releaseAll() }
+        defer { Task { await gate.releaseAll() } }
         let adoptions = Counter()
         let repairs = Counter()
         let adoption = Task {
             await model.adoptDockerContextIfEnabled(
                 adopt: { _ in adoptions.value += 1 }, repair: { repairs.value += 1 })
         }
-        #expect(await eventually { gate.started == 1 })
+        #expect(await eventually { await gate.started == 1 })
         let tick = Task { await model.refreshDockerContext(includeInstalledContext: false) }
-        #expect(await eventually { gate.started == 2 })
+        #expect(await eventually { await gate.started == 2 })
 
-        gate.release(1)
-        #expect(await eventually { gate.started == 3 })
-        gate.release(3)
+        await gate.release(1)
+        #expect(await eventually { await gate.started == 3 })
+        await gate.release(3)
         await adoption.value
-        gate.release(2)
+        await gate.release(2)
         await tick.value
         return (adoptions.value, repairs.value)
     }
@@ -175,10 +175,10 @@ struct MonitorTickTests {
     }
 
     private static func eventually(
-        within limit: Duration = .seconds(5), _ condition: () -> Bool
+        within limit: Duration = .seconds(5), _ condition: () async -> Bool
     ) async -> Bool {
         let deadline = ContinuousClock.now + limit
-        while !condition() {
+        while await !condition() {
             guard ContinuousClock.now < deadline else { return false }
             try? await Task.sleep(for: .milliseconds(10))
         }
@@ -192,39 +192,29 @@ private final class Counter {
 }
 
 /// Holds each Docker context read until the test releases it, so the order the reads finish in is
-/// the test's to choose rather than the scheduler's.
-private final class ReadGate: @unchecked Sendable {
-    private let condition = NSCondition()
-    private var startedReads = 0
-    private var releasedReads: Set<Int> = []
+/// the test's to choose rather than the scheduler's. It suspends rather than blocks: a blocked read
+/// holds a cooperative-pool thread, and on a three-core CI runner a few of them hung the suite.
+private actor ReadGate {
+    private(set) var started = 0
+    private var released: Set<Int> = []
+    private var waiting: [Int: CheckedContinuation<Void, Never>] = [:]
 
-    var started: Int {
-        condition.lock()
-        defer { condition.unlock() }
-        return startedReads
-    }
-
-    func read(_ reading: DockerContextReading) -> DockerContextReading {
-        condition.lock()
-        defer { condition.unlock() }
-        startedReads += 1
-        let index = startedReads
-        while !releasedReads.contains(index) { condition.wait() }
+    func read(_ reading: DockerContextReading) async -> DockerContextReading {
+        started += 1
+        let index = started
+        if !released.contains(index) {
+            await withCheckedContinuation { waiting[index] = $0 }
+        }
         return reading
     }
 
     func release(_ index: Int) {
-        condition.lock()
-        releasedReads.insert(index)
-        condition.broadcast()
-        condition.unlock()
+        released.insert(index)
+        waiting.removeValue(forKey: index)?.resume()
     }
 
-    /// So a failing test cannot leave a read, and the thread it holds, blocked for good.
+    /// So a failing test cannot leave a read suspended for good.
     func releaseAll() {
-        condition.lock()
-        releasedReads.formUnion(1...max(startedReads, 1) + 8)
-        condition.broadcast()
-        condition.unlock()
+        for index in 1...(started + 8) { release(index) }
     }
 }

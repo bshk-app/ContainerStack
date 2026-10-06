@@ -9,9 +9,10 @@ extension RuntimeViewModel {
     }
 
     /// Recovers a wedged runtime: Apple Container can keep answering the API after its vmnet
-    /// attachment is gone, and only a full stop/start rebuilds it.
+    /// attachment is gone, and only a full stop/start rebuilds it. `replacingSibling` is for a
+    /// restart a person asked for, the only kind that may stop another copy's bridge (F-014).
     @discardableResult
-    func restartRuntime() async -> Bool {
+    func restartRuntime(replacingSibling: Bool = false) async -> Bool {
         guard !isRestarting else { return false }
         runtimeRecoveryRequested = false
 
@@ -22,7 +23,8 @@ extension RuntimeViewModel {
         let configuration = runtimeConfiguration()
         let steps = RuntimeRestartPlan.steps(
             configuration: configuration,
-            agentRegistered: isAgentRegistered
+            agentRegistered: isAgentRegistered,
+            replacingSibling: replacingSibling
         )
 
         for step in steps {
@@ -96,7 +98,7 @@ extension RuntimeViewModel {
         return false
     }
 
-    func stopRuntime() async {
+    func stopRuntime(replacingSibling: Bool = false) async {
         guard !isRestarting else { return }
         runtimeRecoveryRequested = false
 
@@ -104,7 +106,11 @@ extension RuntimeViewModel {
         runtimeMessage = "Stopping Docker bridge…"
         defer { isRestarting = false }
 
-        for step in RuntimeRestartPlan.stopSteps(configuration: runtimeConfiguration()) {
+        let steps = RuntimeRestartPlan.stopSteps(
+            configuration: runtimeConfiguration(),
+            replacingSibling: replacingSibling
+        )
+        for step in steps {
             try? await perform(step)
         }
         clearInventoryForStop()
@@ -147,8 +153,10 @@ extension RuntimeViewModel {
 
     private func perform(_ step: RuntimeControlStep) async throws {
         switch step {
-        case .stopBridge(let executablePath):
-            await Task.detached { RuntimeShell.terminate(executablePath: executablePath) }.value
+        case .stopBridge(let executablePath, let socketPath):
+            await Task.detached {
+                RuntimeShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
+            }.value
         case .stopContainers(let executablePath, let graceSeconds):
             // `try?`, not `try`: `restartRuntime` abandons the sequence on a throw, and this step
             // throws exactly when the runtime is wedged — which is when the steps after it are the
@@ -225,9 +233,15 @@ enum RuntimeShell {
         output(executablePath: "/usr/sbin/netstat", arguments: ["-rn", "-f", "inet"])
     }
 
-    static func terminate(executablePath: String) {
-        let listing = output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
-        for pid in ProcessTable.pids(forExecutable: executablePath, in: listing) {
+    /// F-014: this build's bridge, and another ContainerStack copy's when it holds the socket.
+    static func terminateBridge(executablePath: String, socketPath: String?) {
+        let pids = BridgeOwnership.pidsToStop(
+            bridgePath: executablePath,
+            lsofOutput: socketPath.map { output(executablePath: "/usr/sbin/lsof", arguments: ["-Fpcn", "--", $0]) }
+                ?? "",
+            listing: output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
+        )
+        for pid in pids {
             kill(pid, SIGTERM)
         }
     }

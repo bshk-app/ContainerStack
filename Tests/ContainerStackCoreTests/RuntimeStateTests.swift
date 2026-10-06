@@ -136,10 +136,10 @@ struct RuntimeStateTests {
             helperRunning: true,
             isStarting: false,
             failure: nil,
-            foreignBridge: "/Users/someone/.socktainer/container.sock"
+            foreignBridge: ForeignBridge(socketPath: "/Users/someone/.socktainer/container.sock")
         )
 
-        #expect(state == .foreignBridge(socketPath: "/Users/someone/.socktainer/container.sock"))
+        #expect(state == .foreignBridge(ForeignBridge(socketPath: "/Users/someone/.socktainer/container.sock")))
         #expect(state.isHealthy)
         #expect(state.isDegraded)
         #expect(state.detail?.contains("can hang") == true)
@@ -156,11 +156,45 @@ struct RuntimeStateTests {
             isStarting: false,
             failure: nil,
             missingAppRoot: "/tmp/gone",
-            foreignBridge: "/tmp/socket"
+            foreignBridge: ForeignBridge(socketPath: "/tmp/socket")
         )
 
-        #expect(state == .foreignBridge(socketPath: "/tmp/socket"))
+        #expect(state == .foreignBridge(ForeignBridge(socketPath: "/tmp/socket")))
         #expect(state.allowsMutations == false)
+    }
+
+    /// F-014: a sibling is named by the copy it came from, and the remedy is the restart that
+    /// now replaces it.
+    @Test
+    func aSiblingNamesItsCopyAndTheRestart() {
+        let state = RuntimeState.foreignBridge(
+            ForeignBridge(
+                socketPath: "/tmp/socket",
+                pid: 63819,
+                command: "/Applications/ContainerStack.app/Contents/Helpers/socktainer --socket /tmp/socket",
+                siblingBundlePath: "/Applications/ContainerStack.app"
+            ))
+
+        #expect(state.title == "Another ContainerStack bridge is in use")
+        #expect(state.detail?.contains("/Applications/ContainerStack.app (process 63819)") == true)
+        #expect(state.detail?.contains("Restart the runtime") == true)
+        #expect(state.allowsMutations == false)
+    }
+
+    /// NFR-004: someone else's bridge is named by its process, not only by the socket.
+    @Test
+    func aForeignHolderIsNamedByItsProcess() {
+        let state = RuntimeState.foreignBridge(
+            ForeignBridge(
+                socketPath: "/tmp/socket",
+                pid: 4242,
+                command: "/opt/homebrew/bin/socktainer",
+                siblingBundlePath: nil
+            ))
+
+        #expect(state.title == "Another Docker bridge is in use")
+        #expect(state.detail?.contains("Process 4242 (/opt/homebrew/bin/socktainer) holds /tmp/socket") == true)
+        #expect(state.detail?.hasSuffix("Stop process 4242, then start the runtime again.") == true)
     }
 
     @Test
@@ -170,7 +204,7 @@ struct RuntimeStateTests {
             helperRunning: false,
             isStarting: false,
             failure: nil,
-            foreignBridge: "/tmp/socket"
+            foreignBridge: ForeignBridge(socketPath: "/tmp/socket")
         )
 
         #expect(state == .offline("Docker socket is not responding."))

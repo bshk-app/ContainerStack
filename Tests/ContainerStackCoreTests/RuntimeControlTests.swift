@@ -159,7 +159,10 @@ struct RuntimeRestartPlanTests {
 
         #expect(
             steps == [
-                .stopBridge(executablePath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer"),
+                .stopBridge(
+                    executablePath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer",
+                    socketPath: nil
+                ),
                 .stopContainers(executablePath: "/usr/local/bin/container", graceSeconds: 5),
                 .run(executablePath: "/usr/local/bin/container", arguments: ["system", "stop"]),
                 .run(executablePath: "/usr/local/bin/container", arguments: ["system", "start"]),
@@ -195,13 +198,35 @@ struct RuntimeRestartPlanTests {
         #expect(gracefulStop < serviceStop)
     }
 
+    /// F-014: a restart the app starts by itself (the poll's recovery, the stale-build check) must
+    /// leave another ContainerStack copy's bridge alone. Only a person's request reaches it.
+    @Test
+    func onlyARequestedRestartReachesTheSocketsHolder() {
+        let automatic = RuntimeRestartPlan.steps(configuration: configuration, agentRegistered: false)
+        let requested = RuntimeRestartPlan.steps(
+            configuration: configuration,
+            agentRegistered: false,
+            replacingSibling: true
+        )
+        let bridge = "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
+
+        #expect(automatic.first == .stopBridge(executablePath: bridge, socketPath: nil))
+        #expect(requested.first == .stopBridge(executablePath: bridge, socketPath: configuration.socketPath))
+        #expect(
+            RuntimeRestartPlan.stopSteps(configuration: configuration)
+                == [.stopBridge(executablePath: bridge, socketPath: nil)])
+    }
+
     @Test
     func stopLeavesAppleContainerRunning() {
         let steps = RuntimeRestartPlan.stopSteps(configuration: configuration)
 
         #expect(
             steps == [
-                .stopBridge(executablePath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer")
+                .stopBridge(
+                    executablePath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer",
+                    socketPath: nil
+                )
             ])
     }
 }

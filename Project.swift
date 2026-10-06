@@ -89,13 +89,28 @@ let project = Project(
             sources: ["Sources/ContainerStackRuntime/**"],
             dependencies: [.target(name: "ContainerStackCore")]
         ),
+        // The fakes the test targets share (Package.swift has the same target).
+        // It imports Testing outside a test bundle, which Xcode allows only with
+        // the testing search paths switched on.
+        .target(
+            name: "DiagnosticTestSupport",
+            destinations: .macOS,
+            product: .staticFramework,
+            bundleId: "com.containerstack.diagnostic-test-support",
+            sources: ["Tests/DiagnosticTestSupport/**"],
+            dependencies: [.target(name: "ContainerStackCore")],
+            settings: .settings(base: ["ENABLE_TESTING_SEARCH_PATHS": "YES"])
+        ),
         .target(
             name: "ContainerStackCoreTests",
             destinations: .macOS,
             product: .unitTests,
             bundleId: "com.containerstack.core-tests",
             sources: ["Tests/ContainerStackCoreTests/**"],
-            dependencies: [.target(name: "ContainerStackCore")]
+            dependencies: [
+                .target(name: "ContainerStackCore"),
+                .target(name: "DiagnosticTestSupport"),
+            ]
         ),
     ],
     schemes: [

@@ -17,7 +17,7 @@ public enum RuntimeState: Equatable, Sendable {
     /// bridge this build ships. Reads work; lifecycle calls were measured hanging
     /// past 150s against a foreign bridge, so this has to be visible for as long
     /// as it lasts rather than announced once.
-    case foreignBridge(socketPath: String)
+    case foreignBridge(ForeignBridge)
     case offline(String)
 
     public static let genericFailure = "Docker socket is not responding."
@@ -29,7 +29,7 @@ public enum RuntimeState: Equatable, Sendable {
         failure: String?,
         unroutableNetworks: [UnroutableNetwork] = [],
         missingAppRoot: String? = nil,
-        foreignBridge: String? = nil
+        foreignBridge: ForeignBridge? = nil
     ) -> RuntimeState {
         // Ahead of the socket branch, not inside it. In this state `/info` fails while `_ping`
         // succeeds — measured: `cstack doctor` died on health with "Failed to generate system
@@ -44,7 +44,7 @@ public enum RuntimeState: Equatable, Sendable {
         // `missingAppRoot` describes the local runtime rather than who serves this
         // socket, so letting it win would print the wrong remedy and leave the
         // mutation gate open. It is already nil unless the socket answers.
-        if socketResponds, let foreignBridge { return .foreignBridge(socketPath: foreignBridge) }
+        if socketResponds, let foreignBridge { return .foreignBridge(foreignBridge) }
         if let missingAppRoot { return .detached(appRoot: missingAppRoot) }
         if socketResponds {
             return unroutableNetworks.isEmpty ? .running : .degraded(networks: unroutableNetworks)
@@ -94,6 +94,8 @@ public enum RuntimeState: Equatable, Sendable {
         case .running: "Runtime ready"
         case .degraded: "Runtime degraded"
         case .detached: "Runtime storage is missing"
+        case .foreignBridge(let bridge) where bridge.siblingBundlePath != nil:
+            "Another ContainerStack bridge is in use"
         case .foreignBridge: "Another Docker bridge is in use"
         case .offline: "Runtime unavailable"
         }
@@ -127,13 +129,13 @@ public enum RuntimeState: Equatable, Sendable {
             "The runtime is storing into \(appRoot), which no longer exists. "
                 + "Images, volumes and containers kept there cannot be found. "
                 + "Restart the runtime to move it back to the default location."
-        case .foreignBridge(let socketPath):
+        case .foreignBridge(let bridge):
             // Measured: a bridge from another build answered `_ping`, `/version`
             // and `/info` while `POST /containers/{id}/start` never returned and
             // the container stayed `Created` past 150s. Nothing else reports it,
             // and the app deliberately does not kill a bridge someone else runs.
-            "Another Docker bridge holds \(socketPath), so starting and stopping "
-                + "containers can hang. Stop it, then start the runtime again."
+            "\(bridge.holderName) holds \(bridge.socketPath), so starting and stopping "
+                + "containers can hang. \(bridge.advice)"
         case .offline(let reason): reason
         }
     }
@@ -173,5 +175,22 @@ public enum RuntimeStartupPlanner {
             return bridgeIsOurs ? .bridgeAlreadyRunning : .foreignBridge
         }
         return socketFileExists ? .removeStaleSocket : .startBridge
+    }
+}
+
+extension ForeignBridge {
+    /// NFR-004: the holder by its process wherever `lsof` and `ps` could name one.
+    var holderName: String {
+        if let siblingBundlePath, let pid { return "The bridge from \(siblingBundlePath) (process \(pid))" }
+        guard let pid else { return "Another Docker bridge" }
+        return command.isEmpty ? "Process \(pid)" : "Process \(pid) (\(command))"
+    }
+
+    /// The last sentence of the detail, and a foreign holder's `.manual` remedy verbatim, so
+    /// the Doctor and the CLI print it once.
+    var advice: String {
+        if siblingBundlePath != nil { return "Restart the runtime to replace it with this copy's bridge." }
+        guard let pid else { return "Stop it, then start the runtime again." }
+        return "Stop process \(pid), then start the runtime again."
     }
 }

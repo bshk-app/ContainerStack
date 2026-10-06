@@ -15,7 +15,7 @@ struct RuntimeHelperLifecycleTests {
         var launched = false
 
         await model.startRuntimeIfSocketIsDown(
-            since: model.stopRequests,
+            attempt: model.beginStartAttempt(),
             ping: {
                 model.cancelPendingStart()
                 return false
@@ -31,7 +31,7 @@ struct RuntimeHelperLifecycleTests {
         let model = makeModel()
 
         await model.startRuntimeIfSocketIsDown(
-            since: model.stopRequests,
+            attempt: model.beginStartAttempt(),
             ping: {
                 model.cancelPendingStart()
                 return true
@@ -63,20 +63,72 @@ struct RuntimeHelperLifecycleTests {
     @Test("A stop during the version check publishes nothing the check found (#70)")
     func stopDuringVersionCheckPublishesNoFailure() {
         let model = makeModel()
-        let stops = model.stopRequests
+        let attempt = model.beginStartAttempt()
         model.cancelPendingStart()
 
-        #expect(!model.acceptLaunchPreflight(since: stops, complaint: "container 1.2.0 is too old"))
+        #expect(!model.acceptLaunchPreflight(attempt: attempt, complaint: "container 1.2.0 is too old"))
         #expect(model.runtimeFailure == nil)
     }
 
-    @Test("Without a stop, the version check's complaint is published and the launch ends")
+    /// Codex reproduced this: Start waited on its version check, Restart launched a newer helper,
+    /// and the old check's failure then ended the newer start and published itself.
+    @Test("An older version check's complaint leaves a newer start alone (#70)")
+    func olderVersionComplaintLeavesNewerStart() {
+        let model = makeModel()
+        let older = model.beginStartAttempt()
+        model.beginStartAttempt()
+
+        #expect(!model.acceptLaunchPreflight(attempt: older, complaint: "too old"))
+        #expect(model.runtimeFailure == nil)
+        #expect(model.isStarting)
+    }
+
+    @Test("For the current start, the version check's complaint is published and the start ends")
     func versionComplaintIsPublished() {
         let model = makeModel()
+        let attempt = model.beginStartAttempt()
 
-        #expect(model.acceptLaunchPreflight(since: model.stopRequests, complaint: nil))
-        #expect(!model.acceptLaunchPreflight(since: model.stopRequests, complaint: "too old"))
+        #expect(model.acceptLaunchPreflight(attempt: attempt, complaint: nil))
+        #expect(!model.acceptLaunchPreflight(attempt: attempt, complaint: "too old"))
         #expect(model.runtimeFailure == "too old")
+        #expect(!model.isStarting)
+    }
+
+    /// Codex reproduced this: a refresh failing while Start waited on its ping left the start with
+    /// nothing to finish it, `.starting` for good.
+    @Test("A start whose socket was declared dead during its ping ends instead of hanging")
+    func startInvalidatedDuringPingEnds() async {
+        let model = makeModel()
+        let attempt = model.beginStartAttempt()
+        model.applyState(socketResponds: false)
+
+        await model.startRuntimeIfSocketIsDown(
+            attempt: attempt,
+            ping: {
+                model.clearInventoryForStop()
+                return true
+            },
+            launch: {}
+        )
+
+        #expect(!model.isStarting)
+        #expect(model.runtimeState != .starting)
+    }
+
+    @Test("A Stop before the launch-time start runs keeps it from starting (#70)")
+    func stopBeforeInitialStartKeepsItStopped() async throws {
+        let model = RuntimeViewModel(
+            socketPath: "/tmp/containerstack-lifecycle-\(UUID().uuidString).sock",
+            startsRuntime: true
+        )
+        model.cancelPendingStart()
+
+        try await Task.sleep(for: .milliseconds(200))
+
+        // A start that ran anyway is still pinging (starting) or has already failed to find the
+        // helper this test bundle lacks, depending on timing; either trips one of these.
+        #expect(!model.isStarting)
+        #expect(model.runtimeFailure == nil)
     }
 
     /// With the LaunchAgent registered, Restart kickstarts it and launches no helper of its own, so

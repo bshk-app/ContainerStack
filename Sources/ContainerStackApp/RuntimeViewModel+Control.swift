@@ -137,10 +137,10 @@ extension RuntimeViewModel {
         return startAttempts
     }
 
-    /// The version check is the launch's longest await. A Stop during it wins over whatever the
-    /// check found, failure included: publishing that would overwrite "Docker bridge stopped."
-    func acceptLaunchPreflight(since stops: Int, complaint: String?) -> Bool {
-        guard stopRequests == stops else { return false }
+    /// The version check is the launch's longest await. A Stop or a newer start during it wins over
+    /// whatever the check found, failure included: publishing that would overwrite theirs.
+    func acceptLaunchPreflight(attempt: Int, complaint: String?) -> Bool {
+        guard startAttempts == attempt else { return false }
         if let complaint {
             isStarting = false
             failRuntime(complaint)
@@ -151,6 +151,7 @@ extension RuntimeViewModel {
 
     func cancelPendingStart() {
         stopRequests &+= 1
+        startAttempts &+= 1
         isStarting = false
     }
 

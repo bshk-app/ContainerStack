@@ -14,11 +14,11 @@ final class RuntimeViewModel {
     nonisolated static let launchAgentPlistName = "com.containerstack.runtime.plist"
     private let service = SMAppService.agent(plistName: RuntimeViewModel.launchAgentPlistName)
     var runtimeProcess: Process?
-    /// Bumped by every Stop. A start remembers the count it began with and launches nothing once
-    /// it has moved: the user's last instruction wins (#70).
+    /// Bumped by every Stop. An action begun before one asks for no recovery after it (#70).
     @ObservationIgnored var stopRequests = 0
-    /// Bumped by every start. Only the attempt still current may end `isStarting`, so a wait for an
-    /// older helper cannot end a start begun since.
+    /// Bumped by every start and every Stop. A start goes on past each await only while its attempt
+    /// is still the current one, and only that attempt may end `isStarting`: the user's last
+    /// instruction wins, and an older wait cannot end a newer start (#70).
     @ObservationIgnored var startAttempts = 0
     private var runtimeLogHandle: FileHandle?
     private var monitorTask: Task<Void, Never>?
@@ -136,8 +136,10 @@ final class RuntimeViewModel {
         guard startsRuntime else { return }
         isStarting = true
         runtimeState = .starting
+        let attempts = startAttempts
         Task { [weak self] in
-            self?.startRuntime()
+            guard let self, startAttempts == attempts else { return }
+            startRuntime()
         }
     }
 
@@ -226,20 +228,19 @@ final class RuntimeViewModel {
         // already given up on, which only Start can clear (#71).
         guard runtimeProcess?.isRunning != true || runtimeFailure != nil else { return }
 
-        beginStartAttempt()
+        let attempt = beginStartAttempt()
         // Cleared as the attempt begins, matching the launch path and the manual restart: now that an
         // explicit failure outranks `.starting`, a leftover reason would surface as offline here.
         runtimeFailure = nil
         applyState(socketResponds: false)
 
-        let stops = stopRequests
         Task { [weak self] in
             guard let self else { return }
             await endRuntimeHelper()
             await startRuntimeIfSocketIsDown(
-                since: stops,
+                attempt: attempt,
                 ping: { await self.socketResponds() },
-                launch: { await self.launchRuntimeHelper(since: stops) }
+                launch: { await self.launchRuntimeHelper(attempt: attempt) }
             )
         }
     }
@@ -272,7 +273,7 @@ final class RuntimeViewModel {
     }
 
     func startRuntimeIfSocketIsDown(
-        since stops: Int,
+        attempt: Int,
         ping: () async -> Bool,
         launch: () async -> Void
     ) async {
@@ -280,9 +281,13 @@ final class RuntimeViewModel {
         let responds = await ping()
         // The ping's own await is the window for both: a Stop in it must not be undone (#70), and
         // a runtime declared dead in it must not be published healthy (#43).
-        guard stopRequests == stops else { return }
+        guard startAttempts == attempt else { return }
         if responds {
-            guard inventoryEpochIsCurrent(epoch) else { return }
+            guard inventoryEpochIsCurrent(epoch) else {
+                isStarting = false
+                applyState(socketResponds: false)
+                return
+            }
             runtimeFailure = nil
             runtimeMessage = "Adopted the Docker socket already serving this machine."
             isStarting = false
@@ -297,7 +302,7 @@ final class RuntimeViewModel {
         await launch()
     }
 
-    private func launchRuntimeHelper(since stops: Int) async {
+    private func launchRuntimeHelper(attempt: Int) async {
         let launchPlan = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL)
         guard FileManager.default.isExecutableFile(atPath: launchPlan.executablePath) else {
             isStarting = false
@@ -313,7 +318,7 @@ final class RuntimeViewModel {
         // ten seconds: run on the main actor, a wedged binary freezes the window for all of it.
         let configuration = runtimeConfiguration()
         let verdict = await Task.detached { ContainerVersionCheck.run(configuration) }.value
-        guard acceptLaunchPreflight(since: stops, complaint: verdict.userFacingMessage) else { return }
+        guard acceptLaunchPreflight(attempt: attempt, complaint: verdict.userFacingMessage) else { return }
 
         // The await above is a window: something else may have started the helper while the
         // version was being read, and a second one would fight the first for the socket.
@@ -334,14 +339,13 @@ final class RuntimeViewModel {
             runtimeProcess = process
             runtimeLogHandle = logHandle
             runtimeLogPath = logURL.path
-            let launch = beginStartAttempt()
             runtimeFailure = nil
             errorMessage = nil
             runtimeMessage = "Starting Apple Container and Docker bridge…"
             applyState(socketResponds: false)
 
             Task { [weak self] in
-                await self?.waitForRuntime(on: process, launch: launch)
+                await self?.waitForRuntime(on: process, launch: attempt)
             }
         } catch {
             isStarting = false
@@ -488,7 +492,7 @@ final class RuntimeViewModel {
     }
 
     func launchRuntimeHelperForRestart() async {
-        await launchRuntimeHelper(since: stopRequests)
+        await launchRuntimeHelper(attempt: beginStartAttempt())
     }
 
     var isAgentRegistered: Bool {

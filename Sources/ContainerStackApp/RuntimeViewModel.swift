@@ -31,6 +31,8 @@ final class RuntimeViewModel {
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
     /// Set by the window: only it shows the Docker context, and each read spawns `docker`.
     @ObservationIgnored var isDashboardOpen = false
+    @ObservationIgnored var isAdoptingDockerContext = false
+    @ObservationIgnored var isDockerContextAdoptionPending = false
     @ObservationIgnored var readDockerContext: @Sendable (Bool) -> DockerContextReading = {
         RuntimeViewModel.readDockerContextFromCLI(includeInstalledContext: $0)
     }

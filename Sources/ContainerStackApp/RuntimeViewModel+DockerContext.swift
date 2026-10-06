@@ -157,26 +157,40 @@ extension RuntimeViewModel {
     /// A missing context is first-run setup. An existing context that is no longer active is a
     /// conflict: silently reclaiming it would undo a choice the user made in another product.
     func adoptDockerContextIfEnabled() async {
-        await adoptDockerContextIfEnabled(adopt: { await self.applyDockerContextPreference(startingWith: $0) })
+        await adoptDockerContextIfEnabled(
+            adopt: { await self.applyDockerContextPreference(startingWith: $0) },
+            repair: { _ = await self.repairDockerContextRecord() }
+        )
     }
 
-    /// Two adoptions can overlap: a probe that sees the socket return starts one, and so does
-    /// opening the window. The one whose read was overtaken would decide on the cached context,
-    /// which can predate the user's switch to another one, so it leaves the decision to the newer.
-    func adoptDockerContextIfEnabled(adopt: (Bool) async -> Void) async {
-        guard await refreshDockerContext() else { return }
-        guard
-            DockerContext.shouldAdopt(
+    /// Adoptions overlap now that the monitor outlives the window: a probe that sees the socket
+    /// return starts one, and so does opening the window. An adoption whose read was overtaken
+    /// decided on the cached context, which can predate the user's switch to another one. So one
+    /// runs at a time, one asked for meanwhile runs after it, and each decides only on a read
+    /// nothing overtook; an overtaken read is simply taken again.
+    func adoptDockerContextIfEnabled(adopt: (Bool) async -> Void, repair: () async -> Void) async {
+        guard !isAdoptingDockerContext else {
+            isDockerContextAdoptionPending = true
+            return
+        }
+        isAdoptingDockerContext = true
+        defer { isAdoptingDockerContext = false }
+
+        repeat {
+            isDockerContextAdoptionPending = false
+            while await !refreshDockerContext() {}
+            if DockerContext.shouldAdopt(
                 activeContext: activeDockerContext,
                 installed: isDockerContextInstalled,
                 takeoverEnabled: takesOverDockerContext
-            )
-        else {
-            _ = await repairDockerContextRecord()
-            return
-        }
-        guard let initialState = dockerContextPreferenceSequencer.request(true) else { return }
-        await adopt(initialState)
+            ) {
+                if let initialState = dockerContextPreferenceSequencer.request(true) {
+                    await adopt(initialState)
+                }
+            } else {
+                await repair()
+            }
+        } while isDockerContextAdoptionPending
     }
 
     /// `shouldAdopt` deliberately never activates an installed-but-inactive context; this repairs

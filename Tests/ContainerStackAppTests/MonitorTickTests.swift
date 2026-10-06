@@ -22,6 +22,20 @@ struct MonitorTickTests {
         #expect(model.livenessFilter.consecutiveFailures == 1)
     }
 
+    /// Codex reproduced the starvation: with full reads slower than the 3s tick, every retry of
+    /// the adoption was overtaken again, 11 full reads and 70 tick reads without one adoption.
+    @Test("While an adoption runs, the tick leaves the Docker context to it")
+    func tickSkipsContextReadDuringAdoption() async {
+        let model = makeModel()
+        model.readDockerContext = { _ in Self.reading(active: "orbstack") }
+        model.isDashboardOpen = true
+        model.isAdoptingDockerContext = true
+
+        await model.monitorTick()
+
+        #expect(model.activeDockerContext == nil)
+    }
+
     @Test("With the window closed, the tick does not read the Docker context")
     func closedWindowSkipsContextRead() async {
         let model = makeModel()

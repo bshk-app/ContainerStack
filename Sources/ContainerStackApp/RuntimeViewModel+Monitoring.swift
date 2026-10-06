@@ -19,10 +19,12 @@ extension RuntimeViewModel {
 
     /// The context read stays inside the tick, after the probe: a probe that sees the socket come
     /// back adopts the context, and a read running beside it could leave that adoption deciding on
-    /// a cached context the user has since switched away from.
+    /// a cached context the user has since switched away from. An adoption running for another
+    /// caller reads the context itself; a tick read beside it would only make it read again, and
+    /// reads slower than the tick would never get through.
     func monitorTick() async {
         await probeRuntime()
-        if isDashboardOpen {
+        if isDashboardOpen, !isAdoptingDockerContext {
             await refreshDockerContext(includeInstalledContext: false)
         }
         expireServiceMessage()

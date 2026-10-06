@@ -308,6 +308,82 @@ struct RuntimeStalenessMessageTests {
         #expect(model.canRestartRuntime)
     }
 
+    @Test("A successful automatic recovery resolves each message that announced the check")
+    func successfulAutomaticRecoveryResolvesAnnouncingMessages() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+
+        await model.completeAutomaticRuntimeRecovery(restart: { true })
+
+        #expect(model.containerMessage == "Runtime recovered.")
+        #expect(model.resourceMessage == "Runtime recovered.")
+        #expect(model.stackMessage == "Runtime recovered.")
+    }
+
+    /// The poll consumes the request on several paths — a socket that answers, a system status
+    /// that reports running, a restart — and only one of them used to settle the message.
+    @Test("A finished check settles its messages as available when the runtime answers")
+    func finishedCheckSettlesAsAvailable() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+        model.runtimeRecoveryRequested = false
+
+        model.settleFinishedRuntimeCheck()
+
+        #expect(model.containerMessage == "Container stop timed out; runtime remains available.")
+        #expect(model.resourceMessage == "Stop timed out; runtime remains available.")
+        #expect(model.stackMessage == "Stack action failed; runtime remains available.")
+    }
+
+    @Test("A finished check settles its messages as offline when the runtime is gone")
+    func finishedCheckSettlesAsOffline() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+        model.runtimeRecoveryRequested = false
+        model.applyState(socketResponds: false)
+
+        model.settleFinishedRuntimeCheck()
+
+        #expect(model.containerMessage == "Container stop failed; the runtime is offline.")
+        #expect(model.resourceMessage == "Stop failed; the runtime is offline.")
+        #expect(model.stackMessage == "Stack action failed; the runtime is offline.")
+    }
+
+    @Test("A check still pending, or overtaken by a restart, is not settled yet")
+    func pendingCheckIsNotSettled() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+
+        model.settleFinishedRuntimeCheck()
+        #expect(model.stackMessage == RuntimeViewModel.checkingRuntimeMessage)
+
+        model.runtimeRecoveryRequested = false
+        model.isRestarting = true
+        model.settleFinishedRuntimeCheck()
+        #expect(model.stackMessage == RuntimeViewModel.checkingRuntimeMessage)
+    }
+
+    /// The recovery request is global but each screen has its own message: a stack down that lost
+    /// the runtime once wrote "Stop timed out" over what the Images screen had last reported.
+    @Test("A recovery check leaves messages it did not announce untouched")
+    func recoveryCheckLeavesUnrelatedMessages() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        model.resourceMessage = "Pulled nginx."
+        await model.downStack(Self.stack(), removeVolumes: false) { _, _ in throw Self.lostConnection }
+        model.runtimeRecoveryRequested = false
+
+        model.settleFinishedRuntimeCheck()
+        await model.completeAutomaticRuntimeRecovery(restart: { true })
+
+        #expect(model.resourceMessage == "Pulled nginx.")
+        #expect(model.containerMessage == nil)
+    }
+
     /// #39: the manual restart had no equivalent of the automatic path's cleanup, so a restart the
     /// user asked for could fail and leave the dead runtime's containers on screen indefinitely.
     @Test("A failed manual restart clears the dead runtime's inventory")
@@ -414,11 +490,65 @@ struct RuntimeStalenessMessageTests {
         #expect(model.containerMessage?.contains("Container action failed") == true)
     }
 
+    @Test("A group stop that loses the XPC connection asks the monitor to check the runtime")
+    func groupStopConnectionLossRaisesRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.stop(group: try Self.group()) { _ in throw Self.lostConnection }
+
+        #expect(model.runtimeRecoveryRequested)
+    }
+
+    @Test("A stack down that loses the XPC connection asks the monitor to check the runtime")
+    func stackDownConnectionLossRaisesRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.downStack(Self.stack(), removeVolumes: false) { _, _ in
+            throw ComposeRunner.RunnerError.commandFailed(
+                "Error response from daemon: XPC connection error: Connection invalid")
+        }
+
+        #expect(model.runtimeRecoveryRequested)
+    }
+
+    @Test("A stack down failure unrelated to the runtime does not ask for recovery")
+    func stackDownUnrelatedFailureDoesNotRaiseRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.downStack(Self.stack(), removeVolumes: false) { _, _ in
+            throw ComposeRunner.RunnerError.commandFailed("no configuration file provided")
+        }
+
+        #expect(!model.runtimeRecoveryRequested)
+    }
+
     private static func container() throws -> DockerContainerSummary {
         try JSONDecoder().decode(
             DockerContainerSummary.self,
             from: Data(#"{"Id":"web","Names":["/web"],"State":"running"}"#.utf8)
         )
+    }
+
+    private static let lostConnection = DockerAPIError.httpStatus(
+        500, message: "XPC connection error: Connection invalid")
+
+    private static func stack() -> ComposeStack {
+        ComposeStack(name: "web", fileURL: URL(fileURLWithPath: "/tmp/compose.yaml"))
+    }
+
+    private static func group() throws -> ContainerGroup {
+        ContainerGroup(project: "web", containers: [try container()])
+    }
+
+    private static func loseConnectionOnEverySurface(_ model: RuntimeViewModel) async throws {
+        await model.withContainer(try container(), action: "Stopping", recoversRuntime: true) {
+            throw lostConnection
+        }
+        await model.stop(group: try group()) { _ in throw lostConnection }
+        await model.downStack(stack(), removeVolumes: false) { _, _ in throw lostConnection }
     }
 
     @Test("A ready socket is not recovery success when health refresh fails")

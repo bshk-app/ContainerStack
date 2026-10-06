@@ -45,12 +45,43 @@ extension RuntimeViewModel {
         })
     }
 
+    static let checkingRuntimeMessage = "Runtime connection lost. Checking the runtime…"
+
+    /// The poll consumes a recovery request on several paths, and a manual restart or stop clears
+    /// it too. Whichever ended the check, a "Checking the runtime…" left behind is settled here by
+    /// the state the runtime is actually in.
+    func settleFinishedRuntimeCheck() {
+        guard !runtimeRecoveryRequested, !isRestarting, !isStarting else { return }
+        if runtimeState.isHealthy {
+            resolveRuntimeCheck(
+                container: "Container stop timed out; runtime remains available.",
+                resource: "Stop timed out; runtime remains available.",
+                stack: "Stack action failed; runtime remains available."
+            )
+        } else {
+            resolveRuntimeCheck(
+                container: "Container stop failed; the runtime is offline.",
+                resource: "Stop failed; the runtime is offline.",
+                stack: "Stack action failed; the runtime is offline."
+            )
+        }
+    }
+
+    /// The recovery request is global, so only the screens that announced the check get its
+    /// outcome; the rest keep what they last reported.
+    private func resolveRuntimeCheck(container: String, resource: String, stack: String) {
+        if containerMessage == Self.checkingRuntimeMessage { containerMessage = container }
+        if resourceMessage == Self.checkingRuntimeMessage { resourceMessage = resource }
+        if stackMessage == Self.checkingRuntimeMessage { stackMessage = stack }
+    }
+
     /// The probe returns straight after this call, so a restart that failed has to leave the model
     /// offline here — otherwise the inventory captured before the restart stays on screen while the
     /// runtime is gone.
     func completeAutomaticRuntimeRecovery(restart: () async -> Bool) async {
         if await restart() {
-            containerMessage = "Runtime recovered."
+            resolveRuntimeCheck(
+                container: "Runtime recovered.", resource: "Runtime recovered.", stack: "Runtime recovered.")
             return
         }
         clearInventoryForStop()

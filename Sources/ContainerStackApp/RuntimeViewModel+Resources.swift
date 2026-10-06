@@ -18,9 +18,13 @@ extension RuntimeViewModel {
     }
 
     func stop(group: ContainerGroup) async {
-        await withResource(group.id, message: "Stopping \(group.title)…") {
+        await stop(group: group, stopContainer: { try await self.client.stopContainer(id: $0) })
+    }
+
+    func stop(group: ContainerGroup, stopContainer: @escaping (String) async throws -> Void) async {
+        await withResource(group.id, message: "Stopping \(group.title)…", recoversRuntime: true) {
             for container in group.containers where container.isRunning {
-                try await self.client.stopContainer(id: container.id)
+                try await stopContainer(container.id)
             }
             self.resourceMessage = "Stopped \(group.title)."
             await self.refreshContainers()
@@ -241,7 +245,7 @@ extension RuntimeViewModel {
             // Losing the runtime's XPC connection while stopping is not a container failure: raise
             // the recovery request and let the monitor poll prove whether the API server is gone.
             runtimeRecoveryRequested = true
-            containerMessage = "Runtime connection lost. Checking the runtime…"
+            containerMessage = Self.checkingRuntimeMessage
         } catch {
             containerMessage = "Container action failed: \(error)"
         }
@@ -250,6 +254,7 @@ extension RuntimeViewModel {
     private func withResource(
         _ id: String,
         message: String,
+        recoversRuntime: Bool = false,
         _ body: @escaping () async throws -> Void
     ) async {
         guard canMutate, busyResource == nil else { return }
@@ -260,6 +265,11 @@ extension RuntimeViewModel {
 
         do {
             try await body()
+        } catch let error
+            where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
+        {
+            runtimeRecoveryRequested = true
+            resourceMessage = Self.checkingRuntimeMessage
         } catch {
             resourceMessage = "Action failed: \(error)"
         }

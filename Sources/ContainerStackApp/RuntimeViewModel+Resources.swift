@@ -241,7 +241,7 @@ extension RuntimeViewModel {
             // Losing the runtime's XPC connection while stopping is not a container failure: raise
             // the recovery request and let the monitor poll prove whether the API server is gone.
             runtimeRecoveryRequested = true
-            containerMessage = "Runtime connection lost. Checking the runtime…"
+            containerMessage = Self.checkingRuntimeMessage
         } catch {
             containerMessage = "Container action failed: \(error)"
         }
@@ -265,7 +265,7 @@ extension RuntimeViewModel {
             where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             runtimeRecoveryRequested = true
-            resourceMessage = "Runtime connection lost. Checking the runtime…"
+            resourceMessage = Self.checkingRuntimeMessage
         } catch {
             resourceMessage = "Action failed: \(error)"
         }

@@ -164,7 +164,7 @@ extension RuntimeViewModel {
             where recoversRuntime && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             runtimeRecoveryRequested = true
-            stackMessage = "Runtime connection lost. Checking the runtime…"
+            stackMessage = Self.checkingRuntimeMessage
         } catch {
             stackMessage = "\(stack.name) failed: \(error)"
         }

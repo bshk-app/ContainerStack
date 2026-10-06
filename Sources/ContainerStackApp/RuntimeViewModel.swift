@@ -348,9 +348,7 @@ final class RuntimeViewModel {
         let hasGoneQuiet = livenessFilter.recordProbe(responds: responds)
 
         if responds, runtimeRecoveryRequested {
-            runtimeRecoveryRequested = false
-            containerMessage = "Container stop timed out; runtime remains available."
-            resourceMessage = "Stop timed out; runtime remains available."
+            completeRecoveryCheckWithRuntimeAvailable()
         }
         let shouldCheckSystemStatus = RuntimeConnectionRecovery.shouldCheckSystemStatus(
             after: probeError,

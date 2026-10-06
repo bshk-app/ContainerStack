@@ -308,14 +308,50 @@ struct RuntimeStalenessMessageTests {
         #expect(model.canRestartRuntime)
     }
 
-    @Test("A successful automatic recovery resolves both surfaces' messages")
-    func successfulAutomaticRecoveryResolvesBothMessages() async throws {
+    @Test("A successful automatic recovery resolves each message that announced the check")
+    func successfulAutomaticRecoveryResolvesAnnouncingMessages() async throws {
         let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
 
         await model.completeAutomaticRuntimeRecovery(restart: { true })
 
         #expect(model.containerMessage == "Runtime recovered.")
         #expect(model.resourceMessage == "Runtime recovered.")
+        #expect(model.stackMessage == "Runtime recovered.")
+    }
+
+    @Test("A check that finds the runtime available resolves each message that announced it")
+    func availableRuntimeResolvesAnnouncingMessages() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+
+        model.completeRecoveryCheckWithRuntimeAvailable()
+
+        #expect(model.containerMessage == "Container stop timed out; runtime remains available.")
+        #expect(model.resourceMessage == "Stop timed out; runtime remains available.")
+        #expect(model.stackMessage == "Stack action failed; runtime remains available.")
+    }
+
+    /// The recovery request is global but each screen has its own message: a stack down that lost
+    /// the runtime once wrote "Stop timed out" over what the Images screen had last reported.
+    @Test("A recovery check leaves messages it did not announce untouched")
+    func recoveryCheckLeavesUnrelatedMessages() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        model.resourceMessage = "Pulled nginx."
+        await model.runStackAction(
+            Self.stack(), verb: "Taking down", pastTense: "is down", recoversRuntime: true
+        ) {
+            throw Self.lostConnection
+        }
+
+        model.completeRecoveryCheckWithRuntimeAvailable()
+        await model.completeAutomaticRuntimeRecovery(restart: { true })
+
+        #expect(model.resourceMessage == "Pulled nginx.")
+        #expect(model.containerMessage == nil)
     }
 
     /// #39: the manual restart had no equivalent of the automatic path's cleanup, so a restart the
@@ -472,6 +508,27 @@ struct RuntimeStalenessMessageTests {
             DockerContainerSummary.self,
             from: Data(#"{"Id":"web","Names":["/web"],"State":"running"}"#.utf8)
         )
+    }
+
+    private static let lostConnection = DockerAPIError.httpStatus(
+        500, message: "XPC connection error: Connection invalid")
+
+    private static func stack() -> ComposeStack {
+        ComposeStack(name: "web", fileURL: URL(fileURLWithPath: "/tmp/compose.yaml"))
+    }
+
+    private static func loseConnectionOnEverySurface(_ model: RuntimeViewModel) async throws {
+        await model.withContainer(try container(), action: "Stopping", recoversRuntime: true) {
+            throw lostConnection
+        }
+        await model.withResource("web", message: "Stopping web…", recoversRuntime: true) {
+            throw lostConnection
+        }
+        await model.runStackAction(
+            stack(), verb: "Taking down", pastTense: "is down", recoversRuntime: true
+        ) {
+            throw lostConnection
+        }
     }
 
     @Test("A ready socket is not recovery success when health refresh fails")

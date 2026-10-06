@@ -127,7 +127,7 @@ extension RuntimeViewModel {
     func refreshDockerContext(includeInstalledContext: Bool = true) async -> Bool {
         let generation = dockerContextRefreshSequencer.begin()
         let read = readDockerContext
-        let state = await Task.detached { read(includeInstalledContext) }.value
+        let state = await Task.detached { await read(includeInstalledContext) }.value
         guard dockerContextRefreshSequencer.isCurrent(generation) else { return false }
         activeDockerContext = state.active
         dockerContextTakeoverPreference.preserveActiveContextIfUnconfigured(state.active)

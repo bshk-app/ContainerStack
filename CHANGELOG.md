@@ -12,6 +12,69 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.7.0](https://github.com/bshk-app/ContainerStack/compare/v0.6.1...v0.7.0) (2026-10-06)
+
+
+### Added
+
+* **app:** add Doctor diagnostics to the sidebar ([40704f4](https://github.com/bshk-app/ContainerStack/commit/40704f4281a70c5e4cadc84edfda655601717c58))
+* **core:** add DiagnosticRunner returning one check per request ([7dcf9a9](https://github.com/bshk-app/ContainerStack/commit/7dcf9a96d5b3a7935c30af9a0a736ac35249ddc9))
+* **core:** add SystemProbe and its test fakes ([51e18ec](https://github.com/bshk-app/ContainerStack/commit/51e18ec6230b9b345ff7a772a0596d562ae90c60))
+* **core:** add the DiagnosticReport value types ([44933a0](https://github.com/bshk-app/ContainerStack/commit/44933a023307071e0c7b18cea3b95034378515e7))
+* **core:** bound the whole run, and run the probes at once ([d2fc5ac](https://github.com/bshk-app/ContainerStack/commit/d2fc5ac44798c3f97a2438f54f3447b7598838d6))
+* **core:** derive a report verdict so a degraded run is observable (F-013) ([6505ee6](https://github.com/bshk-app/ContainerStack/commit/6505ee6048723ae5aac536dcd2c2e08dc431afa5))
+* **core:** give the app-root check the CLI's own wording ([9a2a04c](https://github.com/bshk-app/ContainerStack/commit/9a2a04cf840bf528ded6024f765bdf7d4d9de98b))
+* **core:** keep a proven over-commitment amber through a partial inspect ([9353ee8](https://github.com/bshk-app/ContainerStack/commit/9353ee88ea38793818956f6397c9715141b1b831))
+* **core:** measure memory commitment for the CLI, and make the UI never pay for it ([f5f554d](https://github.com/bshk-app/ContainerStack/commit/f5f554deb947c55e7f346a17cd8b45578892f4e7))
+* **core:** name the CLI and UI check sets, membership pinned by test ([2efc759](https://github.com/bshk-app/ContainerStack/commit/2efc75995a424633b014c266f2ce8029770325d2))
+* **core:** project RuntimeState onto check verdicts ([2504561](https://github.com/bshk-app/ContainerStack/commit/25045614241d3a494a8bad34fe54f8177479b641))
+* **core:** render a report as the CLI's own doctor text (F-003, F-012) ([731afca](https://github.com/bshk-app/ContainerStack/commit/731afcadfb60f0bb25e8216b87a8155532b09caf))
+* **core:** report a wedged socket instead of outlasting it ([e95622c](https://github.com/bshk-app/ContainerStack/commit/e95622c3ada6fb4779cc31853a10e7ccc98245d0))
+* **core:** report who holds the Docker socket, and never guess it is us ([13af038](https://github.com/bshk-app/ContainerStack/commit/13af038a54cbd28ef30af5a048d94a8c5f855d73))
+* **core:** run diagnostic probes without swallowing failure ([55064dd](https://github.com/bshk-app/ContainerStack/commit/55064ddbc985e9678899b6aed4ad59af9ef43d27))
+* **core:** tell an unroutable network from a table nobody could read ([f26cc53](https://github.com/bshk-app/ContainerStack/commit/f26cc534b82f77826482a923c96ae540e9dc45fb))
+* **core:** time each check and log what the budget cut off (NFR-005) ([d31029b](https://github.com/bshk-app/ContainerStack/commit/d31029b83a9a9c5e247e048e6082b15fe4e9fc02))
+
+
+### Fixed
+
+* **app:** apply the inventory epoch guard to two more stale-call races ([#70](https://github.com/bshk-app/ContainerStack/issues/70)) ([7ff94e7](https://github.com/bshk-app/ContainerStack/commit/7ff94e72d9af4b59a9334a16c060105dd8926cf8))
+* **app:** apply the inventory epoch guard to two more stale-call races ([#70](https://github.com/bshk-app/ContainerStack/issues/70)) ([56a6dcb](https://github.com/bshk-app/ContainerStack/commit/56a6dcb362c0f15e184b5815a34f0ae536c1dabf))
+* **app:** carry one attempt number through the whole start path ([f31eb4a](https://github.com/bshk-app/ContainerStack/commit/f31eb4a3138d3ad5bfb23a8ed37737196988c8e7))
+* **app:** keep a probe begun during a Stop from restarting after it ([4bfc78f](https://github.com/bshk-app/ContainerStack/commit/4bfc78f76b288c314f537588fd3c173d0932b437))
+* **app:** keep a Stop from being undone by work that started before it ([2e89bf2](https://github.com/bshk-app/ContainerStack/commit/2e89bf2384dd194edf1ddce5aab9233f52fdb20d))
+* **app:** keep the runtime poll running after the window closes ([024eb8f](https://github.com/bshk-app/ContainerStack/commit/024eb8f54d042544342a81d07c2cd4f31cb0237d))
+* **app:** keep the runtime poll running after the window closes ([dafda6f](https://github.com/bshk-app/ContainerStack/commit/dafda6f13bd72eb68aba974e1fb7b95e72e1d7a2)), closes [#61](https://github.com/bshk-app/ContainerStack/issues/61)
+* **app:** leave the context read to an adoption while one runs ([19a9abd](https://github.com/bshk-app/ContainerStack/commit/19a9abd164552791e483c4b0c97c8284bc95f868))
+* **app:** let an overtaken context adoption leave the decision to the newer read ([0cd56ca](https://github.com/bshk-app/ContainerStack/commit/0cd56ca1dbe31b8a1b4460e6560831fdf8dd8957))
+* **app:** let Restart claim a start attempt only when it spawns a helper ([4eb363a](https://github.com/bshk-app/ContainerStack/commit/4eb363a4136556476c218497f6cabfec7f3c6b01))
+* **app:** let Stop and Start own the helper the app launched ([9bdfe3e](https://github.com/bshk-app/ContainerStack/commit/9bdfe3e053948820892aca9bd1acf53030c75de7))
+* **app:** let Stop and Start own the helper the app launched ([2e05c76](https://github.com/bshk-app/ContainerStack/commit/2e05c76f1a892c2d42d166fdd2d1bc360c79e868)), closes [#70](https://github.com/bshk-app/ContainerStack/issues/70) [#71](https://github.com/bshk-app/ContainerStack/issues/71)
+* **app:** number start attempts, and ask no recovery for a stopped runtime ([65df520](https://github.com/bshk-app/ContainerStack/commit/65df52073918544b3b0a553636827ba7ca4e3900))
+* **app:** read the Docker context inside the monitor tick, window open only ([02cfc71](https://github.com/bshk-app/ContainerStack/commit/02cfc71b5f633f603bbda89a1d212182777e12fc))
+* **app:** recognize ComposeRunner's own error shape, resolve resourceMessage too ([28a89bc](https://github.com/bshk-app/ContainerStack/commit/28a89bc1ded218976d03c9170b3beb66250cfbed))
+* **app:** resolve only the messages that announced a runtime check ([0fdf119](https://github.com/bshk-app/ContainerStack/commit/0fdf1192da25d6f41217f93354e3b3c3d2559745))
+* **app:** route group stop and stack down through the XPC-recovery hook ([aadcc36](https://github.com/bshk-app/ContainerStack/commit/aadcc361779bbaca077b1c2c4457639f1c6ed777))
+* **app:** route group stop and stack down through the XPC-recovery hook ([86b0f06](https://github.com/bshk-app/ContainerStack/commit/86b0f061e8cf6129aff5cd847c5a5aac3099b0c2))
+* **app:** run one context adoption at a time, each on a read nothing overtook ([193fd00](https://github.com/bshk-app/ContainerStack/commit/193fd0091b574866d7f788ee77b02f11e337ff2d))
+* **app:** settle a leftover runtime check by the runtime's state ([9d04b8f](https://github.com/bshk-app/ContainerStack/commit/9d04b8fed350c81f5e4ee5ca44d79303590afb22))
+* **cask:** boot out the runtime LaunchAgent on uninstall ([1e19b3f](https://github.com/bshk-app/ContainerStack/commit/1e19b3fb6028a6a86b7d46197d76feefb1f56c5c))
+* **cask:** boot out the runtime LaunchAgent on uninstall ([22b7c4e](https://github.com/bshk-app/ContainerStack/commit/22b7c4ed2f904ec9aef918f762e9a45f096c41ec))
+* **compose:** reject adding a volume onto an occupied target with a different source ([0112423](https://github.com/bshk-app/ContainerStack/commit/01124233744fbf57391e1d8fa09bea29c2580c1c))
+* **compose:** reject adding a volume onto an occupied target with a different source ([7f5cf1c](https://github.com/bshk-app/ContainerStack/commit/7f5cf1c81c80f9add7286b5f46486cf7173894c0))
+* **core:** a probe that could not run is amber, not a healthy app root ([1f09424](https://github.com/bshk-app/ContainerStack/commit/1f094242dcad514005c63ab2b51b742cf7f62255))
+* **core:** drop an untrue invariant and make ProbeResult Equatable ([5e7fce7](https://github.com/bshk-app/ContainerStack/commit/5e7fce74eb8530de94008ec9fa8e8976d8de641a))
+* **core:** stop the doctor renderer dropping and reordering CLI lines (F-003, T-016a) ([0c9fea0](https://github.com/bshk-app/ContainerStack/commit/0c9fea03d0de0b02990bc4e65f1da4debbcc9231))
+* **core:** the Doctor launches nothing, so helperRunning is false ([0097c75](https://github.com/bshk-app/ContainerStack/commit/0097c75ca223695c0201f13ba466c9bf91d8a8f6))
+* **http:** distinguish EINTR from a real connect timeout ([117b0d9](https://github.com/bshk-app/ContainerStack/commit/117b0d9317621b3875ce8a6a652d905a6d13a49b))
+* **http:** distinguish EINTR from a real connect timeout ([126af85](https://github.com/bshk-app/ContainerStack/commit/126af8592482cfc5c12983202d6df8d7bb6d8184))
+* **http:** stop treating EINTR as free to retry on the tick-bounded ping path ([ca1cd7f](https://github.com/bshk-app/ContainerStack/commit/ca1cd7f31fba1c5fa1ac104094f076f5971ba9a8))
+
+
+### Changed
+
+* **app:** move two runtime helpers out to clear the file_length cap ([3980ffc](https://github.com/bshk-app/ContainerStack/commit/3980ffcb3cb37408fa38c0c80bb5d84843b36544))
+
 ## [0.6.1](https://github.com/bshk-app/ContainerStack/compare/v0.6.0...v0.6.1) (2026-09-06)
 
 

@@ -122,8 +122,10 @@ struct DashboardView: View {
             model.loadStacks()
             await model.refreshStacks()
             await model.adoptDockerContextIfEnabled()
-            model.isDashboardOpen = true
             model.startMonitoring()
+            // Closed while this ran: `onDisappear` already cleared the flag.
+            guard !Task.isCancelled else { return }
+            model.isDashboardOpen = true
         }
         .onDisappear {
             model.isDashboardOpen = false

@@ -224,7 +224,6 @@ struct DoctorRepairTests {
         await runs.open()
         await stale.value
         #expect(doctor.report == nil, "measured before the restart")
-        await fresh.waitUntilCalled()
         await fresh.open()
         await doctor.inFlight?.value
         #expect(await runs.callCount == 1)

@@ -139,8 +139,8 @@ extension RuntimeViewModel {
 
     /// The version check is the launch's longest await. A Stop or a newer start during it wins over
     /// whatever the check found, failure included: publishing that would overwrite theirs.
-    func acceptLaunchPreflight(attempt: Int, complaint: String?) -> Bool {
-        guard startAttempts == attempt else { return false }
+    func acceptLaunchPreflight(attempt: Int?, complaint: String?) -> Bool {
+        if let attempt, startAttempts != attempt { return false }
         if let complaint {
             isStarting = false
             failRuntime(complaint)
@@ -257,7 +257,7 @@ extension RuntimeViewModel {
                 try RuntimeShell.run(executablePath: executablePath, arguments: arguments)
             }.value
         case .startBridge:
-            await launchRuntimeHelperForRestart()
+            await launchRuntimeHelper(attempt: nil)
         case .kickstartAgent(let label):
             try await Task.detached {
                 try RuntimeShell.run(

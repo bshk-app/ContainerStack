@@ -302,7 +302,10 @@ final class RuntimeViewModel {
         await launch()
     }
 
-    private func launchRuntimeHelper(attempt: Int) async {
+    /// `attempt` is the start this launch belongs to. Restart has none and claims one only when it
+    /// spawns, so a helper a pending start launched meanwhile keeps its own wait in charge.
+    func launchRuntimeHelper(attempt: Int?) async {
+        guard runtimeProcess?.isRunning != true else { return }
         let launchPlan = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL)
         guard FileManager.default.isExecutableFile(atPath: launchPlan.executablePath) else {
             isStarting = false
@@ -339,13 +342,14 @@ final class RuntimeViewModel {
             runtimeProcess = process
             runtimeLogHandle = logHandle
             runtimeLogPath = logURL.path
+            let launch = attempt ?? beginStartAttempt()
             runtimeFailure = nil
             errorMessage = nil
             runtimeMessage = "Starting Apple Container and Docker bridge…"
             applyState(socketResponds: false)
 
             Task { [weak self] in
-                await self?.waitForRuntime(on: process, launch: attempt)
+                await self?.waitForRuntime(on: process, launch: launch)
             }
         } catch {
             isStarting = false
@@ -489,10 +493,6 @@ final class RuntimeViewModel {
 
     func socketRespondsNow() async -> Bool {
         await socketResponds()
-    }
-
-    func launchRuntimeHelperForRestart() async {
-        await launchRuntimeHelper(attempt: beginStartAttempt())
     }
 
     var isAgentRegistered: Bool {

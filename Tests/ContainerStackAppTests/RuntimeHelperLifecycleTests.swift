@@ -115,6 +115,24 @@ struct RuntimeHelperLifecycleTests {
         #expect(model.runtimeState != .starting)
     }
 
+    /// Codex reproduced this: a pending Start spawned its helper during Restart's steps, Restart's
+    /// launch then claimed a newer attempt and launched nothing, and the surviving helper's wait,
+    /// holding the older one, could no longer end the start.
+    @Test("Restart's launch leaves a helper already running, and its wait, in charge")
+    func restartLaunchLeavesRunningHelperInCharge() async throws {
+        let model = makeModel()
+        let helper = try Self.spawn("/bin/sleep", "60")
+        defer { helper.terminate() }
+        model.runtimeProcess = helper
+        let attempt = model.beginStartAttempt()
+
+        await model.launchRuntimeHelper(attempt: nil)
+
+        #expect(model.startAttempts == attempt)
+        #expect(model.runtimeProcess === helper)
+        #expect(model.runtimeFailure == nil)
+    }
+
     @Test("A Stop before the launch-time start runs keeps it from starting (#70)")
     func stopBeforeInitialStartKeepsItStopped() async throws {
         let model = RuntimeViewModel(

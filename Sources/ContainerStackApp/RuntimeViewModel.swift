@@ -13,7 +13,10 @@ final class RuntimeViewModel {
     let client: DockerAPIClient
     nonisolated static let launchAgentPlistName = "com.containerstack.runtime.plist"
     private let service = SMAppService.agent(plistName: RuntimeViewModel.launchAgentPlistName)
-    private var runtimeProcess: Process?
+    var runtimeProcess: Process?
+    /// Bumped by every Stop. A start remembers the count it began with and launches nothing once
+    /// it has moved: the user's last instruction wins (#70).
+    @ObservationIgnored var stopRequests = 0
     private var runtimeLogHandle: FileHandle?
     private var monitorTask: Task<Void, Never>?
     /// `container system status` costs a CLI spawn plus an XPC round trip, so the poll reuses
@@ -216,9 +219,9 @@ final class RuntimeViewModel {
     }
 
     func startRuntime() {
-        guard runtimeProcess?.isRunning != true else {
-            return
-        }
+        // A helper still running is either one still starting, left alone, or one this app has
+        // already given up on, which only Start can clear (#71).
+        guard runtimeProcess?.isRunning != true || runtimeFailure != nil else { return }
 
         isStarting = true
         // Cleared as the attempt begins, matching the launch path and the manual restart: now that an
@@ -226,8 +229,15 @@ final class RuntimeViewModel {
         runtimeFailure = nil
         applyState(socketResponds: false)
 
+        let stops = stopRequests
         Task { [weak self] in
-            await self?.startRuntimeIfSocketIsDown()
+            guard let self else { return }
+            await endRuntimeHelper()
+            await startRuntimeIfSocketIsDown(
+                since: stops,
+                ping: { await self.socketResponds() },
+                launch: { await self.launchRuntimeHelper(since: stops) }
+            )
         }
     }
 
@@ -258,11 +268,17 @@ final class RuntimeViewModel {
         serviceMessage = nil
     }
 
-    private func startRuntimeIfSocketIsDown() async {
+    func startRuntimeIfSocketIsDown(
+        since stops: Int,
+        ping: () async -> Bool,
+        launch: () async -> Void
+    ) async {
         let epoch = inventoryEpoch
-        if await socketResponds() {
-            // The ping's own await is the window: if the runtime was declared dead while it was in
-            // flight, adopting the socket now would publish healthy over that failure (#43).
+        let responds = await ping()
+        // The ping's own await is the window for both: a Stop in it must not be undone (#70), and
+        // a runtime declared dead in it must not be published healthy (#43).
+        guard stopRequests == stops else { return }
+        if responds {
             guard inventoryEpochIsCurrent(epoch) else { return }
             runtimeFailure = nil
             runtimeMessage = "Adopted the Docker socket already serving this machine."
@@ -275,10 +291,10 @@ final class RuntimeViewModel {
             return
         }
 
-        await launchRuntimeHelper()
+        await launch()
     }
 
-    private func launchRuntimeHelper() async {
+    private func launchRuntimeHelper(since stops: Int) async {
         let launchPlan = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL)
         guard FileManager.default.isExecutableFile(atPath: launchPlan.executablePath) else {
             isStarting = false
@@ -302,7 +318,7 @@ final class RuntimeViewModel {
 
         // The await above is a window: something else may have started the helper while the
         // version was being read, and a second one would fight the first for the socket.
-        guard runtimeProcess?.isRunning != true else { return }
+        guard runtimeProcess?.isRunning != true, stopRequests == stops else { return }
 
         do {
             let logURL = try runtimeLogURL()
@@ -326,7 +342,7 @@ final class RuntimeViewModel {
             applyState(socketResponds: false)
 
             Task { [weak self] in
-                await self?.waitForRuntime()
+                await self?.waitForRuntime(on: process)
             }
         } catch {
             isStarting = false
@@ -471,7 +487,7 @@ final class RuntimeViewModel {
     }
 
     func launchRuntimeHelperForRestart() async {
-        await launchRuntimeHelper()
+        await launchRuntimeHelper(since: stopRequests)
     }
 
     var isAgentRegistered: Bool {
@@ -626,18 +642,28 @@ final class RuntimeViewModel {
         }
     }
 
-    private func waitForRuntime() async {
+    func waitForRuntime(on process: Process) async {
         let epoch = inventoryEpoch
+        var retired = false
         defer {
-            isStarting = false
-            applyState(socketResponds: runtimeState.isHealthy)
+            if !retired {
+                isStarting = false
+                applyState(socketResponds: runtimeState.isHealthy)
+            }
         }
 
         for attempt in 1...60 {
             try? await Task.sleep(for: .seconds(1))
             guard !Task.isCancelled else { return }
 
-            if await socketResponds() {
+            let responds = await socketResponds()
+            // Stop and a replacing Start retire the helper this wait is for: what it does next is
+            // theirs to report, and the state is theirs to publish.
+            guard runtimeProcess === process else {
+                retired = true
+                return
+            }
+            if responds {
                 guard inventoryEpochIsCurrent(epoch) else { return }
                 runtimeFailure = nil
                 runtimeMessage = "Runtime ready."
@@ -650,7 +676,7 @@ final class RuntimeViewModel {
                 return
             }
 
-            guard runtimeProcess?.isRunning == true else {
+            guard process.isRunning else {
                 failRuntime("Runtime helper exited. Check \(runtimeLogPath ?? "the runtime log").")
                 return
             }

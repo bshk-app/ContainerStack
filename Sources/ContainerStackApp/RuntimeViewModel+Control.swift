@@ -19,6 +19,8 @@ extension RuntimeViewModel {
         isRestarting = true
         runtimeFailure = nil
         defer { isRestarting = false }
+        // A helper still alive here would make the `.startBridge` step a silent no-op (#71).
+        await endRuntimeHelper()
 
         let configuration = runtimeConfiguration()
         let steps = RuntimeRestartPlan.steps(
@@ -128,13 +130,43 @@ extension RuntimeViewModel {
         return false
     }
 
+    func cancelPendingStart() {
+        stopRequests &+= 1
+        isStarting = false
+    }
+
+    /// Stop and a replacing Start both need the helper this app spawned gone, not just signalled:
+    /// a helper still inside `container system start` brings the bridge up after either of them.
+    func endRuntimeHelper(grace: Duration = .seconds(2)) async {
+        guard let process = runtimeProcess else { return }
+        runtimeProcess = nil
+        guard process.isRunning else { return }
+
+        process.terminate()
+        if await !Self.waitForExit(of: process, within: grace) {
+            kill(process.processIdentifier, SIGKILL)
+            _ = await Self.waitForExit(of: process, within: grace)
+        }
+    }
+
+    private static func waitForExit(of process: Process, within limit: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while process.isRunning {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return true
+    }
+
     func stopRuntime(replacingSibling: Bool = false) async {
         guard !isRestarting else { return }
         runtimeRecoveryRequested = false
+        cancelPendingStart()
 
         isRestarting = true
         runtimeMessage = "Stopping Docker bridge…"
         defer { isRestarting = false }
+        await endRuntimeHelper()
 
         let steps = RuntimeRestartPlan.stopSteps(
             configuration: runtimeConfiguration(),

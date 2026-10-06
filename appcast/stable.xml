@@ -3,6 +3,62 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.7.0</title>
+            <pubDate>Tue, 06 Oct 2026 19:34:39 +0000</pubDate>
+            <sparkle:version>382</sparkle:version>
+            <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>ContainerStack gets a Doctor: the checks <code class="notranslate">cstack doctor</code> runs, now in the sidebar, with a button<br>
+for each problem the app can fix itself. Around it, a round of fixes to how the app starts, stops<br>
+and watches the runtime.</p>
+<h3>Added</h3>
+<ul>
+<li><strong>Doctor</strong> in the sidebar. It runs when you open it, at most once every 30 seconds, and again<br>
+whenever you ask. Each check shows its verdict, and one with a known fix gets a button: Restart<br>
+Runtime or Repair Docker Context. The window and <code class="notranslate">cstack doctor</code> share one report, so they<br>
+cannot disagree; the CLI's text, flags and exit codes are unchanged.</li>
+<li>A stopped runtime shows which checks were skipped and why, instead of nothing or a false pass.</li>
+<li>When another ContainerStack copy's bridge holds the Docker socket — <code class="notranslate">/Applications</code> beside a<br>
+development build, say — Doctor names its path and process, and Restart Runtime replaces it.<br>
+A bridge from any other program is named, never stopped.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>The menu bar keeps tracking the runtime after you close the window. Closing it used to stop<br>
+the 3-second monitor, which froze the status and turned off automatic recovery for as long as<br>
+the app lived in the menu bar alone.</li>
+<li>Stop stays stopped. A start still under way no longer launches the runtime after you stop it,<br>
+and nothing begun before or during the Stop — a status check, a container stop that fails<br>
+afterwards — restarts it once the Stop is done. A deliberate stop is no longer reported as<br>
+"Runtime helper exited".</li>
+<li>Start works after a start got stuck. It used to do nothing, without a word, while the helper<br>
+the app had given up on was still running; Start and Restart now end that helper and launch a<br>
+fresh one.</li>
+<li>Stopping a group of containers or taking a stack down hands a lost runtime connection to<br>
+automatic recovery, as stopping a single container already did. "Checking the runtime…" no<br>
+longer stays on screen once the check is over, and a message on one screen no longer replaces<br>
+another screen's.</li>
+<li>A runtime that has just recovered no longer goes blank because a check started before the<br>
+recovery came back late.</li>
+<li>Uninstalling with Homebrew boots out the runtime LaunchAgent, which otherwise kept relaunching<br>
+a helper that was no longer there.</li>
+<li>Adding a volume onto a container path that already has one from a different source is refused,<br>
+instead of reporting success and changing nothing.</li>
+</ul>
+<h3>Known limitations</h3>
+<ul>
+<li>Published ports still need a runtime restart if a bridge-created network's vmnet helper dies;<br>
+restarting only the containers does not repair the host route. Doctor now spots it and offers<br>
+the restart.</li>
+<li>Running an image from the Images screen still waits for the container to exit before it<br>
+returns.</li>
+<li>A Stop clicked while a restart is in progress, including one the app started on its own, is<br>
+lost.</li>
+</ul>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.7.0/ContainerStack-0.7.0.dmg" length="22725849" type="application/octet-stream" sparkle:edSignature="PAuckEWLuo/7z4adePQE2DoRPj9XPd0pgk1BiH+14im4fdO2uW797RThQrIpFyLsBhcQYEd+kR2sMbLLz7fPBg=="/>
+        </item>
+        <item>
             <title>0.6.1</title>
             <pubDate>Sun, 06 Sep 2026 13:34:59 +0000</pubDate>
             <sparkle:version>245</sparkle:version>

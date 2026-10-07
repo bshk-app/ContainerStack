@@ -23,6 +23,41 @@ struct ComposeRunnerTests {
         ["compose", "--project-name", "demo", "--file", "/tmp/demo/compose.yaml", "--project-directory", "/tmp/demo"]
     }
 
+    // MARK: - deadlines (#101)
+
+    /// A stop is the call measured hanging when the runtime loses its XPC service, and a `down`
+    /// with no deadline kept its stack busy for good. Without one this test hangs, not fails.
+    @Test("a down or restart that outlives its deadline is ended and reported", arguments: ["down", "restart"])
+    func stopVerbsHaveADeadline(verb: String) async throws {
+        let runner = try fakeRunner(script: "sleep 30", stopTimeout: .milliseconds(300))
+        let started = ContinuousClock.now
+
+        await #expect(throws: ProcessRunnerError.self) {
+            if verb == "down" {
+                _ = try await runner.down(stack: stack, removeVolumes: false)
+            } else {
+                _ = try await runner.restart(stack: stack)
+            }
+        }
+        #expect(started.duration(to: .now) < .seconds(10))
+    }
+
+    /// `up` pulls images, which can legitimately take minutes; the stop deadline is not its.
+    @Test("up is not cut off by the stop deadline")
+    func upIsNotBoundedByTheStopDeadline() async throws {
+        let runner = try fakeRunner(script: "sleep 1; echo up", stopTimeout: .milliseconds(300))
+
+        #expect(try await runner.up(stack: stack) == "up\n")
+    }
+
+    private func fakeRunner(script: String, stopTimeout: Duration) throws -> ComposeRunner {
+        let url = FileManager.default.temporaryDirectory
+            .appending(path: "fake-docker-\(UUID().uuidString)")
+        try "#!/bin/sh\n\(script)\n".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return ComposeRunner(socketPath: "/tmp/c.sock", executablePath: url.path, stopTimeout: stopTimeout)
+    }
+
     // MARK: - argument construction
 
     @Test

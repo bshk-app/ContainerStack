@@ -137,8 +137,13 @@ extension RuntimeViewModel {
 
     func restartStack(_ stack: ComposeStack) async {
         let runner = stackRunner
-        await runStackAction(stack, verb: "Restarting", pastTense: "restarted") {
-            try await runner.restart(stack: stack)
+        await restartStack(stack) { try await runner.restart(stack: $0) }
+    }
+
+    func restartStack(_ stack: ComposeStack, restart: (ComposeStack) async throws -> String) async {
+        // `compose restart` stops every service first, so it loses the runtime the way down does.
+        await runStackAction(stack, verb: "Restarting", pastTense: "restarted", recoversRuntime: true) {
+            try await restart(stack)
         }
     }
 

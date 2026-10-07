@@ -30,9 +30,20 @@ public struct ComposeRunner: Sendable {
     }
 
     public let socketPath: String
+    /// The `docker` to run instead of the one found on the search paths; for tests.
+    let executablePath: String?
+    /// For the verbs that stop containers: a stop is the call measured hanging when the runtime
+    /// has lost its XPC service, and an unbounded wait kept the stack busy for good (#101).
+    let stopTimeout: Duration
 
-    public init(socketPath: String) {
+    public init(
+        socketPath: String,
+        executablePath: String? = nil,
+        stopTimeout: Duration = ProcessRunner.lifecycleTimeout
+    ) {
         self.socketPath = socketPath
+        self.executablePath = executablePath
+        self.stopTimeout = stopTimeout
     }
 
     // MARK: - Commands
@@ -76,13 +87,13 @@ public struct ComposeRunner: Sendable {
             verb: "down",
             extra: removeVolumes ? ["--volumes"] : []
         )
-        return try await runReturningOutput(arguments)
+        return try await runReturningOutput(arguments, timeout: stopTimeout)
     }
 
     /// `restart`. Returns combined stdout+stderr verbatim.
     public func restart(stack: ComposeStack) async throws -> String {
         let arguments = Self.composeArguments(for: stack, verb: "restart", extra: [])
-        return try await runReturningOutput(arguments)
+        return try await runReturningOutput(arguments, timeout: stopTimeout)
     }
 
     /// `logs --no-color --tail <n>` plus an optional service. Returns combined stdout+stderr verbatim.
@@ -205,34 +216,31 @@ public struct ComposeRunner: Sendable {
 
     // MARK: - Execution
 
-    /// Resolves docker and assembles the Process; throws `.dockerCLIMissing` when ComposeCommand
-    /// cannot locate the binary. Wiring the pipes is left to each caller.
-    private static func makeProcess(socketPath: String, arguments: [String]) throws -> Process {
+    /// Resolves docker; throws `.dockerCLIMissing` when ComposeCommand cannot locate the binary.
+    private func plan(_ arguments: [String]) throws -> (executablePath: String, plan: ComposeCommand.Plan) {
         let plan = ComposeCommand.plan(socketPath: socketPath, arguments: arguments)
-        guard let executablePath = plan.executablePath else {
+        guard let executablePath = executablePath ?? plan.executablePath else {
             throw RunnerError.dockerCLIMissing
         }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = plan.arguments
-        process.environment = plan.environment
-        process.standardInput = FileHandle.nullDevice
-        return process
+        return (executablePath, plan)
     }
 
-    /// Runs a command, combining stdout and stderr into one stream for verbatim display. Reads the
-    /// pipe to EOF before `waitUntilExit` so a chatty Compose run cannot deadlock on a full buffer.
-    private func run(_ arguments: [String]) async throws -> (status: Int32, output: String) {
-        let socketPath = self.socketPath
+    /// Runs a command, combining stdout and stderr into one stream for verbatim display. On a
+    /// `timeout` the child is ended and `ProcessRunnerError.timedOut` thrown; nil waits as long as
+    /// Compose takes, which `up` pulling images legitimately can.
+    private func run(
+        _ arguments: [String], timeout: Duration? = nil
+    ) async throws -> (status: Int32, output: String) {
+        let (executablePath, plan) = try plan(arguments)
         return try await Task.detached(priority: .userInitiated) {
-            let process = try Self.makeProcess(socketPath: socketPath, arguments: arguments)
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            try process.run()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            return (status: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
+            let result = try ProcessRunner.run(
+                executablePath: executablePath,
+                arguments: plan.arguments,
+                output: .capture(includingStandardError: true),
+                environment: plan.environment,
+                timeout: timeout
+            )
+            return (status: result.status, output: result.output)
         }.value
     }
 
@@ -241,9 +249,13 @@ public struct ComposeRunner: Sendable {
     /// and surfaces the real error on failure. Config output is small (one merged document), so
     /// draining stdout fully before stderr cannot deadlock on the pipe buffer.
     private func runSeparate(_ arguments: [String]) async throws -> (status: Int32, stdout: String, stderr: String) {
-        let socketPath = self.socketPath
+        let (executablePath, plan) = try plan(arguments)
         return try await Task.detached(priority: .userInitiated) {
-            let process = try Self.makeProcess(socketPath: socketPath, arguments: arguments)
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: executablePath)
+            process.arguments = plan.arguments
+            process.environment = plan.environment
+            process.standardInput = FileHandle.nullDevice
             let outPipe = Pipe()
             let errPipe = Pipe()
             process.standardOutput = outPipe
@@ -260,8 +272,8 @@ public struct ComposeRunner: Sendable {
         }.value
     }
 
-    private func runReturningOutput(_ arguments: [String]) async throws -> String {
-        let result = try await run(arguments)
+    private func runReturningOutput(_ arguments: [String], timeout: Duration? = nil) async throws -> String {
+        let result = try await run(arguments, timeout: timeout)
         guard result.status == 0 else {
             throw RunnerError.commandFailed(result.output)
         }

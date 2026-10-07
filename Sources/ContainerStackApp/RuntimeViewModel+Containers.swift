@@ -120,7 +120,8 @@ enum RuntimeConnectionRecovery {
     }
 
     static func isStopRecoveryError(_ error: Error) -> Bool {
-        (error as? UnixSocketError) == .timedOut || isDeadXPC(error)
+        if case .timedOut = error as? ProcessRunnerError { return true }
+        return (error as? UnixSocketError) == .timedOut || isDeadXPC(error)
     }
 
     private static func isHTTPServerFailure(_ error: Error) -> Bool {

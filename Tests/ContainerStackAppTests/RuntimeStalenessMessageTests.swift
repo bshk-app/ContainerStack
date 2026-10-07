@@ -513,6 +513,22 @@ struct RuntimeStalenessMessageTests {
         #expect(model.runtimeRecoveryRequested)
     }
 
+    /// #101: the deadline only helps if the timeout it throws reaches the recovery hook.
+    @Test("A stack down or restart that runs out of time asks the monitor to check the runtime")
+    func stackStopTimeoutRaisesRecoveryRequest() async throws {
+        let timedOut = ProcessRunnerError.timedOut(executablePath: "/usr/local/bin/docker", seconds: 120)
+
+        let down = makeModel()
+        down.applyState(socketResponds: true)
+        await down.downStack(Self.stack(), removeVolumes: false) { _, _ in throw timedOut }
+        #expect(down.runtimeRecoveryRequested)
+
+        let restart = makeModel()
+        restart.applyState(socketResponds: true)
+        await restart.restartStack(Self.stack()) { _ in throw timedOut }
+        #expect(restart.runtimeRecoveryRequested)
+    }
+
     @Test("A stack down failure unrelated to the runtime does not ask for recovery")
     func stackDownUnrelatedFailureDoesNotRaiseRecoveryRequest() async throws {
         let model = makeModel()

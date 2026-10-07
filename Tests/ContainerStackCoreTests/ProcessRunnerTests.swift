@@ -142,24 +142,28 @@ struct ProcessRunnerTests {
     /// nothing killed them. A process about to exit has to take them with it.
     @Test("children under a deadline can be killed when their waiter gives up")
     func boundedChildrenAreTerminated() throws {
+        // Its own registry: closing the shared one would refuse every bounded run after this
+        // test, and the tests asserting a `.timedOut` would see `.terminatingBeforeWait`.
+        let registry = BoundedChildren()
         let finished = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .userInitiated).async {
             _ = try? ProcessRunner.run(
                 executablePath: "/bin/sleep",
                 arguments: ["30"],
-                timeout: .seconds(30)
+                timeout: .seconds(30),
+                registry: registry
             )
             finished.signal()
         }
 
         var attempts = 0
-        while ProcessRunner.outstandingBoundedChildren == 0, attempts < 500 {
+        while registry.count == 0, attempts < 500 {
             usleep(10_000)
             attempts += 1
         }
-        #expect(ProcessRunner.outstandingBoundedChildren > 0)
+        #expect(registry.count > 0)
 
-        #expect(ProcessRunner.terminateBoundedChildren() > 0)
+        #expect(ProcessRunner.terminateBoundedChildren(in: registry) > 0)
 
         // A 30-second sleep that returns in seconds only does so because it was
         // killed; the child outliving the call is exactly the reported bug.

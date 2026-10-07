@@ -87,13 +87,13 @@ public struct ComposeRunner: Sendable {
             verb: "down",
             extra: removeVolumes ? ["--volumes"] : []
         )
-        return try await runReturningOutput(arguments, timeout: stopTimeout)
+        return try await runReturningOutput(arguments, bounded: true)
     }
 
     /// `restart`. Returns combined stdout+stderr verbatim.
     public func restart(stack: ComposeStack) async throws -> String {
         let arguments = Self.composeArguments(for: stack, verb: "restart", extra: [])
-        return try await runReturningOutput(arguments, timeout: stopTimeout)
+        return try await runReturningOutput(arguments, bounded: true)
     }
 
     /// `logs --no-color --tail <n>` plus an optional service. Returns combined stdout+stderr verbatim.
@@ -225,13 +225,37 @@ public struct ComposeRunner: Sendable {
         return (executablePath, plan)
     }
 
-    /// Runs a command, combining stdout and stderr into one stream for verbatim display. On a
-    /// `timeout` the child is ended and `ProcessRunnerError.timedOut` thrown; nil waits as long as
-    /// Compose takes, which `up` pulling images legitimately can.
-    private func run(
-        _ arguments: [String], timeout: Duration? = nil
-    ) async throws -> (status: Int32, output: String) {
+    private func makeProcess(_ arguments: [String]) throws -> Process {
         let (executablePath, plan) = try plan(arguments)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = plan.arguments
+        process.environment = plan.environment
+        process.standardInput = FileHandle.nullDevice
+        return process
+    }
+
+    /// Runs a command, combining stdout and stderr into one stream for verbatim display. Reads the
+    /// pipe to EOF before `waitUntilExit` so a chatty Compose run cannot deadlock on a full buffer.
+    /// No deadline: `up` pulling images can legitimately take minutes.
+    private func run(_ arguments: [String]) async throws -> (status: Int32, output: String) {
+        let process = try makeProcess(arguments)
+        return try await Task.detached(priority: .userInitiated) {
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return (status: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
+        }.value
+    }
+
+    /// The same, for the verbs that stop containers: a child that outlives `stopTimeout` is ended
+    /// and `ProcessRunnerError.timedOut` thrown, which the app takes as a lost runtime.
+    private func runBounded(_ arguments: [String]) async throws -> (status: Int32, output: String) {
+        let (executablePath, plan) = try plan(arguments)
+        let timeout = stopTimeout
         return try await Task.detached(priority: .userInitiated) {
             let result = try ProcessRunner.run(
                 executablePath: executablePath,
@@ -249,13 +273,8 @@ public struct ComposeRunner: Sendable {
     /// and surfaces the real error on failure. Config output is small (one merged document), so
     /// draining stdout fully before stderr cannot deadlock on the pipe buffer.
     private func runSeparate(_ arguments: [String]) async throws -> (status: Int32, stdout: String, stderr: String) {
-        let (executablePath, plan) = try plan(arguments)
+        let process = try makeProcess(arguments)
         return try await Task.detached(priority: .userInitiated) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executablePath)
-            process.arguments = plan.arguments
-            process.environment = plan.environment
-            process.standardInput = FileHandle.nullDevice
             let outPipe = Pipe()
             let errPipe = Pipe()
             process.standardOutput = outPipe
@@ -272,8 +291,8 @@ public struct ComposeRunner: Sendable {
         }.value
     }
 
-    private func runReturningOutput(_ arguments: [String], timeout: Duration? = nil) async throws -> String {
-        let result = try await run(arguments, timeout: timeout)
+    private func runReturningOutput(_ arguments: [String], bounded: Bool = false) async throws -> String {
+        let result = try await bounded ? runBounded(arguments) : run(arguments)
         guard result.status == 0 else {
             throw RunnerError.commandFailed(result.output)
         }

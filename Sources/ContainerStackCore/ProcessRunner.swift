@@ -60,7 +60,13 @@ public enum ProcessRunner {
     /// children do not.
     @discardableResult
     public static func terminateBoundedChildren() -> Int {
-        let children = boundedChildren.closeAndDrain()
+        terminateBoundedChildren(in: boundedChildren)
+    }
+
+    /// The registry is closed for good, so a test that exercises this gets its own: closing the
+    /// shared one refused every bounded run after it in the same test process.
+    static func terminateBoundedChildren(in registry: BoundedChildren) -> Int {
+        let children = registry.closeAndDrain()
         var killed = 0
         for child in children where child.isRunning {
             kill(child.processIdentifier, SIGKILL)
@@ -108,6 +114,20 @@ public enum ProcessRunner {
         environment: [String: String]? = nil,
         timeout: Duration?,
         gracePeriod: Duration = .milliseconds(500)
+    ) throws -> Result {
+        try run(
+            executablePath: executablePath, arguments: arguments, output: mode, environment: environment,
+            timeout: timeout, gracePeriod: gracePeriod, registry: boundedChildren)
+    }
+
+    static func run(
+        executablePath: String,
+        arguments: [String] = [],
+        output mode: OutputMode = .discard,
+        environment: [String: String]? = nil,
+        timeout: Duration?,
+        gracePeriod: Duration = .milliseconds(500),
+        registry: BoundedChildren
     ) throws -> Result {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
@@ -187,13 +207,13 @@ public enum ProcessRunner {
             // exits mid-wait can take the child with it instead of orphaning it.
             // A refusal means shutdown already started: nobody will be here to
             // wait, so the child goes now rather than surviving this process.
-            guard boundedChildren.insert(process) else {
+            guard registry.insert(process) else {
                 kill(process.processIdentifier, SIGKILL)
                 exited.wait()
                 finishDrain()
                 throw ProcessRunnerError.terminatingBeforeWait(executablePath: executablePath)
             }
-            defer { boundedChildren.remove(process) }
+            defer { registry.remove(process) }
 
             if exited.wait(timeout: .now() + seconds(timeout)) == .timedOut {
                 process.terminate()
@@ -251,7 +271,7 @@ private final class OutputBuffer: @unchecked Sendable {
 /// *its* child is still alive. Once shutdown starts the registry stays closed,
 /// so a child launched during it is killed by the call that registers it rather
 /// than left behind.
-private final class BoundedChildren: @unchecked Sendable {
+final class BoundedChildren: @unchecked Sendable {
     private let lock = NSLock()
     private var processes: [ObjectIdentifier: Process] = [:]
     private var isTerminating = false

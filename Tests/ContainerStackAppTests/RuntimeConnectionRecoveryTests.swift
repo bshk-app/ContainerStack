@@ -27,63 +27,20 @@ struct RuntimeConnectionRecoveryTests {
         )
     }
 
+    /// Whether something else runs, a Start included, is the lifecycle queue's to weigh (#102).
     @Test
-    func startingStateRestartsWhenAPIServerIsDown() {
-        #expect(
-            RuntimeConnectionRecovery.shouldAttemptRestart(
-                apiserverRunning: false,
-                isStarting: true,
-                isRestarting: false,
-                hasRuntimeFailure: false
-            )
-        )
-    }
-
-    /// Codex reproduced this: a probe awaiting `system status` across a whole Stop came back with
-    /// "not running" and restarted the runtime the user had just stopped.
-    @Test
-    func stopDuringProbeIsNotUndoneByRecovery() {
-        #expect(
-            !RuntimeConnectionRecovery.shouldAttemptRestart(
-                apiserverRunning: false,
-                isStarting: false,
-                isRestarting: false,
-                hasRuntimeFailure: false,
-                stoppedSinceProbeBegan: true
-            )
-        )
+    func absentAPIServerRestarts() {
+        #expect(RuntimeConnectionRecovery.shouldAttemptRestart(apiserverRunning: false, hasRuntimeFailure: false))
     }
 
     @Test
     func runningAPIServerDoesNotRestart() {
-        #expect(
-            !RuntimeConnectionRecovery.shouldAttemptRestart(
-                apiserverRunning: true,
-                isStarting: false,
-                isRestarting: false,
-                hasRuntimeFailure: false
-            )
-        )
+        #expect(!RuntimeConnectionRecovery.shouldAttemptRestart(apiserverRunning: true, hasRuntimeFailure: false))
     }
 
     @Test
-    func restartGuardsPreventDuplicateAttempts() {
-        #expect(
-            !RuntimeConnectionRecovery.shouldAttemptRestart(
-                apiserverRunning: false,
-                isStarting: false,
-                isRestarting: true,
-                hasRuntimeFailure: false
-            )
-        )
-        #expect(
-            !RuntimeConnectionRecovery.shouldAttemptRestart(
-                apiserverRunning: false,
-                isStarting: false,
-                isRestarting: false,
-                hasRuntimeFailure: true
-            )
-        )
+    func failedRuntimeIsNotRecoveredAutomatically() {
+        #expect(!RuntimeConnectionRecovery.shouldAttemptRestart(apiserverRunning: false, hasRuntimeFailure: true))
     }
 
     @Test

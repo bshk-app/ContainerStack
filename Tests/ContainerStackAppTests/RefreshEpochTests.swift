@@ -82,7 +82,7 @@ struct RefreshEpochTests {
             startsRuntime: false,
             client: DockerAPIClient(transport: transport, retryPolicy: DockerRetryPolicy(maxAttempts: 1, delay: .zero))
         )
-        model.steps = .inert(recording: StepLog())
+        model.steps = FakeRuntime().steps()
         return model
     }
 }

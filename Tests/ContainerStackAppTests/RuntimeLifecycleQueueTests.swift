@@ -105,6 +105,18 @@ struct RuntimeLifecycleQueueTests {
         #expect(queue.finish(start) == restart)
     }
 
+    @Test("the latest instruction is what waits, or else what runs")
+    func latestIsWhatRunsOnceDrained() {
+        var queue = RuntimeLifecycleQueue()
+        #expect(queue.latest == nil)
+
+        _ = queue.request(Self.start, origin: .user)
+        #expect(queue.latest == Self.start)
+
+        _ = queue.request(Self.stop, origin: .user)
+        #expect(queue.latest == Self.stop)
+    }
+
     @Test("finishing with nothing waiting leaves the queue idle")
     func finishLeavesQueueIdle() throws {
         var queue = RuntimeLifecycleQueue()

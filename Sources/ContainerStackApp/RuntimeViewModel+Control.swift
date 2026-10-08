@@ -8,45 +8,6 @@ extension RuntimeViewModel {
         !isRestarting && runtimeState != .starting
     }
 
-    /// Recovers a wedged runtime: Apple Container can keep answering the API after its vmnet
-    /// attachment is gone, and only a full stop/start rebuilds it. `replacingSibling` is for a
-    /// restart a person asked for, the only kind that may stop another copy's bridge (F-014).
-    @discardableResult
-    func restartRuntime(replacingSibling: Bool = false) async -> Bool {
-        guard !isRestarting else { return false }
-        runtimeRecoveryRequested = false
-
-        isRestarting = true
-        runtimeFailure = nil
-        defer { isRestarting = false }
-        // A helper still alive here would make the `.startBridge` step a silent no-op (#71).
-        await endRuntimeHelper()
-
-        let configuration = runtimeConfiguration()
-        let steps = RuntimeRestartPlan.steps(
-            configuration: configuration,
-            agentRegistered: isAgentRegistered,
-            replacingSibling: replacingSibling
-        )
-
-        for step in steps {
-            runtimeMessage = message(for: step)
-            do {
-                try await perform(step)
-            } catch {
-                failRuntime("Restart failed at \(message(for: step)): \(error)")
-                return false
-            }
-        }
-
-        runtimeMessage = "Waiting for Docker socket…"
-        return await completeRuntimeRestart(waitForSocket: {
-            try await Self.waitForRestartedSocket {
-                await self.socketRespondsNow()
-            }
-        })
-    }
-
     static let checkingRuntimeMessage = "Runtime connection lost. Checking the runtime…"
 
     /// The poll consumes a recovery request on several paths, and a manual restart or stop clears
@@ -77,20 +38,32 @@ extension RuntimeViewModel {
         if stackMessage == Self.checkingRuntimeMessage { stackMessage = stack }
     }
 
+    static let recoveringRuntimeMessage = "Apple Container API server stopped. Restarting runtime…"
+
     /// The probe returns straight after this call, so a restart that failed has to leave the model
     /// offline here — otherwise the inventory captured before the restart stays on screen while the
-    /// runtime is gone.
-    func completeAutomaticRuntimeRecovery(restart: () async -> Bool) async {
-        if await restart() {
+    /// runtime is gone. Only a restart that ran and failed: one dropped or superseded left the
+    /// runtime to whatever runs instead (#102).
+    func completeAutomaticRuntimeRecovery(restart: () async -> RuntimeOperationOutcome) async {
+        let previousMessage = runtimeMessage
+        runtimeMessage = Self.recoveringRuntimeMessage
+        switch await restart() {
+        case .completed(true):
             resolveRuntimeCheck(
                 container: "Runtime recovered.", resource: "Runtime recovered.", stack: "Runtime recovered.")
-            return
+        case .completed(false):
+            clearInventoryForStop()
+            endStartupAfterFailedRecovery()
+        case .dropped:
+            runtimeMessage = previousMessage
+        case .superseded:
+            break
         }
-        clearInventoryForStop()
-        endStartupAfterFailedRecovery()
     }
 
+    /// `isCurrent` is the restart's checkpoint: once superseded, it publishes nothing more.
     func completeRuntimeRestart(
+        isCurrent: () -> Bool = { true },
         waitForSocket: () async throws -> Bool,
         refreshHealth: (() async throws -> RuntimeHealthSnapshot)? = nil
     ) async -> Bool {
@@ -100,6 +73,7 @@ extension RuntimeViewModel {
         } catch {
             return false
         }
+        guard isCurrent() else { return false }
         guard socketReady else {
             failRuntime("Runtime did not come back within 60 seconds.")
             return false
@@ -113,52 +87,23 @@ extension RuntimeViewModel {
         } else {
             await refresh()
         }
-        return runtimeState.isHealthy
+        // A refresh superseded midway publishes nothing, so the state it would have replaced
+        // says nothing about this restart.
+        return isCurrent() && runtimeState.isHealthy
     }
 
     static func waitForRestartedSocket(
         attempts: Int = 60,
         delay: Duration = .seconds(1),
-        responds: () async -> Bool
+        responds: () async throws -> Bool
     ) async throws -> Bool {
         for _ in 0..<attempts {
             try await Task.sleep(for: delay)
-            if await responds() {
+            if try await responds() {
                 return true
             }
         }
         return false
-    }
-
-    @discardableResult
-    func beginStartAttempt() -> Int {
-        startAttempts &+= 1
-        isStarting = true
-        return startAttempts
-    }
-
-    /// The version check is the launch's longest await. A Stop or a newer start during it wins over
-    /// whatever the check found, failure included: publishing that would overwrite theirs.
-    func acceptLaunchPreflight(attempt: Int?, complaint: String?) -> Bool {
-        if let attempt, startAttempts != attempt { return false }
-        if let complaint {
-            isStarting = false
-            failRuntime(complaint)
-            return false
-        }
-        return true
-    }
-
-    /// A probe begun while a Stop ran saw a runtime being stopped; its late verdict must not act
-    /// once the Stop is over either.
-    func finishStopRequest() {
-        stopRequests &+= 1
-    }
-
-    func cancelPendingStart() {
-        stopRequests &+= 1
-        startAttempts &+= 1
-        isStarting = false
     }
 
     /// Stop and a replacing Start both need the helper this app spawned gone, not just signalled:
@@ -170,34 +115,6 @@ extension RuntimeViewModel {
         guard process.isRunning else { return true }
         await steps.endHelper(process, grace)
         return true
-    }
-
-    func stopRuntime(replacingSibling: Bool = false) async {
-        guard !isRestarting else { return }
-        runtimeRecoveryRequested = false
-        cancelPendingStart()
-
-        isRestarting = true
-        runtimeMessage = "Stopping Docker bridge…"
-        defer {
-            isRestarting = false
-            finishStopRequest()
-        }
-        await endRuntimeHelper()
-
-        let steps = RuntimeRestartPlan.stopSteps(
-            configuration: runtimeConfiguration(),
-            replacingSibling: replacingSibling
-        )
-        for step in steps {
-            try? await perform(step)
-        }
-        clearInventoryForStop()
-        // Said here rather than left to the probe: a stop is the one silence with a known cause,
-        // and `RuntimeLivenessFilter` makes the probe wait for a second opinion it does not need.
-        applyState(socketResponds: false)
-        runtimeMessage = "Docker bridge stopped."
-        await probeAfterControlChange()
     }
 
     /// Published ports depend on a host route to the container's network subnet. Without this
@@ -225,15 +142,7 @@ extension RuntimeViewModel {
         await steps.systemStatus(runtimeConfiguration().containerPath)
     }
 
-    private func perform(_ step: RuntimeControlStep) async throws {
-        if step == .startBridge {
-            await launchRuntimeHelper(attempt: nil)
-        } else {
-            try await steps.control(step)
-        }
-    }
-
-    private func message(for step: RuntimeControlStep) -> String {
+    func message(for step: RuntimeControlStep) -> String {
         switch step {
         case .stopBridge: "Stopping Docker bridge…"
         case .stopContainers: "Asking containers to exit…"

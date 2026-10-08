@@ -100,7 +100,8 @@ struct SidebarRuntimePanel: View {
             Button("Stop Runtime") {
                 Task { await model.stopRuntime(replacingSibling: true) }
             }
-            .disabled(model.isRestarting)
+            // Enabled while a Start or Restart runs: the user's last instruction wins (#102).
+            .disabled(model.isStopping)
             Divider()
             Toggle("Use as Docker Context", isOn: dockerContextBinding)
             if model.conflictingDockerContext != nil

@@ -32,6 +32,10 @@ actor GatedDockerTransport: DockerAPITransport {
         return Data((head + body).utf8)
     }
 
+    func wasRequested(_ path: String) -> Bool {
+        requested.contains(path)
+    }
+
     func waitUntilRequested(_ path: String) async {
         guard !requested.contains(path) else { return }
         await withCheckedContinuation { arrivals[path, default: []].append($0) }

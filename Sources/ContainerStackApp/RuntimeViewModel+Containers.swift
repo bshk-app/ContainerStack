@@ -107,19 +107,12 @@ enum RuntimeConnectionRecovery {
         recoveryRequested || error.map(isHTTPServerFailure) == true
     }
 
-    /// `isStarting` is deliberately unused: an absent API server must remain recoverable while
-    /// the runtime is coming up, which is the state that previously stayed stuck forever.
-    static func shouldAttemptRestart(
-        apiserverRunning: Bool?,
-        isStarting _: Bool,
-        isRestarting: Bool,
-        hasRuntimeFailure: Bool,
-        stoppedSinceProbeBegan: Bool = false
-    ) -> Bool {
-        // A probe can await `system status` across a whole Stop; its "not running" then describes
-        // the stop the user asked for, not a failure to recover from (#70).
-        guard !isRestarting, !hasRuntimeFailure, !stoppedSinceProbeBegan else { return false }
-        return apiserverRunning == false
+    /// Whether the probe should ask for a recovery restart. What runs meanwhile, and a Stop since
+    /// the probe began, are the lifecycle queue's to weigh (#102): it lets recovery displace a
+    /// running Start, since an absent API server must remain recoverable while the runtime is
+    /// coming up, which is the state that previously stayed stuck forever.
+    static func shouldAttemptRestart(apiserverRunning: Bool?, hasRuntimeFailure: Bool) -> Bool {
+        !hasRuntimeFailure && apiserverRunning == false
     }
 
     static func isStopRecoveryError(_ error: Error) -> Bool {

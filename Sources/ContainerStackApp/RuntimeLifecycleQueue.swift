@@ -6,6 +6,13 @@ enum RuntimeOperation: Equatable {
     case restart(replacingSibling: Bool)
 }
 
+/// How a request ended. Only one that ran to its end as the current operation completes.
+enum RuntimeOperationOutcome: Equatable {
+    case completed(Bool)
+    case superseded
+    case dropped
+}
+
 /// Why an operation was asked for. The automatic reasons differ in what they may supersede, so the
 /// queue needs the reason, not just "automatic".
 enum RuntimeOperationOrigin: Equatable {
@@ -47,6 +54,11 @@ struct RuntimeLifecycleQueue {
 
     func isCurrent(_ token: Int) -> Bool {
         running?.number == token && pending == nil
+    }
+
+    /// The user's last instruction, or the automatic work under way: what runs once the queue drains.
+    var latest: RuntimeOperation? {
+        pending?.operation ?? running?.operation
     }
 
     mutating func request(

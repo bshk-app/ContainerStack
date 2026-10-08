@@ -232,7 +232,7 @@ extension RuntimeViewModel {
         busyContainerIDs.insert(container.id)
         containerMessage = "\(action) \(container.name)…"
         defer { busyContainerIDs.remove(container.id) }
-        let stops = stopRequests
+        let observed = lifecycle.generation
 
         do {
             try await body()
@@ -243,7 +243,7 @@ extension RuntimeViewModel {
                 containerMessage = completion
             }
         } catch let error
-            where recoversRuntime && stopRequests == stops
+            where recoversRuntime && lifecycle.generation == observed
             && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             // Losing the runtime's XPC connection while stopping is not a container failure: raise
@@ -268,12 +268,12 @@ extension RuntimeViewModel {
         busyResource = id
         resourceMessage = message
         defer { busyResource = nil }
-        let stops = stopRequests
+        let observed = lifecycle.generation
 
         do {
             try await body()
         } catch let error
-            where recoversRuntime && stopRequests == stops
+            where recoversRuntime && lifecycle.generation == observed
             && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             runtimeRecoveryRequested = true

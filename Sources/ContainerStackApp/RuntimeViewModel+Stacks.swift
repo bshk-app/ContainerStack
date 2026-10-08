@@ -171,13 +171,13 @@ extension RuntimeViewModel {
         busyStackID = stack.id
         stackMessage = "\(verb) \(stack.name)…"
         defer { busyStackID = nil }
-        let stops = stopRequests
+        let observed = lifecycle.generation
         do {
             let output = try await operation()
             stackMessage = output.isEmpty ? "\(stack.name) \(pastTense)." : output
             await refreshStackStatus(stack)
         } catch let error
-            where recoversRuntime && stopRequests == stops
+            where recoversRuntime && lifecycle.generation == observed
             && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             runtimeRecoveryRequested = true

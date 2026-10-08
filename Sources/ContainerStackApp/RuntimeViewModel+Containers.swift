@@ -61,20 +61,22 @@ extension RuntimeViewModel {
         }
     }
 
-    func refreshImages() async {
-        let epoch = inventoryEpoch
+    /// `epoch` is the refresh's when a refresh calls this; called on its own, the fetch takes its own.
+    func refreshImages(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         do {
             let fetched = try await client.listImages()
             guard inventoryEpochIsCurrent(epoch) else { return }
             images = fetched
             imagesErrorMessage = nil
         } catch {
+            guard inventoryEpochIsCurrent(epoch) else { return }
             imagesErrorMessage = "Images could not be listed: \(error)"
         }
     }
 
-    func refreshContainers() async {
-        let epoch = inventoryEpoch
+    func refreshContainers(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         do {
             let fetched = try await client.listContainers(all: true)
             guard inventoryEpochIsCurrent(epoch) else { return }
@@ -91,6 +93,7 @@ extension RuntimeViewModel {
                 self.selectedContainerID = nil
             }
         } catch {
+            guard inventoryEpochIsCurrent(epoch) else { return }
             containersErrorMessage = "Containers could not be listed: \(error)"
         }
     }

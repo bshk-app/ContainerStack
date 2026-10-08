@@ -45,32 +45,34 @@ extension RuntimeViewModel {
         ByteSize.formatted(diskUsage?.layersSize)
     }
 
-    func refreshVolumes() async {
-        let epoch = inventoryEpoch
+    func refreshVolumes(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         do {
             let fetched = try await client.listVolumes()
             guard inventoryEpochIsCurrent(epoch) else { return }
             volumes = fetched
             volumesErrorMessage = nil
         } catch {
+            guard inventoryEpochIsCurrent(epoch) else { return }
             volumesErrorMessage = "Volumes could not be listed: \(error)"
         }
     }
 
-    func refreshNetworks() async {
-        let epoch = inventoryEpoch
+    func refreshNetworks(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         do {
             let fetched = try await client.listNetworks()
             guard inventoryEpochIsCurrent(epoch) else { return }
             networks = fetched
             networksErrorMessage = nil
         } catch {
+            guard inventoryEpochIsCurrent(epoch) else { return }
             networksErrorMessage = "Networks could not be listed: \(error)"
         }
     }
 
-    func refreshDiskUsage() async {
-        let epoch = inventoryEpoch
+    func refreshDiskUsage(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         let usage = try? await client.diskUsage()
         guard inventoryEpochIsCurrent(epoch) else { return }
         diskUsage = usage

@@ -136,15 +136,18 @@ final class RuntimeViewModel {
     init(
         socketPath: String = RuntimeViewModel.defaultSocketPath,
         startsRuntime: Bool = true,
-        dockerContextTakeoverPreference: DockerContextTakeoverPreference = DockerContextTakeoverPreference()
+        dockerContextTakeoverPreference: DockerContextTakeoverPreference = DockerContextTakeoverPreference(),
+        client: DockerAPIClient? = nil
     ) {
         self.socketPath = socketPath
         self.dockerContextTakeoverPreference = dockerContextTakeoverPreference
-        client = DockerAPIClient(
-            socketPath: socketPath,
-            retryPolicy: DockerRetryPolicy(maxAttempts: 3, delay: .milliseconds(250))
-        )
-        steps = .live(client: client)
+        self.client =
+            client
+            ?? DockerAPIClient(
+                socketPath: socketPath,
+                retryPolicy: DockerRetryPolicy(maxAttempts: 3, delay: .milliseconds(250))
+            )
+        steps = .live(client: self.client)
         guard startsRuntime else { return }
         isStarting = true
         runtimeState = .starting
@@ -399,8 +402,8 @@ final class RuntimeViewModel {
             // project started while the app was open invisible until the user navigated away and
             // back, and a network created after launch unchecked. Two calls rather than the full
             // refresh — images, volumes and disk usage feed neither.
-            await refreshContainers()
-            await refreshNetworks()
+            await refreshContainers(epoch: epoch)
+            await refreshNetworks(epoch: epoch)
             let unroutable = await unroutablePublishingNetworks()
             let missingAppRoot = await throttledMissingAppRoot()
             // `responds` was read before all of those awaits. If the runtime has been declared dead
@@ -597,11 +600,13 @@ final class RuntimeViewModel {
                 missingAppRoot: missingAppRoot,
                 foreignBridge: freshForeignBridge()
             )
-            await refreshImages()
-            await refreshContainers()
-            await refreshVolumes()
-            await refreshNetworks()
-            await refreshDiskUsage()
+            // One epoch for every list: each fetch capturing its own let a supersede during the
+            // images fetch discard images and still publish the containers fetched after it (#102).
+            await refreshImages(epoch: epoch)
+            await refreshContainers(epoch: epoch)
+            await refreshVolumes(epoch: epoch)
+            await refreshNetworks(epoch: epoch)
+            await refreshDiskUsage(epoch: epoch)
         } catch is CancellationError {
             return
         } catch {

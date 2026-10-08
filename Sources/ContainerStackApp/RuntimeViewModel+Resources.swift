@@ -45,32 +45,34 @@ extension RuntimeViewModel {
         ByteSize.formatted(diskUsage?.layersSize)
     }
 
-    func refreshVolumes() async {
-        let epoch = inventoryEpoch
+    func refreshVolumes(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         do {
             let fetched = try await client.listVolumes()
             guard inventoryEpochIsCurrent(epoch) else { return }
             volumes = fetched
             volumesErrorMessage = nil
         } catch {
+            guard inventoryEpochIsCurrent(epoch) else { return }
             volumesErrorMessage = "Volumes could not be listed: \(error)"
         }
     }
 
-    func refreshNetworks() async {
-        let epoch = inventoryEpoch
+    func refreshNetworks(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         do {
             let fetched = try await client.listNetworks()
             guard inventoryEpochIsCurrent(epoch) else { return }
             networks = fetched
             networksErrorMessage = nil
         } catch {
+            guard inventoryEpochIsCurrent(epoch) else { return }
             networksErrorMessage = "Networks could not be listed: \(error)"
         }
     }
 
-    func refreshDiskUsage() async {
-        let epoch = inventoryEpoch
+    func refreshDiskUsage(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         let usage = try? await client.diskUsage()
         guard inventoryEpochIsCurrent(epoch) else { return }
         diskUsage = usage
@@ -230,7 +232,7 @@ extension RuntimeViewModel {
         busyContainerIDs.insert(container.id)
         containerMessage = "\(action) \(container.name)…"
         defer { busyContainerIDs.remove(container.id) }
-        let stops = stopRequests
+        let observed = lifecycle.generation
 
         do {
             try await body()
@@ -241,7 +243,7 @@ extension RuntimeViewModel {
                 containerMessage = completion
             }
         } catch let error
-            where recoversRuntime && stopRequests == stops
+            where recoversRuntime && lifecycle.generation == observed
             && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             // Losing the runtime's XPC connection while stopping is not a container failure: raise
@@ -266,12 +268,12 @@ extension RuntimeViewModel {
         busyResource = id
         resourceMessage = message
         defer { busyResource = nil }
-        let stops = stopRequests
+        let observed = lifecycle.generation
 
         do {
             try await body()
         } catch let error
-            where recoversRuntime && stopRequests == stops
+            where recoversRuntime && lifecycle.generation == observed
             && RuntimeConnectionRecovery.isStopRecoveryError(error)
         {
             runtimeRecoveryRequested = true

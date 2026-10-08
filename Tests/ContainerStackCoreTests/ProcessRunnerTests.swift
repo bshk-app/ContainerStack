@@ -169,4 +169,49 @@ struct ProcessRunnerTests {
         // killed; the child outliving the call is exactly the reported bug.
         #expect(finished.wait(timeout: .now() + 5) == .success)
     }
+
+    /// Codex found the window on #102: a child started but not yet registered was missed by a
+    /// shutdown that drained an empty registry, and the helper exited before refusing it.
+    @Test("a shutdown that begins while a child is being started waits for it and kills it")
+    func shutdownDuringStartKillsTheChild() throws {
+        let registry = BoundedChildren()
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        child.arguments = ["30"]
+        defer { if child.isRunning { kill(child.processIdentifier, SIGKILL) } }
+        let spawned = DispatchSemaphore(value: 0)
+        let registering = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = try? registry.start(child) {
+                try child.run()
+                spawned.signal()
+                registering.wait()
+            }
+        }
+        #expect(spawned.wait(timeout: .now() + 5) == .success)
+
+        nonisolated(unsafe) var killed = 0
+        let shutDown = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            killed = ProcessRunner.terminateBoundedChildren(in: registry)
+            shutDown.signal()
+        }
+
+        #expect(shutDown.wait(timeout: .now() + .milliseconds(200)) == .timedOut)
+        registering.signal()
+        #expect(shutDown.wait(timeout: .now() + 5) == .success)
+        #expect(killed == 1)
+    }
+
+    @Test("once shutdown has begun, a bounded child is refused without being started")
+    func childAfterShutdownIsNeverStarted() {
+        let registry = BoundedChildren()
+        ProcessRunner.terminateBoundedChildren(in: registry)
+        var ran = false
+
+        let started = registry.start(Process()) { ran = true }
+
+        #expect(!started)
+        #expect(!ran)
+    }
 }

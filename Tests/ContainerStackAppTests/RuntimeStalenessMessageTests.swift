@@ -18,7 +18,7 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: older,
             current: shipped,
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: {}
         )
 
@@ -34,12 +34,80 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: older,
             current: shipped,
-            restart: { false },
+            restart: { .completed(false) },
             recordIdentity: { recordedIdentity = true }
         )
 
         #expect(model.serviceMessage == nil)
         #expect(recordedIdentity == false)
+    }
+
+    /// Codex reproduced this on #102: Start's inline restart was superseded while its refresh
+    /// collected health, and the adoption still recorded the bridge and announced the restart.
+    @Test("A superseded restart neither records the shipped bridge nor announces success")
+    func supersededRestartDoesNotClaimSuccess() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        var recordedIdentity = false
+
+        await model.adoptBridgeIfStale(
+            recorded: older,
+            current: shipped,
+            restart: { .superseded },
+            recordIdentity: { recordedIdentity = true }
+        )
+
+        #expect(model.serviceMessage == nil)
+        #expect(recordedIdentity == false)
+    }
+
+    /// The probe's restart is dropped while a Start runs. Spent, the check would be skipped by
+    /// Start's own adoption, and the outdated bridge would serve for the rest of the session.
+    @Test("A dropped restart leaves the identity check to be made again")
+    func droppedRestartLeavesTheCheckUnspent() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        var restarts = 0
+
+        await model.adoptBridgeIfStale(
+            loadRecorded: { older }, loadCurrent: { shipped }, restart: { .dropped }, recordIdentity: {})
+        await model.adoptBridgeIfStale(
+            loadRecorded: { older },
+            loadCurrent: { shipped },
+            restart: {
+                restarts += 1
+                return .completed(true)
+            },
+            recordIdentity: {}
+        )
+
+        #expect(restarts == 1)
+        #expect(model.hasCheckedBridgeIdentity)
+    }
+
+    /// A restart superseded while its refresh collects health: that refresh publishes nothing, so
+    /// the healthy state from before the restart must not be read as its result.
+    @Test("A restart superseded during its refresh does not report success")
+    func restartSupersededDuringRefreshFails() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        var current = true
+        let healthy = try RuntimeHealthSnapshot(
+            pingOK: true,
+            version: JSONDecoder().decode(DockerVersion.self, from: Data("{}".utf8)),
+            info: JSONDecoder().decode(DockerInfo.self, from: Data("{}".utf8))
+        )
+
+        let restarted = await model.completeRuntimeRestart(
+            isCurrent: { current },
+            waitForSocket: { true },
+            refreshHealth: {
+                current = false
+                return healthy
+            }
+        )
+
+        #expect(!restarted)
     }
 
     /// A restart stops only the bridge this build ships. When someone else's
@@ -56,7 +124,7 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: older,
             current: shipped,
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: { recordedIdentity = true },
             foreignBridge: { ForeignBridge(socketPath: "/tmp/socket") }
         )
@@ -80,7 +148,7 @@ struct RuntimeStalenessMessageTests {
             current: shipped,
             restart: {
                 restarted = true
-                return true
+                return .completed(true)
             },
             recordIdentity: { recordedIdentity = true },
             foreignBridge: { ForeignBridge(socketPath: "/tmp/socket") }
@@ -107,7 +175,7 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: shipped,
             current: shipped,
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: {},
             foreignBridge: { sibling }
         )
@@ -127,7 +195,7 @@ struct RuntimeStalenessMessageTests {
             current: shipped,
             restart: {
                 model.serviceMessage = registrationFailure
-                return false
+                return .completed(false)
             },
             recordIdentity: {}
         )
@@ -144,7 +212,7 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: older,
             current: shipped,
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: { model.serviceMessage = failure }
         )
 
@@ -162,7 +230,7 @@ struct RuntimeStalenessMessageTests {
             current: shipped,
             restart: {
                 model.applyState(socketResponds: false)
-                return true
+                return .completed(true)
             },
             recordIdentity: { recordedIdentity = true }
         )
@@ -183,7 +251,7 @@ struct RuntimeStalenessMessageTests {
                 current: shipped,
                 restart: {
                     withUnsafeCurrentTask { $0?.cancel() }
-                    return true
+                    return .completed(true)
                 },
                 recordIdentity: { recordedIdentity = true }
             )
@@ -209,7 +277,7 @@ struct RuntimeStalenessMessageTests {
                 identityReads += 1
                 return shipped
             },
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: {}
         )
 
@@ -301,7 +369,7 @@ struct RuntimeStalenessMessageTests {
         // the state that disables the manual restart — staying there is the stuck-on-Starting trap.
         model.isStarting = true
 
-        await model.completeAutomaticRuntimeRecovery(restart: { false })
+        await model.completeAutomaticRuntimeRecovery(restart: { .completed(false) })
 
         #expect(model.containers.isEmpty)
         #expect(model.runtimeState != .starting)
@@ -314,7 +382,7 @@ struct RuntimeStalenessMessageTests {
         model.applyState(socketResponds: true)
         try await Self.loseConnectionOnEverySurface(model)
 
-        await model.completeAutomaticRuntimeRecovery(restart: { true })
+        await model.completeAutomaticRuntimeRecovery(restart: { .completed(true) })
 
         #expect(model.containerMessage == "Runtime recovered.")
         #expect(model.resourceMessage == "Runtime recovered.")
@@ -378,7 +446,7 @@ struct RuntimeStalenessMessageTests {
         model.runtimeRecoveryRequested = false
 
         model.settleFinishedRuntimeCheck()
-        await model.completeAutomaticRuntimeRecovery(restart: { true })
+        await model.completeAutomaticRuntimeRecovery(restart: { .completed(true) })
 
         #expect(model.resourceMessage == "Pulled nginx.")
         #expect(model.containerMessage == nil)

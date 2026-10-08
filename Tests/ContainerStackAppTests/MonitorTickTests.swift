@@ -12,7 +12,7 @@ struct MonitorTickTests {
     @Test("With the window open, the tick reads the Docker context itself")
     func openWindowReadsContextInTick() async {
         let model = makeModel()
-        model.readDockerContext = { _ in Self.reading(active: "orbstack") }
+        model.dockerContextStore.read = { _ in Self.reading(active: "orbstack") }
         model.isDashboardOpen = true
 
         await model.monitorTick()
@@ -27,7 +27,7 @@ struct MonitorTickTests {
     @Test("While an adoption runs, the tick leaves the Docker context to it")
     func tickSkipsContextReadDuringAdoption() async {
         let model = makeModel()
-        model.readDockerContext = { _ in Self.reading(active: "orbstack") }
+        model.dockerContextStore.read = { _ in Self.reading(active: "orbstack") }
         model.isDashboardOpen = true
         model.isAdoptingDockerContext = true
 
@@ -51,7 +51,7 @@ struct MonitorTickTests {
     @Test("With the window closed, the tick does not read the Docker context")
     func closedWindowSkipsContextRead() async {
         let model = makeModel()
-        model.readDockerContext = { _ in Self.reading(active: "orbstack") }
+        model.dockerContextStore.read = { _ in Self.reading(active: "orbstack") }
 
         await model.monitorTick()
 
@@ -65,10 +65,10 @@ struct MonitorTickTests {
     func overtakenAdoptionRespectsSwitch() async throws {
         let (model, cleanup) = try makeModelWithTakeover()
         defer { cleanup() }
-        model.readDockerContext = { _ in Self.reading(active: DockerContext.name, installed: true) }
+        model.dockerContextStore.read = { _ in Self.reading(active: DockerContext.name, installed: true) }
         await model.refreshDockerContext()
         let gate = ReadGate()
-        model.readDockerContext = { _ in await gate.read(Self.reading(active: "orbstack", installed: true)) }
+        model.dockerContextStore.read = { _ in await gate.read(Self.reading(active: "orbstack", installed: true)) }
 
         let outcome = await Self.overtakeAdoption(of: model, gate: gate)
 
@@ -84,7 +84,7 @@ struct MonitorTickTests {
         let (model, cleanup) = try makeModelWithTakeover()
         defer { cleanup() }
         let gate = ReadGate()
-        model.readDockerContext = { _ in await gate.read(Self.reading(active: "default", installed: false)) }
+        model.dockerContextStore.read = { _ in await gate.read(Self.reading(active: "default", installed: false)) }
 
         let outcome = await Self.overtakeAdoption(of: model, gate: gate)
 
@@ -97,7 +97,7 @@ struct MonitorTickTests {
         defer { cleanup() }
         let gate = ReadGate()
         defer { Task { await gate.releaseAll() } }
-        model.readDockerContext = { _ in await gate.read(Self.reading(active: "orbstack", installed: true)) }
+        model.dockerContextStore.read = { _ in await gate.read(Self.reading(active: "orbstack", installed: true)) }
         let repairs = Counter()
         let firstReturned = Counter()
         Task {

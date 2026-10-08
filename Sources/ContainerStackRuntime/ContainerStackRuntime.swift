@@ -6,6 +6,7 @@ import Foundation
 struct ContainerStackRuntime {
     static func main() async {
         redirectOutputToRuntimeLog()
+        Termination.endChildrenFirst()
 
         // Resolved once: the same root decides both which binary runs and
         // whether the daemon is told where its plugins live. Deriving them
@@ -21,24 +22,34 @@ struct ContainerStackRuntime {
             // Shared with the app, which refuses to launch this helper on the same verdict.
             let verdict = ContainerVersionCheck.run(configuration)
             if let complaint = verdict.diagnosticMessage {
-                fputs("ContainerStackRuntime: \(complaint)\n", stderr)
-                exit(EXIT_FAILURE)
+                fail(complaint)
             }
 
             try await runRuntime(configuration)
         } catch {
-            fputs("ContainerStackRuntime: \(error)\n", stderr)
-            exit(EXIT_FAILURE)
+            fail("\(error)")
         }
+        Termination.endIfRequested()
+    }
+
+    private static func fail(_ reason: String) -> Never {
+        Termination.endIfRequested()
+        fputs("ContainerStackRuntime: \(reason)\n", stderr)
+        exit(EXIT_FAILURE)
     }
 
     /// launchd gives the agent no output destination, so the helper owns its log file.
     /// Append mode keeps it safe when the app is also writing to the same file.
+    ///
+    /// `CONTAINERSTACK_RUNTIME_LOG` is for tests that run the helper: the default log is the
+    /// user's, and the helper ignores `HOME`.
     private static func redirectOutputToRuntimeLog() {
-        let candidates = RuntimePaths.runtimeLogCandidates(
-            home: FileManager.default.homeDirectoryForCurrentUser,
-            temporaryDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
-        )
+        let candidates =
+            ProcessInfo.processInfo.environment["CONTAINERSTACK_RUNTIME_LOG"].map { [URL(fileURLWithPath: $0)] }
+            ?? RuntimePaths.runtimeLogCandidates(
+                home: FileManager.default.homeDirectoryForCurrentUser,
+                temporaryDirectory: URL(fileURLWithPath: NSTemporaryDirectory())
+            )
 
         var rejected: [String] = []
         for candidate in candidates {

@@ -7,7 +7,7 @@ public enum ProcessRunnerError: Error, Equatable, Sendable, CustomStringConverti
     case timedOut(executablePath: String, seconds: Double)
 
     /// The process is shutting down, so nothing would be left to wait on this
-    /// child. It was killed rather than started and abandoned.
+    /// child. It was refused rather than started and abandoned.
     case terminatingBeforeWait(executablePath: String)
 
     public var description: String {
@@ -55,9 +55,9 @@ public enum ProcessRunner {
     public static var outstandingBoundedChildren: Int { boundedChildren.count }
 
     /// Kills every child still under a deadline and closes the registry, so a
-    /// child launched while this runs is killed by its own `run` call rather than
-    /// left behind. For a process about to exit: its waits die with it, its
-    /// children do not.
+    /// child asked for after this is never started, and one being started while
+    /// this runs is waited for and killed with the rest. For a process about to
+    /// exit: its waits die with it, its children do not.
     @discardableResult
     public static func terminateBoundedChildren() -> Int {
         terminateBoundedChildren(in: boundedChildren)
@@ -191,28 +191,24 @@ public enum ProcessRunner {
             }
         }
 
+        // Registered only while this call is waiting on it, so a process that
+        // exits mid-wait can take the child with it instead of orphaning it.
         do {
-            try process.run()
-            // The parent never writes. Keeping its copy open hides EOF after the
-            // child exits, so close it as soon as the child has inherited the fd.
-            try? pipe?.fileHandleForWriting.close()
+            if timeout == nil {
+                try process.run()
+            } else if try !registry.start(process, using: { try process.run() }) {
+                throw ProcessRunnerError.terminatingBeforeWait(executablePath: executablePath)
+            }
         } catch {
             try? pipe?.fileHandleForWriting.close()
             finishDrain()
             throw error
         }
+        // The parent never writes. Keeping its copy open hides EOF after the
+        // child exits, so close it as soon as the child has inherited the fd.
+        try? pipe?.fileHandleForWriting.close()
 
         if let timeout {
-            // Registered only while this call is waiting on it, so a process that
-            // exits mid-wait can take the child with it instead of orphaning it.
-            // A refusal means shutdown already started: nobody will be here to
-            // wait, so the child goes now rather than surviving this process.
-            guard registry.insert(process) else {
-                kill(process.processIdentifier, SIGKILL)
-                exited.wait()
-                finishDrain()
-                throw ProcessRunnerError.terminatingBeforeWait(executablePath: executablePath)
-            }
             defer { registry.remove(process) }
 
             if exited.wait(timeout: .now() + seconds(timeout)) == .timedOut {
@@ -269,18 +265,22 @@ private final class OutputBuffer: @unchecked Sendable {
 /// `Process` rather than a pid: a pid recorded a moment ago can belong to
 /// something else by the time the signal is sent, and `Process` answers whether
 /// *its* child is still alive. Once shutdown starts the registry stays closed,
-/// so a child launched during it is killed by the call that registers it rather
-/// than left behind.
+/// so a child asked for during it is never started.
 final class BoundedChildren: @unchecked Sendable {
     private let lock = NSLock()
     private var processes: [ObjectIdentifier: Process] = [:]
     private var isTerminating = false
 
-    /// False when shutdown has begun; the caller must not expect to be waited on.
-    func insert(_ process: Process) -> Bool {
+    /// Starts `process` with `run` and registers it as one step, so a shutdown either drains it or
+    /// has already refused it. Started first and registered after, a child begun while a shutdown
+    /// drained an empty registry outlived a process that exited straight after (#102).
+    ///
+    /// False when shutdown has begun: nothing was started, and nobody will be here to wait.
+    func start(_ process: Process, using run: () throws -> Void) rethrows -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard !isTerminating else { return false }
+        try run()
         processes[ObjectIdentifier(process)] = process
         return true
     }

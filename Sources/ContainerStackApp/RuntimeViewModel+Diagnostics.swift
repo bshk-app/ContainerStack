@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 extension RuntimeViewModel {
-    func runtimeLogURL() throws -> URL {
+    static func runtimeLogURL() throws -> URL {
         let directory = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Logs/ContainerStack")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

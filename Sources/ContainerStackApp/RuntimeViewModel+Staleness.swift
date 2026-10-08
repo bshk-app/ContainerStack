@@ -14,11 +14,27 @@ extension RuntimeViewModel {
     /// Attempted at most once per launch. A restart that keeps failing must not become a loop, and the
     /// identity is recorded only on success, so a failure is visible in the sidebar rather than
     /// papered over.
-    func adoptBridgeIfStale() async {
+    /// From the probe, whose restart is a request the queue may drop while a Start runs.
+    func adoptBridgeIfStale(observed: Int) async {
+        await adoptBridgeIfStale(restart: {
+            await self.run(.restart(replacingSibling: false), origin: .staleBridge, observed: observed)
+        })
+    }
+
+    /// From inside Start, which restarts under its own token: a request from inside an operation
+    /// would be dropped or wait on itself (#102).
+    func adoptBridgeIfStale(during token: Int) async {
+        await adoptBridgeIfStale(restart: {
+            let restarted = await self.performRestart(replacingSibling: false, token: token)
+            return self.lifecycle.isCurrent(token) ? .completed(restarted) : .superseded
+        })
+    }
+
+    private func adoptBridgeIfStale(restart: () async -> RuntimeOperationOutcome) async {
         await adoptBridgeIfStale(
             loadRecorded: { RuntimeHelperIdentityStore().load() },
             loadCurrent: { self.bundledBridgeIdentity() },
-            restart: { await self.restartRuntime() },
+            restart: restart,
             recordIdentity: { self.recordBridgeIdentity() },
             foreignBridge: { self.currentForeignBridge() }
         )
@@ -27,7 +43,7 @@ extension RuntimeViewModel {
     func adoptBridgeIfStale(
         loadRecorded: () -> RuntimeHelperIdentity?,
         loadCurrent: () -> RuntimeHelperIdentity?,
-        restart: () async -> Bool,
+        restart: () async -> RuntimeOperationOutcome,
         recordIdentity: () -> Void,
         foreignBridge: () -> ForeignBridge? = { nil }
     ) async {
@@ -44,7 +60,7 @@ extension RuntimeViewModel {
     func adoptBridgeIfStale(
         recorded: RuntimeHelperIdentity?,
         current: RuntimeHelperIdentity?,
-        restart: () async -> Bool,
+        restart: () async -> RuntimeOperationOutcome,
         recordIdentity: () -> Void,
         foreignBridge: () -> ForeignBridge? = { nil }
     ) async {
@@ -77,12 +93,17 @@ extension RuntimeViewModel {
         let progressMessage =
             "Restarting the runtime: the running bridge is from an older build."
         serviceMessage = progressMessage
-        let didRestart = await restart()
+        let outcome = await restart()
         if serviceMessage == progressMessage {
             serviceMessage = nil
         }
-
-        guard didRestart else { return }
+        // A dropped restart replaced nothing, so the check is unspent again: left spent, Start's own
+        // adoption would skip it and the outdated bridge would serve for the rest of the session.
+        if outcome == .dropped {
+            hasCheckedBridgeIdentity = false
+        }
+        // Superseded, it ran under an operation that no longer publishes (#102).
+        guard outcome == .completed(true) else { return }
 
         // A restart stops only the bridge this build ships, deliberately - a
         // socktainer someone runs from elsewhere is theirs. So a restart can

@@ -50,7 +50,7 @@ struct RefreshEpochTests {
         let transport = GatedDockerTransport(answers: ["/containers/json": #"[{"Id":"web","State":"running"}]"#])
         let model = try makeModel(transport)
         model.applyState(socketResponds: true)
-        model.steps.ping = {
+        model.steps.ping = { [unowned model] in
             model.clearInventoryForStop()
             return true
         }

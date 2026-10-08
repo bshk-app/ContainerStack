@@ -35,8 +35,8 @@ struct RuntimeLifecycleScenarioTests {
         let stop = Task { await model.stopRuntime() }
         await runtime.gates.release("ping")
 
-        #expect(await start.value == .superseded)
-        await stop.value
+        #expect(await settled(start) == .superseded)
+        #expect(await settled(stop) != nil)
         // Not even the version check, which can hold the Stop for its ten-second deadline.
         #expect(await runtime.gates.count("launchComplaint") == 0)
         #expect(runtime.spawned.isEmpty)
@@ -51,7 +51,7 @@ struct RuntimeLifecycleScenarioTests {
         let transport = GatedDockerTransport(answers: [:])
         let (model, runtime) = makeModel(client: DockerAPIClient(transport: transport))
         var pings = 0
-        runtime.onPing = {
+        runtime.onPing = { [unowned runtime] in
             pings += 1
             runtime.socketAnswers = pings == 1
         }
@@ -61,8 +61,8 @@ struct RuntimeLifecycleScenarioTests {
 
         let stop = Task { await model.stopRuntime() }
         await runtime.gates.release("ping")
-        _ = await start.value
-        await stop.value
+        #expect(await settled(start) != nil)
+        #expect(await settled(stop) != nil)
 
         #expect(await !transport.wasRequested("/_ping"))
         #expect(model.runtimeMessage == "Docker bridge stopped.")
@@ -75,7 +75,7 @@ struct RuntimeLifecycleScenarioTests {
         let (model, runtime) = makeModel()
 
         model.startRuntime()
-        await model.stopRuntime()
+        #expect(await settled(Task { await model.stopRuntime() }) != nil)
         await waitUntilIdle(model)
 
         #expect(await runtime.gates.count("launchComplaint") == 0)
@@ -93,13 +93,13 @@ struct RuntimeLifecycleScenarioTests {
         await runtime.gates.waitUntilEntered("system stop")
         let start = model.admit(.start, origin: .user)
         await runtime.gates.release("system stop")
-        _ = await restart.value
+        #expect(await settled(restart) != nil)
 
         let stop = model.admit(.stop(replacingSibling: false), origin: .user)
 
-        #expect(await model.execute(.start, start) == .superseded)
+        #expect(await settled(Task { await model.execute(.start, start) }) == .superseded)
         #expect(!model.isStarting)
-        _ = await model.execute(.stop(replacingSibling: false), stop)
+        #expect(await settled(Task { await model.execute(.stop(replacingSibling: false), stop) }) != nil)
     }
 
     /// Codex reproduced this on #102: a Stop clicked while Start's socket wait slept waited behind
@@ -116,9 +116,9 @@ struct RuntimeLifecycleScenarioTests {
 
         let stop = model.admit(.stop(replacingSibling: false), origin: .user)
 
-        #expect(await start.value == .superseded)
+        #expect(await settled(start) == .superseded)
         #expect(await runtime.gates.count("ping") == 1)
-        _ = await model.execute(.stop(replacingSibling: false), stop)
+        #expect(await settled(Task { await model.execute(.stop(replacingSibling: false), stop) }) != nil)
     }
 
     @Test("A helper retired by Stop is not reported as having failed (#70)")
@@ -134,8 +134,8 @@ struct RuntimeLifecycleScenarioTests {
 
         let stop = Task { await model.stopRuntime() }
         await runtime.gates.release("ping")
-        _ = await start.value
-        await stop.value
+        #expect(await settled(start) != nil)
+        #expect(await settled(stop) != nil)
 
         #expect(runtime.spawned.count == 1)
         #expect(model.runtimeFailure == nil)
@@ -153,8 +153,8 @@ struct RuntimeLifecycleScenarioTests {
 
         let stop = Task { await model.stopRuntime() }
         await runtime.gates.release("launchComplaint")
-        _ = await start.value
-        await stop.value
+        #expect(await settled(start) != nil)
+        #expect(await settled(stop) != nil)
 
         #expect(model.runtimeFailure == nil)
         #expect(model.runtimeMessage == "Docker bridge stopped.")
@@ -173,13 +173,13 @@ struct RuntimeLifecycleScenarioTests {
 
         let restart = Task { await model.restartRuntime() }
         await runtime.gates.release("launchComplaint")
-        #expect(await start.value == .superseded)
+        #expect(await settled(start) == .superseded)
         await runtime.gates.waitUntilEntered("system stop")
 
         #expect(model.runtimeFailure == nil)
         #expect(model.isRestarting)
         await runtime.gates.release("system stop")
-        _ = await restart.value
+        #expect(await settled(restart) != nil)
     }
 
     @Test("For the current start, the version check's complaint is published and the start ends")
@@ -200,7 +200,7 @@ struct RuntimeLifecycleScenarioTests {
     func startInvalidatedDuringPingEnds() async {
         let (model, runtime) = makeModel()
         runtime.socketAnswers = true
-        runtime.onPing = { model.clearInventoryForStop() }
+        runtime.onPing = { [weak model] in model?.clearInventoryForStop() }
 
         _ = await model.run(.start, origin: .user)
 
@@ -236,8 +236,8 @@ struct RuntimeLifecycleScenarioTests {
 
         let restart = Task { await model.restartRuntime() }
         await runtime.gates.release("ping")
-        _ = await start.value
-        _ = await restart.value
+        #expect(await settled(start) != nil)
+        #expect(await settled(restart) != nil)
 
         #expect(!model.isStarting)
         #expect(!model.isRestarting)
@@ -256,13 +256,13 @@ struct RuntimeLifecycleScenarioTests {
         await runtime.gates.hold("ping")
         let start = Task { await model.run(.start, origin: .user) }
         await runtime.gates.release("system stop")
-        #expect(await restart.value == false)
+        #expect(await settled(restart) == false)
         await runtime.gates.waitUntilEntered("ping")
 
         #expect(model.isStarting)
         #expect(!model.isRestarting)
         await runtime.gates.release("ping")
-        _ = await start.value
+        #expect(await settled(start) != nil)
     }
 
     private func makeModel(client: DockerAPIClient? = nil) -> (RuntimeViewModel, FakeRuntime) {
@@ -283,13 +283,47 @@ struct RuntimeLifecycleScenarioTests {
     }
 }
 
+/// The task's result, or nil when it has not settled within `limit`: a regression in how requests
+/// settle fails the test instead of hanging the suite behind a gate it never releases. A guard, not
+/// a timing: the limit is generous because a refresh runs `lsof` and `ps` on the main actor, which
+/// every test in the process shares.
+@MainActor
+func settled<Value: Sendable>(_ task: Task<Value, Never>, within limit: Duration = .seconds(30)) async -> Value? {
+    let race = SettleRace<Value>()
+    return await withCheckedContinuation { continuation in
+        race.continuation = continuation
+        Task { race.finish(await task.value) }
+        Task {
+            try? await Task.sleep(for: limit)
+            race.finish(nil)
+        }
+    }
+}
+
+@MainActor
+private final class SettleRace<Value: Sendable> {
+    var continuation: CheckedContinuation<Value?, Never>?
+
+    func finish(_ value: Value?) {
+        continuation?.resume(returning: value)
+        continuation = nil
+    }
+}
+
 /// Holds named steps until a test releases them, so a scenario can act while an operation waits.
 /// Suspends rather than blocks: a blocked pool thread hung CI on #104.
 actor StepGates {
     private var held: Set<String> = []
     private var parked: [String: [CheckedContinuation<Void, Never>]] = [:]
     private var entered: [String: Int] = [:]
-    private var arrivals: [(name: String, count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private struct Arrival {
+        let id = UUID()
+        let name: String
+        let count: Int
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private var arrivals: [Arrival] = []
 
     func hold(_ name: String) {
         held.insert(name)
@@ -305,7 +339,7 @@ actor StepGates {
         let count = entered[name] ?? 0
         let ready = arrivals.filter { $0.name == name && $0.count <= count }
         arrivals.removeAll { $0.name == name && $0.count <= count }
-        for arrival in ready { arrival.continuation.resume() }
+        for arrival in ready { arrival.continuation.resume(returning: true) }
         if held.contains(name) {
             await withCheckedContinuation { parked[name, default: []].append($0) }
         }
@@ -315,10 +349,26 @@ actor StepGates {
         entered[name, default: 0]
     }
 
-    /// Returns once `name` has been entered `count` times.
-    func waitUntilEntered(_ name: String, count: Int = 1) async {
+    /// Returns once `name` has been entered `count` times, or records an issue after `limit`: an
+    /// operation stranded by a regression fails the test instead of hanging the suite.
+    func waitUntilEntered(_ name: String, count: Int = 1, within limit: Duration = .seconds(30)) async {
         guard entered[name, default: 0] < count else { return }
-        await withCheckedContinuation { arrivals.append((name, count, $0)) }
+        let arrived = await withCheckedContinuation { continuation in
+            let arrival = Arrival(name: name, count: count, continuation: continuation)
+            arrivals.append(arrival)
+            Task {
+                try? await Task.sleep(for: limit)
+                expire(arrival.id)
+            }
+        }
+        if !arrived {
+            Issue.record("\(name) was not entered \(count) times within \(limit)")
+        }
+    }
+
+    private func expire(_ id: UUID) {
+        guard let index = arrivals.firstIndex(where: { $0.id == id }) else { return }
+        arrivals.remove(at: index).continuation.resume(returning: false)
     }
 }
 
@@ -328,7 +378,10 @@ actor StepGates {
 final class FakeRuntime {
     let gates = StepGates()
     var socketAnswers = false
+    /// Thrown by the ping instead of answering, as a lost XPC connection does.
+    var pingError: (any Error)?
     var complaint: String?
+    var status = ""
     var onPing: () -> Void = {}
     private(set) var performed: [RuntimeControlStep] = []
     private(set) var spawned: [Process] = []
@@ -342,6 +395,7 @@ final class FakeRuntime {
             ping: {
                 await self.gates.pass("ping")
                 self.onPing()
+                if let error = self.pingError { throw error }
                 return self.socketAnswers
             },
             launchComplaint: { _ in
@@ -356,12 +410,15 @@ final class FakeRuntime {
                 self.spawned.append(process)
                 return LaunchedHelper(process: process, log: .nullDevice, logPath: "/dev/null")
             },
-            systemStatus: { _ in "" },
+            systemStatus: { _ in
+                await self.gates.pass("systemStatus")
+                return self.status
+            },
             endHelper: { process, _ in
                 process.terminate()
                 while process.isRunning { try? await Task.sleep(for: .milliseconds(10)) }
             },
-            socketWaitTick: .milliseconds(10)
+            socketWaitTick: .milliseconds(1)
         )
     }
 

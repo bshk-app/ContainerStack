@@ -168,21 +168,7 @@ extension RuntimeViewModel {
         guard let process = runtimeProcess else { return false }
         runtimeProcess = nil
         guard process.isRunning else { return true }
-
-        process.terminate()
-        if await !Self.waitForExit(of: process, within: grace) {
-            kill(process.processIdentifier, SIGKILL)
-            _ = await Self.waitForExit(of: process, within: grace)
-        }
-        return true
-    }
-
-    private static func waitForExit(of process: Process, within limit: Duration) async -> Bool {
-        let deadline = ContinuousClock.now + limit
-        while process.isRunning {
-            guard ContinuousClock.now < deadline else { return false }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
+        await steps.endHelper(process, grace)
         return true
     }
 
@@ -234,17 +220,34 @@ extension RuntimeViewModel {
     }
 
     /// The single witness behind both the missing-app-root banner and the API-server proof that
-    /// gates a restart. Async and off the main thread for the same reason as the routing table —
-    /// spawning the CLI blocks until it exits, and the resolutions this feeds also run inside a
-    /// sixty-attempt wait loop.
+    /// gates a restart.
     func systemStatusOutput() async -> String {
-        let containerPath = runtimeConfiguration().containerPath
-        return await Task.detached {
-            RuntimeShell.output(executablePath: containerPath, arguments: ["system", "status"])
-        }.value
+        await steps.systemStatus(runtimeConfiguration().containerPath)
     }
 
     private func perform(_ step: RuntimeControlStep) async throws {
+        if step == .startBridge {
+            await launchRuntimeHelper(attempt: nil)
+        } else {
+            try await steps.control(step)
+        }
+    }
+
+    private func message(for step: RuntimeControlStep) -> String {
+        switch step {
+        case .stopBridge: "Stopping Docker bridge…"
+        case .stopContainers: "Asking containers to exit…"
+        case .run(_, let arguments) where arguments.contains("stop"): "Stopping Apple Container…"
+        case .run: "Starting Apple Container…"
+        case .startBridge: "Starting Docker bridge…"
+        case .kickstartAgent: "Restarting the runtime LaunchAgent…"
+        }
+    }
+}
+
+/// Process plumbing kept out of the view model so the decision logic stays testable.
+enum RuntimeShell {
+    static func perform(_ step: RuntimeControlStep) async throws {
         switch step {
         case .stopBridge(let executablePath, let socketPath):
             await Task.detached {
@@ -266,7 +269,7 @@ extension RuntimeViewModel {
                 try RuntimeShell.run(executablePath: executablePath, arguments: arguments)
             }.value
         case .startBridge:
-            await launchRuntimeHelper(attempt: nil)
+            preconditionFailure("The view model launches the helper; see RuntimeViewModel.perform(_:).")
         case .kickstartAgent(let label):
             try await Task.detached {
                 try RuntimeShell.run(
@@ -277,20 +280,6 @@ extension RuntimeViewModel {
         }
     }
 
-    private func message(for step: RuntimeControlStep) -> String {
-        switch step {
-        case .stopBridge: "Stopping Docker bridge…"
-        case .stopContainers: "Asking containers to exit…"
-        case .run(_, let arguments) where arguments.contains("stop"): "Stopping Apple Container…"
-        case .run: "Starting Apple Container…"
-        case .startBridge: "Starting Docker bridge…"
-        case .kickstartAgent: "Restarting the runtime LaunchAgent…"
-        }
-    }
-}
-
-/// Process plumbing kept out of the view model so the decision logic stays testable.
-enum RuntimeShell {
     /// `container system start`/`stop` boots or tears down a micro-VM, so this defaults to the
     /// lifecycle deadline. Bounded either way: on the old unbounded wait a wedged runtime left
     /// `runtimeProcess?.isRunning` true forever, which made every later Start click a silent

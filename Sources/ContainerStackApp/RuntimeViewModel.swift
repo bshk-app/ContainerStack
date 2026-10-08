@@ -11,6 +11,7 @@ final class RuntimeViewModel {
     static let defaultSocketPath = RuntimeProcessConfiguration.defaultSocketPath
 
     let client: DockerAPIClient
+    @ObservationIgnored var steps: RuntimeSteps
     nonisolated static let launchAgentPlistName = "com.containerstack.runtime.plist"
     private let service = SMAppService.agent(plistName: RuntimeViewModel.launchAgentPlistName)
     var runtimeProcess: Process?
@@ -143,6 +144,7 @@ final class RuntimeViewModel {
             socketPath: socketPath,
             retryPolicy: DockerRetryPolicy(maxAttempts: 3, delay: .milliseconds(250))
         )
+        steps = .live(client: client)
         guard startsRuntime else { return }
         isStarting = true
         runtimeState = .starting
@@ -299,12 +301,8 @@ final class RuntimeViewModel {
         // Asked before the helper is spawned rather than read out of its log afterwards. The
         // helper reaches the same verdict and exits, which the app could only report as
         // "helper exited" - a sentence that names neither version nor remedy.
-        //
-        // Detached because this waits on `container --version` and the diagnostic deadline is
-        // ten seconds: run on the main actor, a wedged binary freezes the window for all of it.
-        let configuration = runtimeConfiguration()
-        let verdict = await Task.detached { ContainerVersionCheck.run(configuration) }.value
-        guard acceptLaunchPreflight(attempt: attempt, complaint: verdict.userFacingMessage) else { return }
+        let complaint = await steps.versionComplaint(runtimeConfiguration())
+        guard acceptLaunchPreflight(attempt: attempt, complaint: complaint) else { return }
 
         // The await above is a window: something else may have started the helper while the
         // version was being read, and a second one would fight the first for the socket.
@@ -346,7 +344,7 @@ final class RuntimeViewModel {
         let responds: Bool
         let probeError: Error?
         do {
-            responds = try await client.ping()
+            responds = try await steps.ping()
             probeError = nil
         } catch {
             responds = false
@@ -521,7 +519,7 @@ final class RuntimeViewModel {
     }
 
     private func socketResponds() async -> Bool {
-        (try? await client.ping()) ?? false
+        (try? await steps.ping()) ?? false
     }
 
     func applyState(

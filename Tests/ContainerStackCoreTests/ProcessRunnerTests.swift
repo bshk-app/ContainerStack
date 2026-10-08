@@ -137,6 +137,35 @@ struct ProcessRunnerTests {
         #expect(started.duration(to: .now) < .seconds(5))
     }
 
+    /// CI on a loaded runner: the drain started after the second it was given, the reader was
+    /// closed under it, and `echo hello` came back as status 0 with no output. The grace is for a
+    /// descendant holding stdout open; what the child itself wrote is collected however late the
+    /// drain starts, even with no grace at all.
+    @Test("a drain that starts after the child exited still collects everything the child wrote")
+    func lateDrainCollectsTheChildsOutput() throws {
+        let started = ContinuousClock.now
+
+        let result = try ProcessRunner.run(
+            executablePath: "/bin/sh",
+            arguments: ["-c", "sleep 30 & printf done"],
+            output: .capture(includingStandardError: true),
+            timeout: .seconds(5),
+            gracePeriod: .zero,
+            registry: BoundedChildren(),
+            startDrain: { drain, body in
+                // Held until `run` has seen the child go, so with no grace the bytes already in
+                // the pipe are all the drain has to go on.
+                Thread {
+                    while !drain.isChildGone { usleep(1_000) }
+                    body()
+                }.start()
+            }
+        )
+
+        #expect(result.output == "done")
+        #expect(started.duration(to: .now) < .seconds(5))
+    }
+
     /// The wedged children found in the field were all reparented to launchd:
     /// their spawner exited while its bounded wait was still in flight, and
     /// nothing killed them. A process about to exit has to take them with it.

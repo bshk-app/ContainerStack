@@ -41,9 +41,7 @@ final class RuntimeViewModel {
     @ObservationIgnored var isDashboardOpen = false
     @ObservationIgnored var isAdoptingDockerContext = false
     @ObservationIgnored var isDockerContextAdoptionPending = false
-    @ObservationIgnored var readDockerContext: @Sendable (Bool) async -> DockerContextReading = {
-        RuntimeViewModel.readDockerContextFromCLI(includeInstalledContext: $0)
-    }
+    @ObservationIgnored var dockerContextStore: DockerContextStore
     /// Held while a Docker context CLI mutation is running; see `acquireDockerContextMutationSlot`.
     var isMutatingDockerContext = false
     /// FIFO queue for callers waiting on `isMutatingDockerContext`.
@@ -136,10 +134,14 @@ final class RuntimeViewModel {
     init(
         socketPath: String = RuntimeViewModel.defaultSocketPath,
         startsRuntime: Bool = true,
-        dockerContextTakeoverPreference: DockerContextTakeoverPreference = DockerContextTakeoverPreference(),
+        // No defaults for these two: whoever builds a model says whose Docker configuration it
+        // may change. The app passes the user's; tests get an isolated one (#102).
+        dockerContextStore: DockerContextStore,
+        dockerContextTakeoverPreference: DockerContextTakeoverPreference,
         client: DockerAPIClient? = nil
     ) {
         self.socketPath = socketPath
+        self.dockerContextStore = dockerContextStore
         self.dockerContextTakeoverPreference = dockerContextTakeoverPreference
         self.client =
             client

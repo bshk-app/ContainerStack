@@ -8,24 +8,26 @@ final class DockerContextTakeoverPreference {
 
     private(set) var isEnabled: Bool
     @ObservationIgnored private(set) var isConfigured: Bool
-    @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let key: String
+    @ObservationIgnored private let save: (Bool) -> Void
 
-    init(
+    /// `stored` is nil until the choice was ever made; `save` persists each one.
+    init(stored: Bool?, save: @escaping (Bool) -> Void) {
+        isEnabled = stored ?? false
+        isConfigured = stored != nil
+        self.save = save
+    }
+
+    convenience init(
         defaults: UserDefaults = .standard,
         key: String = DockerContextTakeoverPreference.defaultKey
     ) {
-        self.defaults = defaults
-        self.key = key
-        let stored = defaults.object(forKey: key) as? Bool
-        isEnabled = stored ?? false
-        isConfigured = stored != nil
+        self.init(stored: defaults.object(forKey: key) as? Bool, save: { defaults.set($0, forKey: key) })
     }
 
     func setEnabled(_ isEnabled: Bool) {
         self.isEnabled = isEnabled
         isConfigured = true
-        defaults.set(isEnabled, forKey: key)
+        save(isEnabled)
     }
 
     func preserveActiveContextIfUnconfigured(_ activeContext: String?) {
@@ -126,7 +128,7 @@ extension RuntimeViewModel {
     @discardableResult
     func refreshDockerContext(includeInstalledContext: Bool = true) async -> Bool {
         let generation = dockerContextRefreshSequencer.begin()
-        let read = readDockerContext
+        let read = dockerContextStore.read
         let state = await Task.detached { await read(includeInstalledContext) }.value
         guard dockerContextRefreshSequencer.isCurrent(generation) else { return false }
         activeDockerContext = state.active
@@ -195,16 +197,10 @@ extension RuntimeViewModel {
 
     /// `shouldAdopt` deliberately never activates an installed-but-inactive context; this repairs
     /// its record anyway, without ever running `context use`.
-    func repairDockerContextRecord(
-        takeoverPreference: DockerContextTakeoverPreference? = nil,
-        recordedSocketPath: @escaping @Sendable (String) throws -> String? = {
-            try DockerCLI.recordedSocketPath(for: $0)
-        },
-        repairRecord: @escaping @Sendable (String) throws -> Void = {
-            try DockerCLI.repairRecord(socketPath: $0)
-        }
-    ) async -> Bool {
-        let preference = takeoverPreference ?? dockerContextTakeoverPreference
+    func repairDockerContextRecord() async -> Bool {
+        let preference = dockerContextTakeoverPreference
+        let recordedSocketPath = dockerContextStore.recordedSocketPath
+        let repairRecord = dockerContextStore.repairRecord
         guard preference.isEnabled, isDockerContextInstalled == true,
             activeDockerContext != DockerContext.name
         else { return false }
@@ -284,8 +280,9 @@ extension RuntimeViewModel {
 
     private func installDockerContext() async {
         let socketPath = socketPath
+        let install = dockerContextStore.install
         do {
-            try await Task.detached { try DockerCLI.installContext(socketPath: socketPath) }.value
+            try await Task.detached { try install(socketPath) }.value
             await refreshDockerContext()
             if isDockerContextActive {
                 serviceMessage = "Docker context '\(DockerContext.name)' is active."
@@ -302,8 +299,9 @@ extension RuntimeViewModel {
     }
 
     private func uninstallDockerContext() async {
+        let uninstall = dockerContextStore.uninstall
         do {
-            let removed = try await Task.detached { try DockerCLI.uninstallContext() }.value
+            let removed = try await Task.detached { try uninstall() }.value
             serviceMessage =
                 removed
                 ? "Docker context '\(DockerContext.name)' removed."

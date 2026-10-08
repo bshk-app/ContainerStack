@@ -7,21 +7,17 @@ import Testing
 
 @MainActor
 struct DockerContextRecordRepairTests {
-    private typealias Fixture = (RuntimeViewModel, DockerContextTakeoverPreference, () -> Void)
     @Test
     func repairsInactiveStaleRecordWithoutSwitchingContext() async throws {
-        let (model, preference, cleanup) = try makeModel(enabled: true)
-        defer { cleanup() }
+        let model = makeModel(enabled: true)
         model.activeDockerContext = "other"
         model.isDockerContextInstalled = true
         let writes = Mutex<[String]>([])
         let socketPath = model.socketPath
+        model.dockerContextStore.recordedSocketPath = { _ in "/retired/docker.sock" }
+        model.dockerContextStore.repairRecord = { path in writes.withLock { $0.append(path) } }
 
-        let repaired = await model.repairDockerContextRecord(
-            takeoverPreference: preference,
-            recordedSocketPath: { _ in "/retired/docker.sock" },
-            repairRecord: { path in writes.withLock { $0.append(path) } }
-        )
+        let repaired = await model.repairDockerContextRecord()
 
         #expect(repaired)
         #expect(writes.withLock { $0 } == [socketPath])
@@ -31,16 +27,13 @@ struct DockerContextRecordRepairTests {
 
     @Test
     func failedRepairReturnsFalseWithoutSurfacingAnError() async throws {
-        let (model, preference, cleanup) = try makeModel(enabled: true)
-        defer { cleanup() }
+        let model = makeModel(enabled: true)
         model.activeDockerContext = "other"
         model.isDockerContextInstalled = true
+        model.dockerContextStore.recordedSocketPath = { _ in "/retired/docker.sock" }
+        model.dockerContextStore.repairRecord = { _ in throw RepairError.failed }
 
-        let repaired = await model.repairDockerContextRecord(
-            takeoverPreference: preference,
-            recordedSocketPath: { _ in "/retired/docker.sock" },
-            repairRecord: { _ in throw RepairError.failed }
-        )
+        let repaired = await model.repairDockerContextRecord()
 
         #expect(!repaired)
         #expect(model.serviceMessage == nil)
@@ -48,21 +41,19 @@ struct DockerContextRecordRepairTests {
 
     @Test
     func guardPathsDoNotWriteTheContextRecord() async throws {
-        let (model, preference, cleanup) = try makeModel(enabled: false)
-        defer { cleanup() }
+        let model = makeModel(enabled: false)
+        let preference = model.dockerContextTakeoverPreference
         model.activeDockerContext = "other"
         model.isDockerContextInstalled = true
         let reads = Mutex(0)
         let writes = Mutex(0)
+        model.dockerContextStore.recordedSocketPath = { _ in
+            reads.withLock { $0 += 1 }
+            return "/retired/docker.sock"
+        }
+        model.dockerContextStore.repairRecord = { _ in writes.withLock { $0 += 1 } }
         func attempt() async -> Bool {
-            await model.repairDockerContextRecord(
-                takeoverPreference: preference,
-                recordedSocketPath: { _ in
-                    reads.withLock { $0 += 1 }
-                    return "/retired/docker.sock"
-                },
-                repairRecord: { _ in writes.withLock { $0 += 1 } }
-            )
+            await model.repairDockerContextRecord()
         }
 
         // Takeover disabled, context missing, or already active: no record read or write.
@@ -77,30 +68,22 @@ struct DockerContextRecordRepairTests {
         #expect(reads.withLock { $0 } == 0)
         #expect(writes.withLock { $0 } == 0)
         let socketPath = model.socketPath
-        let alreadyCurrent = await model.repairDockerContextRecord(
-            takeoverPreference: preference,
-            recordedSocketPath: { _ in socketPath },
-            repairRecord: { _ in writes.withLock { $0 += 1 } }
-        )
+        model.dockerContextStore.recordedSocketPath = { _ in socketPath }
+        let alreadyCurrent = await model.repairDockerContextRecord()
         #expect(!alreadyCurrent)
         #expect(writes.withLock { $0 } == 0)
     }
 
     @Test
     func stateChangingWhileWaitingForMutationSlotSkipsRepair() async throws {
-        let (model, preference, cleanup) = try makeModel(enabled: true)
-        defer { cleanup() }
+        let model = makeModel(enabled: true)
         model.activeDockerContext = "other"
         model.isDockerContextInstalled = true
         model.isMutatingDockerContext = true
         let writes = Mutex(0)
-        let repair = Task {
-            await model.repairDockerContextRecord(
-                takeoverPreference: preference,
-                recordedSocketPath: { _ in "/retired/docker.sock" },
-                repairRecord: { _ in writes.withLock { $0 += 1 } }
-            )
-        }
+        model.dockerContextStore.recordedSocketPath = { _ in "/retired/docker.sock" }
+        model.dockerContextStore.repairRecord = { _ in writes.withLock { $0 += 1 } }
+        let repair = Task { await model.repairDockerContextRecord() }
         while model.dockerContextMutationWaiters.isEmpty { await Task.yield() }
         model.isDockerContextInstalled = false
         model.dockerContextMutationWaiters.removeFirst().resume()
@@ -110,13 +93,8 @@ struct DockerContextRecordRepairTests {
         #expect(!model.isMutatingDockerContext)
     }
 
-    private func makeModel(enabled: Bool) throws -> Fixture {
-        let suite = "DockerContextRecordRepairTests-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        let preference = DockerContextTakeoverPreference(defaults: defaults, key: "takeover")
-        if enabled { preference.setEnabled(true) }
-        let model = RuntimeViewModel(socketPath: "/tmp/containerstack-test.sock", startsRuntime: false)
-        return (model, preference, { defaults.removePersistentDomain(forName: suite) })
+    private func makeModel(enabled: Bool) -> RuntimeViewModel {
+        RuntimeViewModel(dockerContextTakeoverPreference: .inMemory(enabled ? true : nil))
     }
 }
 

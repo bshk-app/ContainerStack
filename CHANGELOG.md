@@ -12,6 +12,31 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.8.0](https://github.com/bshk-app/ContainerStack/compare/v0.7.0...v0.8.0) (2026-10-09)
+
+
+### Added
+
+* **app:** decide which runtime operation runs in one queue ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([2baef33](https://github.com/bshk-app/ContainerStack/commit/2baef3335baa40d37ce49b6322ca66d828c0c512))
+* **app:** run Start, Stop and Restart through one queue ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([99bad42](https://github.com/bshk-app/ContainerStack/commit/99bad42cff4221c953398427847f6998e9e637d6))
+
+
+### Fixed
+
+* **app:** keep tests away from the user's Docker configuration ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([dfe2d0d](https://github.com/bshk-app/ContainerStack/commit/dfe2d0d9faa57604fb2baa4b54bb11f44de5add1))
+* **app:** publish a refresh's lists under the epoch it began with ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([650e10b](https://github.com/bshk-app/ContainerStack/commit/650e10b5a2e550acc840029a88237a911916703d))
+* **compose:** give down and restart a deadline, and recover on it ([3538585](https://github.com/bshk-app/ContainerStack/commit/3538585283d237345a65ff4c4832a81478d4cd60)), closes [#101](https://github.com/bshk-app/ContainerStack/issues/101)
+* **compose:** give stack down and restart a deadline, and recover on it ([ba261a9](https://github.com/bshk-app/ContainerStack/commit/ba261a963652bdea2bfbb09052887de842ee0ede))
+* **compose:** keep unbounded verbs on their old path, isolate the process registry ([ac630e9](https://github.com/bshk-app/ContainerStack/commit/ac630e970d80868022390bab0c2947c55679f2de))
+* **core:** keep a child's output when the drain starts late ([d6cc86c](https://github.com/bshk-app/ContainerStack/commit/d6cc86c53fc5eb05c9fdd85c2612fd7dc7fc68aa))
+* **core:** start a bounded child and register it as one step ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([79c5f0f](https://github.com/bshk-app/ContainerStack/commit/79c5f0fb0e8bc9bfd804c31885b0f973d7d373b3))
+* **runtime:** end the helper's bounded children on SIGTERM ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([b266428](https://github.com/bshk-app/ContainerStack/commit/b2664288885c2577cf6c32206e02c9ea94115084))
+
+
+### Changed
+
+* **app:** put what runtime operations wait on behind one seam ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([3e0505c](https://github.com/bshk-app/ContainerStack/commit/3e0505c35f71205917c274f75f5fb301f74f9c1d))
+
 ## [0.7.0](https://github.com/bshk-app/ContainerStack/compare/v0.6.1...v0.7.0) (2026-10-06)
 
 ContainerStack gets a Doctor: the checks `cstack doctor` runs, now in the sidebar, with a button

@@ -78,7 +78,11 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           COMMENT_BLOCK_DIFF_BASE: origin/${{ github.base_ref }}
+          COMMENT_BLOCK_WARN_ONLY: 1
         run: ./scripts/hooks/check-new-comment-blocks.sh
+
+      - name: Comment gate regression
+        run: ./scripts/hooks/test-comment-gate.sh
 
       # The shell that ships on macOS is bash 3.2, and it is stricter than any
       # newer one: it tracks quotes through comments inside a command

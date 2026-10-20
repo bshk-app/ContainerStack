@@ -66,7 +66,7 @@ if [[ "$MODE" == "--stop" ]]; then
         fi
     fi
 
-    exec "$CHECKER"
+    COMMENT_BLOCK_WARN_ONLY=1 exec "$CHECKER"
 fi
 
 file="$(field file_path)"

@@ -1,0 +1,57 @@
+name: Install zamokctl and the Sparkle tools
+description: >
+  Installs zamokctl, then fetches Sparkle's CLI tools (generate_appcast,
+  generate_keys) from Sparkle's own release tarball and exports SPARKLE_BIN.
+
+# Homebrew disabled the `sparkle` cask on 2026-09-01 for failing the
+# Gatekeeper check, which took a release down mid-run when the job could not
+# get generate_appcast. The tools now come straight from Sparkle's release
+# tarball, pinned by sha256 to the same release the app links -- a signer
+# from a different major writes an appcast the framework may not accept, and
+# that failure would surface as "no update available" in the panel, long
+# after the release looked successful.
+#
+# The version is read from the checkout's Package.resolved, not set here:
+# repair-release.yml checks out a historical tag, and that tag's feed must be
+# signed by the Sparkle the tag shipped, not by the one main links today. A
+# Sparkle bump therefore adds a row to the digest table and keeps the old
+# rows -- dropping one breaks repair of every tag that still links it.
+#
+# One copy, used by both release.yml and repair-release.yml: the two
+# workflows drifted once already when this was a hand-duplicated step and
+# only one copy got the tarball fix.
+
+runs:
+  using: composite
+  steps:
+    - name: Install zamokctl
+      shell: bash
+      run: brew install bshk-app/tap/zamokctl
+
+    - name: Download and verify the Sparkle tools the checkout links
+      shell: bash
+      run: |
+        [[ -f Package.resolved ]] \
+          || { echo "no Package.resolved in the checkout: this tree links no Sparkle"; exit 1; }
+        version="$(jq -r '.pins[] | select(.identity=="sparkle") | .state.version' Package.resolved)"
+        case "$version" in
+          2.9.6) sha256=52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192 ;;
+          "") echo "Package.resolved pins no Sparkle: this tree links no Sparkle"; exit 1 ;;
+          *)
+            echo "No digest for Sparkle $version. Add the sha256 of Sparkle-$version.tar.xz to this action's table."
+            exit 1
+            ;;
+        esac
+        curl -fsSL -o "$RUNNER_TEMP/sparkle.tar.xz" \
+          "https://github.com/sparkle-project/Sparkle/releases/download/${version}/Sparkle-${version}.tar.xz"
+        echo "${sha256}  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 -c -
+        mkdir -p "$RUNNER_TEMP/sparkle"
+        tar -xJf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+        # A tarball that unpacked into a different shape must fail here, not
+        # later inside zamokctl with a path it cannot explain.
+        [[ -x "$RUNNER_TEMP/sparkle/bin/generate_appcast" ]] \
+          || { echo "no generate_appcast in the Sparkle tarball"; exit 1; }
+        echo "SPARKLE_BIN=$RUNNER_TEMP/sparkle/bin" >> "$GITHUB_ENV"
+        # Tags before v0.6.0 never hand SPARKLE_BIN to zamokctl, which then
+        # looks for generate_appcast on PATH before anywhere else.
+        echo "$RUNNER_TEMP/sparkle/bin" >> "$GITHUB_PATH"

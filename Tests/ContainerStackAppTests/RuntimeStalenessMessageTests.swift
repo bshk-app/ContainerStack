@@ -18,7 +18,7 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: older,
             current: shipped,
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: {}
         )
 
@@ -34,12 +34,80 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: older,
             current: shipped,
-            restart: { false },
+            restart: { .completed(false) },
             recordIdentity: { recordedIdentity = true }
         )
 
         #expect(model.serviceMessage == nil)
         #expect(recordedIdentity == false)
+    }
+
+    /// Codex reproduced this on #102: Start's inline restart was superseded while its refresh
+    /// collected health, and the adoption still recorded the bridge and announced the restart.
+    @Test("A superseded restart neither records the shipped bridge nor announces success")
+    func supersededRestartDoesNotClaimSuccess() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        var recordedIdentity = false
+
+        await model.adoptBridgeIfStale(
+            recorded: older,
+            current: shipped,
+            restart: { .superseded },
+            recordIdentity: { recordedIdentity = true }
+        )
+
+        #expect(model.serviceMessage == nil)
+        #expect(recordedIdentity == false)
+    }
+
+    /// The probe's restart is dropped while a Start runs. Spent, the check would be skipped by
+    /// Start's own adoption, and the outdated bridge would serve for the rest of the session.
+    @Test("A dropped restart leaves the identity check to be made again")
+    func droppedRestartLeavesTheCheckUnspent() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        var restarts = 0
+
+        await model.adoptBridgeIfStale(
+            loadRecorded: { older }, loadCurrent: { shipped }, restart: { .dropped }, recordIdentity: {})
+        await model.adoptBridgeIfStale(
+            loadRecorded: { older },
+            loadCurrent: { shipped },
+            restart: {
+                restarts += 1
+                return .completed(true)
+            },
+            recordIdentity: {}
+        )
+
+        #expect(restarts == 1)
+        #expect(model.hasCheckedBridgeIdentity)
+    }
+
+    /// A restart superseded while its refresh collects health: that refresh publishes nothing, so
+    /// the healthy state from before the restart must not be read as its result.
+    @Test("A restart superseded during its refresh does not report success")
+    func restartSupersededDuringRefreshFails() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        var current = true
+        let healthy = try RuntimeHealthSnapshot(
+            pingOK: true,
+            version: JSONDecoder().decode(DockerVersion.self, from: Data("{}".utf8)),
+            info: JSONDecoder().decode(DockerInfo.self, from: Data("{}".utf8))
+        )
+
+        let restarted = await model.completeRuntimeRestart(
+            isCurrent: { current },
+            waitForSocket: { true },
+            refreshHealth: {
+                current = false
+                return healthy
+            }
+        )
+
+        #expect(!restarted)
     }
 
     /// A restart stops only the bridge this build ships. When someone else's
@@ -56,9 +124,9 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: older,
             current: shipped,
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: { recordedIdentity = true },
-            servesOurBridge: { false }
+            foreignBridge: { ForeignBridge(socketPath: "/tmp/socket") }
         )
 
         #expect(recordedIdentity == false)
@@ -80,15 +148,40 @@ struct RuntimeStalenessMessageTests {
             current: shipped,
             restart: {
                 restarted = true
-                return true
+                return .completed(true)
             },
             recordIdentity: { recordedIdentity = true },
-            servesOurBridge: { false }
+            foreignBridge: { ForeignBridge(socketPath: "/tmp/socket") }
         )
 
         #expect(restarted == false)
         #expect(recordedIdentity == false)
-        #expect(model.serviceMessage == model.foreignBridgeMessage)
+        #expect(model.serviceMessage?.contains("Another Docker bridge holds") == true)
+    }
+
+    /// F-014: another ContainerStack copy is named as one, with the restart that replaces it,
+    /// rather than told to be stopped by hand.
+    @Test("Another copy's bridge is named with the restart that replaces it")
+    func siblingBridgeIsNamedWithTheRestart() async {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        let sibling = ForeignBridge(
+            socketPath: "/tmp/socket",
+            pid: 63819,
+            command: "/Applications/ContainerStack.app/Contents/Helpers/socktainer",
+            siblingBundlePath: "/Applications/ContainerStack.app"
+        )
+
+        await model.adoptBridgeIfStale(
+            recorded: shipped,
+            current: shipped,
+            restart: { .completed(true) },
+            recordIdentity: {},
+            foreignBridge: { sibling }
+        )
+
+        #expect(model.serviceMessage == RuntimeState.foreignBridge(sibling).detail)
+        #expect(model.serviceMessage?.contains("Restart the runtime") == true)
     }
 
     @Test("A message produced while restarting is not erased")
@@ -102,7 +195,7 @@ struct RuntimeStalenessMessageTests {
             current: shipped,
             restart: {
                 model.serviceMessage = registrationFailure
-                return false
+                return .completed(false)
             },
             recordIdentity: {}
         )
@@ -119,7 +212,7 @@ struct RuntimeStalenessMessageTests {
         await model.adoptBridgeIfStale(
             recorded: older,
             current: shipped,
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: { model.serviceMessage = failure }
         )
 
@@ -137,7 +230,7 @@ struct RuntimeStalenessMessageTests {
             current: shipped,
             restart: {
                 model.applyState(socketResponds: false)
-                return true
+                return .completed(true)
             },
             recordIdentity: { recordedIdentity = true }
         )
@@ -158,7 +251,7 @@ struct RuntimeStalenessMessageTests {
                 current: shipped,
                 restart: {
                     withUnsafeCurrentTask { $0?.cancel() }
-                    return true
+                    return .completed(true)
                 },
                 recordIdentity: { recordedIdentity = true }
             )
@@ -184,7 +277,7 @@ struct RuntimeStalenessMessageTests {
                 identityReads += 1
                 return shipped
             },
-            restart: { true },
+            restart: { .completed(true) },
             recordIdentity: {}
         )
 
@@ -276,11 +369,87 @@ struct RuntimeStalenessMessageTests {
         // the state that disables the manual restart — staying there is the stuck-on-Starting trap.
         model.isStarting = true
 
-        await model.completeAutomaticRuntimeRecovery(restart: { false })
+        await model.completeAutomaticRuntimeRecovery(restart: { .completed(false) })
 
         #expect(model.containers.isEmpty)
         #expect(model.runtimeState != .starting)
         #expect(model.canRestartRuntime)
+    }
+
+    @Test("A successful automatic recovery resolves each message that announced the check")
+    func successfulAutomaticRecoveryResolvesAnnouncingMessages() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+
+        await model.completeAutomaticRuntimeRecovery(restart: { .completed(true) })
+
+        #expect(model.containerMessage == "Runtime recovered.")
+        #expect(model.resourceMessage == "Runtime recovered.")
+        #expect(model.stackMessage == "Runtime recovered.")
+    }
+
+    /// The poll consumes the request on several paths — a socket that answers, a system status
+    /// that reports running, a restart — and only one of them used to settle the message.
+    @Test("A finished check settles its messages as available when the runtime answers")
+    func finishedCheckSettlesAsAvailable() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+        model.runtimeRecoveryRequested = false
+
+        model.settleFinishedRuntimeCheck()
+
+        #expect(model.containerMessage == "Container stop timed out; runtime remains available.")
+        #expect(model.resourceMessage == "Stop timed out; runtime remains available.")
+        #expect(model.stackMessage == "Stack action failed; runtime remains available.")
+    }
+
+    @Test("A finished check settles its messages as offline when the runtime is gone")
+    func finishedCheckSettlesAsOffline() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+        model.runtimeRecoveryRequested = false
+        model.applyState(socketResponds: false)
+
+        model.settleFinishedRuntimeCheck()
+
+        #expect(model.containerMessage == "Container stop failed; the runtime is offline.")
+        #expect(model.resourceMessage == "Stop failed; the runtime is offline.")
+        #expect(model.stackMessage == "Stack action failed; the runtime is offline.")
+    }
+
+    @Test("A check still pending, or overtaken by a restart, is not settled yet")
+    func pendingCheckIsNotSettled() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        try await Self.loseConnectionOnEverySurface(model)
+
+        model.settleFinishedRuntimeCheck()
+        #expect(model.stackMessage == RuntimeViewModel.checkingRuntimeMessage)
+
+        model.runtimeRecoveryRequested = false
+        model.isRestarting = true
+        model.settleFinishedRuntimeCheck()
+        #expect(model.stackMessage == RuntimeViewModel.checkingRuntimeMessage)
+    }
+
+    /// The recovery request is global but each screen has its own message: a stack down that lost
+    /// the runtime once wrote "Stop timed out" over what the Images screen had last reported.
+    @Test("A recovery check leaves messages it did not announce untouched")
+    func recoveryCheckLeavesUnrelatedMessages() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+        model.resourceMessage = "Pulled nginx."
+        await model.downStack(Self.stack(), removeVolumes: false) { _, _ in throw Self.lostConnection }
+        model.runtimeRecoveryRequested = false
+
+        model.settleFinishedRuntimeCheck()
+        await model.completeAutomaticRuntimeRecovery(restart: { .completed(true) })
+
+        #expect(model.resourceMessage == "Pulled nginx.")
+        #expect(model.containerMessage == nil)
     }
 
     /// #39: the manual restart had no equivalent of the automatic path's cleanup, so a restart the
@@ -389,11 +558,81 @@ struct RuntimeStalenessMessageTests {
         #expect(model.containerMessage?.contains("Container action failed") == true)
     }
 
+    @Test("A group stop that loses the XPC connection asks the monitor to check the runtime")
+    func groupStopConnectionLossRaisesRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.stop(group: try Self.group()) { _ in throw Self.lostConnection }
+
+        #expect(model.runtimeRecoveryRequested)
+    }
+
+    @Test("A stack down that loses the XPC connection asks the monitor to check the runtime")
+    func stackDownConnectionLossRaisesRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.downStack(Self.stack(), removeVolumes: false) { _, _ in
+            throw ComposeRunner.RunnerError.commandFailed(
+                "Error response from daemon: XPC connection error: Connection invalid")
+        }
+
+        #expect(model.runtimeRecoveryRequested)
+    }
+
+    /// #101: the deadline only helps if the timeout it throws reaches the recovery hook.
+    @Test("A stack down or restart that runs out of time asks the monitor to check the runtime")
+    func stackStopTimeoutRaisesRecoveryRequest() async throws {
+        let timedOut = ProcessRunnerError.timedOut(executablePath: "/usr/local/bin/docker", seconds: 120)
+
+        let down = makeModel()
+        down.applyState(socketResponds: true)
+        await down.downStack(Self.stack(), removeVolumes: false) { _, _ in throw timedOut }
+        #expect(down.runtimeRecoveryRequested)
+
+        let restart = makeModel()
+        restart.applyState(socketResponds: true)
+        await restart.restartStack(Self.stack()) { _ in throw timedOut }
+        #expect(restart.runtimeRecoveryRequested)
+    }
+
+    @Test("A stack down failure unrelated to the runtime does not ask for recovery")
+    func stackDownUnrelatedFailureDoesNotRaiseRecoveryRequest() async throws {
+        let model = makeModel()
+        model.applyState(socketResponds: true)
+
+        await model.downStack(Self.stack(), removeVolumes: false) { _, _ in
+            throw ComposeRunner.RunnerError.commandFailed("no configuration file provided")
+        }
+
+        #expect(!model.runtimeRecoveryRequested)
+    }
+
     private static func container() throws -> DockerContainerSummary {
         try JSONDecoder().decode(
             DockerContainerSummary.self,
             from: Data(#"{"Id":"web","Names":["/web"],"State":"running"}"#.utf8)
         )
+    }
+
+    private static let lostConnection = DockerAPIError.httpStatus(
+        500, message: "XPC connection error: Connection invalid")
+
+    private static func stack() -> ComposeStack {
+        ComposeStack(name: "web", fileURL: URL(fileURLWithPath: "/tmp/compose.yaml"))
+    }
+
+    private static func group() throws -> ContainerGroup {
+        ContainerGroup(project: "web", containers: [try container()])
+    }
+
+    private static func loseConnectionOnEverySurface(_ model: RuntimeViewModel) async throws {
+        await model.withContainer(try container(), action: "Stopping", recoversRuntime: true) {
+            throw lostConnection
+        }
+        await model.stop(group: try group()) { _ in throw lostConnection }
+        await model.downStack(stack(), removeVolumes: false) { _, _ in throw lostConnection }
     }
 
     @Test("A ready socket is not recovery success when health refresh fails")

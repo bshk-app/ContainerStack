@@ -5,7 +5,10 @@ import SwiftUI
 @main
 struct ContainerStackApp: App {
     @NSApplicationDelegateAdaptor(ContainerStackAppDelegate.self) private var appDelegate
-    @State private var model = RuntimeViewModel()
+    @State private var model = RuntimeViewModel(
+        dockerContextStore: .live,
+        dockerContextTakeoverPreference: DockerContextTakeoverPreference()
+    )
     @State private var updates = AppUpdates()
     @State private var resourceSettings = ContainerResourceSettings()
 

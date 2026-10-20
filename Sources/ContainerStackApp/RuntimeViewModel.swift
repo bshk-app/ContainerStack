@@ -11,11 +11,19 @@ final class RuntimeViewModel {
     static let defaultSocketPath = RuntimeProcessConfiguration.defaultSocketPath
 
     let client: DockerAPIClient
+    @ObservationIgnored var steps: RuntimeSteps
     nonisolated static let launchAgentPlistName = "com.containerstack.runtime.plist"
     private let service = SMAppService.agent(plistName: RuntimeViewModel.launchAgentPlistName)
-    private var runtimeProcess: Process?
-    private var runtimeLogHandle: FileHandle?
-    private var monitorTask: Task<Void, Never>?
+    var runtimeProcess: Process?
+    /// Decides which of Start, Stop and Restart runs (#102). Unobserved, so the Doctor's
+    /// `isRestarting` watcher sees only the edges the operations themselves make.
+    @ObservationIgnored var lifecycle = RuntimeLifecycleQueue()
+    /// Requests waiting behind the running operation, by their queue number.
+    @ObservationIgnored var lifecycleTickets: [Int: LifecycleTicket] = [:]
+    /// The user's last instruction is a Stop, running or waiting: the only time Stop is disabled.
+    internal(set) var isStopping = false
+    var runtimeLogHandle: FileHandle?
+    @ObservationIgnored var monitorTask: Task<Void, Never>?
     /// `container system status` costs a CLI spawn plus an XPC round trip, so the poll reuses
     /// its last answer between checks instead of asking on every 3s tick.
     private var appRootCadence = DiagnosticCadence(interval: .seconds(30))
@@ -23,17 +31,22 @@ final class RuntimeViewModel {
     /// Same cadence and the same reason: answering "who holds the socket" costs
     /// an `lsof` and a `ps`, which is too much for a 3-second poll.
     private var bridgeOwnerCadence = DiagnosticCadence(interval: .seconds(30))
-    private var lastForeignBridge: String?
+    private var lastForeignBridge: ForeignBridge?
     /// Weighs consecutive probe answers, so one unanswered ping cannot condemn the runtime.
     /// Internal so a test can seed the silence a stopped runtime accumulates.
     var livenessFilter = RuntimeLivenessFilter()
     var dockerContextPreferenceSequencer = DockerContextPreferenceSequencer()
     var dockerContextRefreshSequencer = DockerContextRefreshSequencer()
+    /// Set by the window: only it shows the Docker context, and each read spawns `docker`.
+    @ObservationIgnored var isDashboardOpen = false
+    @ObservationIgnored var isAdoptingDockerContext = false
+    @ObservationIgnored var isDockerContextAdoptionPending = false
+    @ObservationIgnored var dockerContextStore: DockerContextStore
     /// Held while a Docker context CLI mutation is running; see `acquireDockerContextMutationSlot`.
     var isMutatingDockerContext = false
     /// FIFO queue for callers waiting on `isMutatingDockerContext`.
     var dockerContextMutationWaiters: [CheckedContinuation<Void, Never>] = []
-    let dockerContextTakeoverPreference = DockerContextTakeoverPreference()
+    let dockerContextTakeoverPreference: DockerContextTakeoverPreference
     internal(set) var runtimeFailure: String?
     internal(set) var isRestarting = false
     /// Raised by a stop that lost the XPC connection, consumed by the monitor poll: the poll is the
@@ -66,7 +79,7 @@ final class RuntimeViewModel {
     internal(set) var busyContainerIDs: Set<String> = []
     var selectedContainerID: String?
 
-    private(set) var errorMessage: String?
+    internal(set) var errorMessage: String?
     internal(set) var imagesErrorMessage: String?
     internal(set) var containersErrorMessage: String?
     /// Image platform, keyed by image id. The outer optional means "not fetched", the inner
@@ -89,7 +102,7 @@ final class RuntimeViewModel {
     internal(set) var containerMessage: String?
     internal(set) var containerOutput: String?
     internal(set) var runtimeMessage: String?
-    private(set) var runtimeLogPath: String?
+    internal(set) var runtimeLogPath: String?
     internal(set) var activeDockerContext: String?
     internal(set) var isDockerContextInstalled: Bool?
     internal(set) var defaultDockerSocketStatus: DockerSocketStatus?
@@ -120,18 +133,29 @@ final class RuntimeViewModel {
 
     init(
         socketPath: String = RuntimeViewModel.defaultSocketPath,
-        startsRuntime: Bool = true
+        startsRuntime: Bool = true,
+        // No defaults for these two: whoever builds a model says whose Docker configuration it
+        // may change. The app passes the user's; tests get an isolated one (#102).
+        dockerContextStore: DockerContextStore,
+        dockerContextTakeoverPreference: DockerContextTakeoverPreference,
+        client: DockerAPIClient? = nil
     ) {
         self.socketPath = socketPath
-        client = DockerAPIClient(
-            socketPath: socketPath,
-            retryPolicy: DockerRetryPolicy(maxAttempts: 3, delay: .milliseconds(250))
-        )
+        self.dockerContextStore = dockerContextStore
+        self.dockerContextTakeoverPreference = dockerContextTakeoverPreference
+        self.client =
+            client
+            ?? DockerAPIClient(
+                socketPath: socketPath,
+                retryPolicy: DockerRetryPolicy(maxAttempts: 3, delay: .milliseconds(250))
+            )
+        steps = .live(client: self.client)
         guard startsRuntime else { return }
         isStarting = true
         runtimeState = .starting
+        let observed = lifecycle.generation
         Task { [weak self] in
-            self?.startRuntime()
+            _ = await self?.run(.start, origin: .launch, observed: observed)
         }
     }
 
@@ -208,7 +232,7 @@ final class RuntimeViewModel {
     }
 
     func revealRuntimeLog() {
-        guard let logURL = try? runtimeLogURL() else {
+        guard let logURL = try? Self.runtimeLogURL() else {
             serviceMessage = "Runtime log is not available yet."
             return
         }
@@ -216,129 +240,20 @@ final class RuntimeViewModel {
     }
 
     func startRuntime() {
-        guard runtimeProcess?.isRunning != true else {
-            return
-        }
-
-        isStarting = true
-        // Cleared as the attempt begins, matching the launch path and the manual restart: now that an
-        // explicit failure outranks `.starting`, a leftover reason would surface as offline here.
-        runtimeFailure = nil
-        applyState(socketResponds: false)
-
-        Task { [weak self] in
-            await self?.startRuntimeIfSocketIsDown()
-        }
+        // A helper still running is either one still starting, left alone, or one this app has
+        // already given up on, which only Start can clear (#71).
+        guard runtimeProcess?.isRunning != true || runtimeFailure != nil else { return }
+        let turn = admit(.start, origin: .user)
+        Task { _ = await execute(.start, turn) }
     }
 
-    /// Polls the Docker socket so the UI tracks the runtime even when the helper is not ours:
-    /// another ContainerStack instance, a LaunchAgent or a manually started bridge all count.
-    func startMonitoring(interval: Duration = .seconds(3)) {
-        guard monitorTask == nil else { return }
-
-        monitorTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.probeRuntime()
-                await self?.refreshDockerContext(includeInstalledContext: false)
-                self?.expireServiceMessage()
-                try? await Task.sleep(for: interval)
-            }
-        }
-    }
-
-    func stopMonitoring() {
-        monitorTask?.cancel()
-        monitorTask = nil
-    }
-
-    func expireServiceMessage(now: Date = Date()) {
-        guard serviceMessage != nil, let serviceMessageExpiresAt, now >= serviceMessageExpiresAt
-        else { return }
-        serviceMessage = nil
-    }
-
-    private func startRuntimeIfSocketIsDown() async {
+    func probeRuntime() async {
         let epoch = inventoryEpoch
-        if await socketResponds() {
-            // The ping's own await is the window: if the runtime was declared dead while it was in
-            // flight, adopting the socket now would publish healthy over that failure (#43).
-            guard inventoryEpochIsCurrent(epoch) else { return }
-            runtimeFailure = nil
-            runtimeMessage = "Adopted the Docker socket already serving this machine."
-            isStarting = false
-            applyState(socketResponds: true)
-            // Adopting a socket is exactly when to ask whose bridge it is: this path marks the
-            // runtime healthy before the first probe, so the probe's transition branch never fires.
-            await adoptBridgeIfStale()
-            await refresh()
-            return
-        }
-
-        await launchRuntimeHelper()
-    }
-
-    private func launchRuntimeHelper() async {
-        let launchPlan = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL)
-        guard FileManager.default.isExecutableFile(atPath: launchPlan.executablePath) else {
-            isStarting = false
-            failRuntime("Runtime helper is missing: \(launchPlan.executablePath)")
-            return
-        }
-
-        // Asked before the helper is spawned rather than read out of its log afterwards. The
-        // helper reaches the same verdict and exits, which the app could only report as
-        // "helper exited" - a sentence that names neither version nor remedy.
-        //
-        // Detached because this waits on `container --version` and the diagnostic deadline is
-        // ten seconds: run on the main actor, a wedged binary freezes the window for all of it.
-        let configuration = runtimeConfiguration()
-        let verdict = await Task.detached { ContainerVersionCheck.run(configuration) }.value
-        if let complaint = verdict.userFacingMessage {
-            isStarting = false
-            failRuntime(complaint)
-            return
-        }
-
-        // The await above is a window: something else may have started the helper while the
-        // version was being read, and a second one would fight the first for the socket.
-        guard runtimeProcess?.isRunning != true else { return }
-
-        do {
-            let logURL = try runtimeLogURL()
-            let logHandle = try FileHandle(forWritingTo: logURL)
-            try logHandle.seekToEnd()
-
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: launchPlan.executablePath)
-            process.arguments = launchPlan.arguments
-            process.standardOutput = logHandle
-            process.standardError = logHandle
-            try process.run()
-
-            runtimeProcess = process
-            runtimeLogHandle = logHandle
-            runtimeLogPath = logURL.path
-            isStarting = true
-            runtimeFailure = nil
-            errorMessage = nil
-            runtimeMessage = "Starting Apple Container and Docker bridge…"
-            applyState(socketResponds: false)
-
-            Task { [weak self] in
-                await self?.waitForRuntime()
-            }
-        } catch {
-            isStarting = false
-            failRuntime("Runtime could not start: \(error)")
-        }
-    }
-
-    private func probeRuntime() async {
-        let epoch = inventoryEpoch
+        let observed = lifecycle.generation
         let responds: Bool
         let probeError: Error?
         do {
-            responds = try await client.ping()
+            responds = try await steps.ping()
             probeError = nil
         } catch {
             responds = false
@@ -349,7 +264,6 @@ final class RuntimeViewModel {
 
         if responds, runtimeRecoveryRequested {
             runtimeRecoveryRequested = false
-            containerMessage = "Container stop timed out; runtime remains available."
         }
         let shouldCheckSystemStatus = RuntimeConnectionRecovery.shouldCheckSystemStatus(
             after: probeError,
@@ -363,12 +277,11 @@ final class RuntimeViewModel {
 
         if RuntimeConnectionRecovery.shouldAttemptRestart(
             apiserverRunning: apiserverRunning,
-            isStarting: isStarting,
-            isRestarting: isRestarting,
             hasRuntimeFailure: runtimeFailure != nil
         ) {
-            runtimeMessage = "Apple Container API server stopped. Restarting runtime…"
-            await completeAutomaticRuntimeRecovery(restart: { await self.restartRuntime() })
+            await completeAutomaticRuntimeRecovery(restart: {
+                await self.run(.restart(replacingSibling: false), origin: .recovery, observed: observed)
+            })
             return
         }
 
@@ -376,7 +289,7 @@ final class RuntimeViewModel {
             // `responds` predates the system-status await above, so the same staleness applies here.
             guard inventoryEpochIsCurrent(epoch) else { return }
             applyState(socketResponds: true)
-            await adoptBridgeIfStale()
+            await adoptBridgeIfStale(observed: observed)
             await refresh()
             await adoptDockerContextIfEnabled()
         } else if !responds, wasHealthy {
@@ -393,8 +306,8 @@ final class RuntimeViewModel {
             // project started while the app was open invisible until the user navigated away and
             // back, and a network created after launch unchecked. Two calls rather than the full
             // refresh — images, volumes and disk usage feed neither.
-            await refreshContainers()
-            await refreshNetworks()
+            await refreshContainers(epoch: epoch)
+            await refreshNetworks(epoch: epoch)
             let unroutable = await unroutablePublishingNetworks()
             let missingAppRoot = await throttledMissingAppRoot()
             // `responds` was read before all of those awaits. If the runtime has been declared dead
@@ -430,12 +343,12 @@ final class RuntimeViewModel {
         return lastMissingAppRoot
     }
 
-    /// The socket path when a bridge that is not ours holds it, otherwise nil.
+    /// The bridge holding the socket when it is not ours, otherwise nil.
     /// Re-asked on the cadence so the banner clears by itself once the other
     /// bridge is gone - the reported case sat there for hours with nothing to see.
-    private func throttledForeignBridge() -> String? {
+    private func throttledForeignBridge() -> ForeignBridge? {
         if bridgeOwnerCadence.shouldRun() {
-            lastForeignBridge = servesOurBridge() ? nil : socketPath
+            lastForeignBridge = currentForeignBridge()
         }
         return lastForeignBridge
     }
@@ -443,8 +356,8 @@ final class RuntimeViewModel {
     /// Probes now and feeds the same cache, for the same reason `freshMissingAppRoot`
     /// does: a refresh that answered from nothing would clear the banner the poll
     /// had just raised.
-    private func freshForeignBridge() -> String? {
-        lastForeignBridge = servesOurBridge() ? nil : socketPath
+    private func freshForeignBridge() -> ForeignBridge? {
+        lastForeignBridge = currentForeignBridge()
         bridgeOwnerCadence.recordRun()
         return lastForeignBridge
     }
@@ -468,10 +381,6 @@ final class RuntimeViewModel {
 
     func socketRespondsNow() async -> Bool {
         await socketResponds()
-    }
-
-    func launchRuntimeHelperForRestart() async {
-        await launchRuntimeHelper()
     }
 
     var isAgentRegistered: Bool {
@@ -516,15 +425,20 @@ final class RuntimeViewModel {
         epoch == inventoryEpoch
     }
 
+    /// A read in flight for an operation that has just been superseded must publish nothing (#102).
+    func supersedeInventoryReads() {
+        inventoryEpoch &+= 1
+    }
+
     private func socketResponds() async -> Bool {
-        (try? await client.ping()) ?? false
+        (try? await steps.ping()) ?? false
     }
 
     func applyState(
         socketResponds: Bool,
         unroutableNetworks: [UnroutableNetwork] = [],
         missingAppRoot: String? = nil,
-        foreignBridge: String? = nil
+        foreignBridge: ForeignBridge? = nil
     ) {
         runtimeState = RuntimeState.resolve(
             socketResponds: socketResponds,
@@ -595,11 +509,13 @@ final class RuntimeViewModel {
                 missingAppRoot: missingAppRoot,
                 foreignBridge: freshForeignBridge()
             )
-            await refreshImages()
-            await refreshContainers()
-            await refreshVolumes()
-            await refreshNetworks()
-            await refreshDiskUsage()
+            // One epoch for every list: each fetch capturing its own let a supersede during the
+            // images fetch discard images and still publish the containers fetched after it (#102).
+            await refreshImages(epoch: epoch)
+            await refreshContainers(epoch: epoch)
+            await refreshVolumes(epoch: epoch)
+            await refreshNetworks(epoch: epoch)
+            await refreshDiskUsage(epoch: epoch)
         } catch is CancellationError {
             return
         } catch {
@@ -623,68 +539,6 @@ final class RuntimeViewModel {
             // Re-checked against the post-clear baseline (#70).
             guard inventoryEpochIsCurrent(epochAfterClear) else { return }
             applyState(socketResponds: false, missingAppRoot: missingAppRoot)
-        }
-    }
-
-    private func waitForRuntime() async {
-        let epoch = inventoryEpoch
-        defer {
-            isStarting = false
-            applyState(socketResponds: runtimeState.isHealthy)
-        }
-
-        for attempt in 1...60 {
-            try? await Task.sleep(for: .seconds(1))
-            guard !Task.isCancelled else { return }
-
-            if await socketResponds() {
-                guard inventoryEpochIsCurrent(epoch) else { return }
-                runtimeFailure = nil
-                runtimeMessage = "Runtime ready."
-                applyState(socketResponds: true)
-                // This app launched this bridge, so its identity is known exactly. Recording it here
-                // is what stops the next launch from mistaking a current bridge for a foreign one.
-                recordBridgeIdentity()
-                hasCheckedBridgeIdentity = true
-                await refresh()
-                return
-            }
-
-            guard runtimeProcess?.isRunning == true else {
-                failRuntime("Runtime helper exited. Check \(runtimeLogPath ?? "the runtime log").")
-                return
-            }
-
-            runtimeMessage = "Waiting for Docker socket… (\(attempt)/60)"
-        }
-
-        failRuntime("Docker socket did not become ready within 60 seconds.")
-    }
-
-    private func runtimeLogURL() throws -> URL {
-        let directory = FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: "Library/Logs/ContainerStack")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let logURL = directory.appending(path: "runtime.log")
-        if !FileManager.default.fileExists(atPath: logURL.path) {
-            FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        }
-        return logURL
-    }
-
-    private func userFacingError(_ error: Error) -> String {
-        guard let socketError = error as? UnixSocketError else {
-            return String(describing: error)
-        }
-
-        switch socketError {
-        case .pathTooLong:
-            return "Docker socket path is too long: \(socketPath)"
-        case .timedOut:
-            return "Timed out connecting to Docker socket: \(socketPath)"
-        case .systemCallFailed(let code):
-            return
-                "Docker socket error \(code): \(Darwin.strerror(code).map { String(cString: $0) } ?? "unknown error")"
         }
     }
 }

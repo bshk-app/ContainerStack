@@ -118,15 +118,32 @@ extension RuntimeViewModel {
 
     func downStack(_ stack: ComposeStack, removeVolumes: Bool) async {
         let runner = stackRunner
-        await runStackAction(stack, verb: "Taking down", pastTense: "is down") {
-            try await runner.down(stack: stack, removeVolumes: removeVolumes)
+        await downStack(stack, removeVolumes: removeVolumes) {
+            try await runner.down(stack: $0, removeVolumes: $1)
+        }
+    }
+
+    func downStack(
+        _ stack: ComposeStack,
+        removeVolumes: Bool,
+        down: (ComposeStack, Bool) async throws -> String
+    ) async {
+        await runStackAction(
+            stack, verb: "Taking down", pastTense: "is down", recoversRuntime: true
+        ) {
+            try await down(stack, removeVolumes)
         }
     }
 
     func restartStack(_ stack: ComposeStack) async {
         let runner = stackRunner
-        await runStackAction(stack, verb: "Restarting", pastTense: "restarted") {
-            try await runner.restart(stack: stack)
+        await restartStack(stack) { try await runner.restart(stack: $0) }
+    }
+
+    func restartStack(_ stack: ComposeStack, restart: (ComposeStack) async throws -> String) async {
+        // `compose restart` stops every service first, so it loses the runtime the way down does.
+        await runStackAction(stack, verb: "Restarting", pastTense: "restarted", recoversRuntime: true) {
+            try await restart(stack)
         }
     }
 
@@ -147,16 +164,24 @@ extension RuntimeViewModel {
         _ stack: ComposeStack,
         verb: String,
         pastTense: String,
+        recoversRuntime: Bool = false,
         operation: () async throws -> String
     ) async {
         guard canMutate, busyStackID == nil else { return }
         busyStackID = stack.id
         stackMessage = "\(verb) \(stack.name)…"
         defer { busyStackID = nil }
+        let observed = lifecycle.generation
         do {
             let output = try await operation()
             stackMessage = output.isEmpty ? "\(stack.name) \(pastTense)." : output
             await refreshStackStatus(stack)
+        } catch let error
+            where recoversRuntime && lifecycle.generation == observed
+            && RuntimeConnectionRecovery.isStopRecoveryError(error)
+        {
+            runtimeRecoveryRequested = true
+            stackMessage = Self.checkingRuntimeMessage
         } catch {
             stackMessage = "\(stack.name) failed: \(error)"
         }

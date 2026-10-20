@@ -13,7 +13,7 @@ final class ForeignBridgeGateTests: XCTestCase {
             socketPath: "/tmp/containerstack-no-such-\(UUID().uuidString).sock",
             startsRuntime: false
         )
-        model.applyState(socketResponds: true, foreignBridge: "/tmp/foreign.sock")
+        model.applyState(socketResponds: true, foreignBridge: ForeignBridge(socketPath: "/tmp/foreign.sock"))
         return model
     }
 

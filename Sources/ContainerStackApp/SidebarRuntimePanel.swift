@@ -22,7 +22,7 @@ struct SidebarRuntimePanel: View {
                 Spacer(minLength: 0)
                 if model.runtimeState.isDegraded {
                     Button("Restart") {
-                        Task { await model.restartRuntime() }
+                        Task { await model.restartRuntime(replacingSibling: true) }
                     }
                     .controlSize(.mini)
                     .buttonStyle(.borderedProminent)
@@ -94,13 +94,14 @@ struct SidebarRuntimePanel: View {
                 Task { await model.refresh() }
             }
             Button("Restart Runtime") {
-                Task { await model.restartRuntime() }
+                Task { await model.restartRuntime(replacingSibling: true) }
             }
             .disabled(!model.canRestartRuntime)
             Button("Stop Runtime") {
-                Task { await model.stopRuntime() }
+                Task { await model.stopRuntime(replacingSibling: true) }
             }
-            .disabled(model.isRestarting)
+            // Enabled while a Start or Restart runs: the user's last instruction wins (#102).
+            .disabled(model.isStopping)
             Divider()
             Toggle("Use as Docker Context", isOn: dockerContextBinding)
             if model.conflictingDockerContext != nil

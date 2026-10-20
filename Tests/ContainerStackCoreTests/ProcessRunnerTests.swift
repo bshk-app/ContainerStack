@@ -137,32 +137,110 @@ struct ProcessRunnerTests {
         #expect(started.duration(to: .now) < .seconds(5))
     }
 
+    /// CI on a loaded runner: the drain started after the second it was given, the reader was
+    /// closed under it, and `echo hello` came back as status 0 with no output. The grace is for a
+    /// descendant holding stdout open; what the child itself wrote is collected however late the
+    /// drain starts, even with no grace at all.
+    @Test("a drain that starts after the child exited still collects everything the child wrote")
+    func lateDrainCollectsTheChildsOutput() throws {
+        let started = ContinuousClock.now
+
+        let result = try ProcessRunner.run(
+            executablePath: "/bin/sh",
+            arguments: ["-c", "sleep 30 & printf done"],
+            output: .capture(includingStandardError: true),
+            timeout: .seconds(5),
+            gracePeriod: .zero,
+            registry: BoundedChildren(),
+            startDrain: { drain, body in
+                // Held until `run` has seen the child go, so with no grace the bytes already in
+                // the pipe are all the drain has to go on.
+                Thread {
+                    while !drain.isChildGone { usleep(1_000) }
+                    body()
+                }.start()
+            }
+        )
+
+        #expect(result.output == "done")
+        #expect(started.duration(to: .now) < .seconds(5))
+    }
+
     /// The wedged children found in the field were all reparented to launchd:
     /// their spawner exited while its bounded wait was still in flight, and
     /// nothing killed them. A process about to exit has to take them with it.
     @Test("children under a deadline can be killed when their waiter gives up")
     func boundedChildrenAreTerminated() throws {
+        // Its own registry: closing the shared one would refuse every bounded run after this
+        // test, and the tests asserting a `.timedOut` would see `.terminatingBeforeWait`.
+        let registry = BoundedChildren()
         let finished = DispatchSemaphore(value: 0)
         DispatchQueue.global(qos: .userInitiated).async {
             _ = try? ProcessRunner.run(
                 executablePath: "/bin/sleep",
                 arguments: ["30"],
-                timeout: .seconds(30)
+                timeout: .seconds(30),
+                registry: registry
             )
             finished.signal()
         }
 
         var attempts = 0
-        while ProcessRunner.outstandingBoundedChildren == 0, attempts < 500 {
+        while registry.count == 0, attempts < 500 {
             usleep(10_000)
             attempts += 1
         }
-        #expect(ProcessRunner.outstandingBoundedChildren > 0)
+        #expect(registry.count > 0)
 
-        #expect(ProcessRunner.terminateBoundedChildren() > 0)
+        #expect(ProcessRunner.terminateBoundedChildren(in: registry) > 0)
 
         // A 30-second sleep that returns in seconds only does so because it was
         // killed; the child outliving the call is exactly the reported bug.
         #expect(finished.wait(timeout: .now() + 5) == .success)
+    }
+
+    /// Codex found the window on #102: a child started but not yet registered was missed by a
+    /// shutdown that drained an empty registry, and the helper exited before refusing it.
+    @Test("a shutdown that begins while a child is being started waits for it and kills it")
+    func shutdownDuringStartKillsTheChild() throws {
+        let registry = BoundedChildren()
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        child.arguments = ["30"]
+        defer { if child.isRunning { kill(child.processIdentifier, SIGKILL) } }
+        let spawned = DispatchSemaphore(value: 0)
+        let registering = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            _ = try? registry.start(child) {
+                try child.run()
+                spawned.signal()
+                registering.wait()
+            }
+        }
+        #expect(spawned.wait(timeout: .now() + 5) == .success)
+
+        nonisolated(unsafe) var killed = 0
+        let shutDown = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            killed = ProcessRunner.terminateBoundedChildren(in: registry)
+            shutDown.signal()
+        }
+
+        #expect(shutDown.wait(timeout: .now() + .milliseconds(200)) == .timedOut)
+        registering.signal()
+        #expect(shutDown.wait(timeout: .now() + 5) == .success)
+        #expect(killed == 1)
+    }
+
+    @Test("once shutdown has begun, a bounded child is refused without being started")
+    func childAfterShutdownIsNeverStarted() {
+        let registry = BoundedChildren()
+        ProcessRunner.terminateBoundedChildren(in: registry)
+        var ran = false
+
+        let started = registry.start(Process()) { ran = true }
+
+        #expect(!started)
+        #expect(!ran)
     }
 }

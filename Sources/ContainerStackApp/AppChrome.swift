@@ -93,10 +93,26 @@ extension DashboardDestination {
     }
 
     static let dockerItems: [DashboardDestination] = [
-        .containers, .stacks, .images, .volumes, .networks,
+        .containers, .stacks, .images, .volumes, .networks, .doctor,
     ]
 
     static let generalItems: [DashboardDestination] = [.overview]
+
+    /// Where the sidebar keeps the rows a user hid.
+    static let hiddenItemsKey = "sidebarHiddenItems"
+
+    // Comma-separated raw values keep the preference inspectable and need no Codable wrapper.
+    static func hiddenItems(from stored: String) -> Set<DashboardDestination> {
+        Set(stored.split(separator: ",").compactMap { DashboardDestination(rawValue: String($0)) })
+    }
+
+    static func storedValue(hiding hidden: Set<DashboardDestination>) -> String {
+        hidden.map(\.rawValue).sorted().joined(separator: ",")
+    }
+
+    static func visibleDockerItems(hiding hidden: Set<DashboardDestination>) -> [DashboardDestination] {
+        dockerItems.filter { !hidden.contains($0) }
+    }
 }
 
 struct DashboardSidebar: View {
@@ -104,17 +120,16 @@ struct DashboardSidebar: View {
     let model: RuntimeViewModel
     @Environment(\.appTheme) private var theme
     @State private var hovered: DashboardDestination?
-    // Comma-separated raw values keep the preference inspectable and need no Codable wrapper.
-    @AppStorage("sidebarHiddenItems") private var hiddenRaw = ""
+    @AppStorage(DashboardDestination.hiddenItemsKey) private var hiddenRaw = ""
 
     private var hidden: Set<DashboardDestination> {
-        Set(hiddenRaw.split(separator: ",").compactMap { DashboardDestination(rawValue: String($0)) })
+        DashboardDestination.hiddenItems(from: hiddenRaw)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionLabel("Docker")
-            ForEach(DashboardDestination.dockerItems.filter { !hidden.contains($0) }) { item in
+            ForEach(DashboardDestination.visibleDockerItems(hiding: hidden)) { item in
                 sidebarRow(item)
             }
             sectionLabel("General")
@@ -143,7 +158,7 @@ struct DashboardSidebar: View {
             set: { show in
                 var next = hidden
                 if show { next.remove(item) } else { next.insert(item) }
-                hiddenRaw = next.map(\.rawValue).sorted().joined(separator: ",")
+                hiddenRaw = DashboardDestination.storedValue(hiding: next)
                 if !show, selection == item { selection = .overview }
             }
         )
@@ -213,7 +228,8 @@ struct DashboardSidebar: View {
             "\(model.volumes.count)"
         case .networks:
             "\(model.networks.count)"
-        case .overview:
+        // F-013: the Doctor row stays unadorned in v1; a verdict badge is a non-goal.
+        case .overview, .doctor:
             ""
         }
     }

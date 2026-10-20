@@ -420,3 +420,21 @@ struct DockerFailureMessageTests {
         #expect(String(describing: DockerAPIError.httpStatus(500, message: remedy)) == remedy)
     }
 }
+
+@Suite("What a socket failure tells the person reading it")
+struct UnixSocketErrorDescriptionTests {
+    // Doctor renders `localizedDescription` and the app interpolates the error directly, so both
+    // paths have to agree: one conformance dropped would leak Foundation's bridge past the goldens.
+    @Test("every case reads the same through both description paths")
+    func bothDescriptionPathsAgree() {
+        let cases: [(UnixSocketError, String)] = [
+            (.pathTooLong, "The Docker socket path is too long to open a connection to."),
+            (.timedOut, "The connection to the Docker socket timed out."),
+            (.systemCallFailed(ECONNREFUSED), "The connection to the Docker socket failed with error 61."),
+        ]
+        for (error, expected) in cases {
+            #expect(error.localizedDescription == expected)
+            #expect(String(describing: error) == expected)
+        }
+    }
+}

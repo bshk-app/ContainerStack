@@ -4,21 +4,14 @@ import Foundation
 /// stops the bridge it shipped and never a socktainer the user runs from somewhere else.
 public enum ProcessTable {
     public static func pids(forExecutable executablePath: String, in listing: String) -> [Int32] {
-        listing
-            .split(whereSeparator: \.isNewline)
-            .compactMap { line -> Int32? in
-                let fields =
-                    line
-                    .trimmingCharacters(in: .whitespaces)
-                    .split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-                guard fields.count == 2, let pid = Int32(fields[0]) else { return nil }
+        entries(in: listing).compactMap { pid, command in
+            command == executablePath || command.hasPrefix(executablePath + " ") ? pid : nil
+        }
+    }
 
-                let command = fields[1].trimmingCharacters(in: .whitespaces)
-                guard command == executablePath || command.hasPrefix(executablePath + " ") else {
-                    return nil
-                }
-                return pid
-            }
+    /// The command line `ps` printed for `pid`, nil when the listing does not name it.
+    public static func command(of pid: Int32, in listing: String) -> String? {
+        entries(in: listing).first { $0.pid == pid }?.command
     }
 
     public static func legacyBundledSocktainerPIDs(
@@ -30,18 +23,22 @@ public enum ProcessTable {
         else { return [] }
 
         let legacyCommand = "\(executablePath) --no-check-compatibility --no-docker-context"
-        return
-            listing
+        return entries(in: listing).compactMap { pid, command in
+            command == legacyCommand ? pid : nil
+        }
+    }
+
+    /// `ps -o pid=,command=` rows, the pid right-aligned ahead of the command line.
+    private static func entries(in listing: String) -> [(pid: Int32, command: String)] {
+        listing
             .split(whereSeparator: \.isNewline)
-            .compactMap { line -> Int32? in
+            .compactMap { line in
                 let fields =
                     line
                     .trimmingCharacters(in: .whitespaces)
                     .split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
                 guard fields.count == 2, let pid = Int32(fields[0]) else { return nil }
-
-                let command = fields[1].trimmingCharacters(in: .whitespaces)
-                return command == legacyCommand ? pid : nil
+                return (pid, fields[1].trimmingCharacters(in: .whitespaces))
             }
     }
 }
@@ -113,7 +110,9 @@ public enum LegacySocktainerRetirement {
 }
 
 public enum RuntimeControlStep: Equatable, Sendable {
-    case stopBridge(executablePath: String)
+    /// With a socket, another ContainerStack copy's bridge holding it is stopped too (F-014, see
+    /// `BridgeOwnership.pidsToStop`). Nil leaves the holder alone: only a person asks for that.
+    case stopBridge(executablePath: String, socketPath: String?)
     /// Ask every running container to exit before the service under it is stopped.
     ///
     /// A case of its own rather than a `.run`, because it is the one step in the sequence that is
@@ -142,11 +141,14 @@ public enum RuntimeRestartPlan {
     /// container sees the same grace period whichever path stops it.
     public static let gracefulStopSeconds = 5
 
+    /// `replacingSibling` is true only for a restart a person asked for: the poll's recovery and the
+    /// stale-build check run this plan by themselves and must not stop another copy's bridge (F-014).
     public static func steps(
         configuration: RuntimeProcessConfiguration,
-        agentRegistered: Bool
+        agentRegistered: Bool,
+        replacingSibling: Bool = false
     ) -> [RuntimeControlStep] {
-        stopSteps(configuration: configuration) + [
+        stopSteps(configuration: configuration, replacingSibling: replacingSibling) + [
             // `container system stop` stops the services, and the running guests go down with them
             // without being asked to exit. Anything holding a filesystem open across that loses the
             // writes it had not flushed: recovering a wedged network this way once left postgres
@@ -162,7 +164,15 @@ public enum RuntimeRestartPlan {
         ]
     }
 
-    public static func stopSteps(configuration: RuntimeProcessConfiguration) -> [RuntimeControlStep] {
-        [.stopBridge(executablePath: configuration.socktainerPath)]
+    public static func stopSteps(
+        configuration: RuntimeProcessConfiguration,
+        replacingSibling: Bool = false
+    ) -> [RuntimeControlStep] {
+        [
+            .stopBridge(
+                executablePath: configuration.socktainerPath,
+                socketPath: replacingSibling ? configuration.socketPath : nil
+            )
+        ]
     }
 }

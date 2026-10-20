@@ -11,6 +11,7 @@ enum Lucide: String, Equatable, Sendable, CaseIterable {
     case circleMinus = "circle-minus"
     case circlePlay = "circle-play"
     case circleQuestion = "circle-question-mark"
+    case circleX = "circle-x"
     case container
     case database
     case download
@@ -29,6 +30,7 @@ enum Lucide: String, Equatable, Sendable, CaseIterable {
     case scrollText = "scroll-text"
     case sparkles
     case square
+    case stethoscope
     case trash = "trash-2"
     case triangleAlert = "triangle-alert"
     case close = "x"
@@ -129,6 +131,7 @@ extension DashboardDestination {
         case .volumes: .hardDrive
         case .networks: .network
         case .stacks: .layers
+        case .doctor: .stethoscope
         }
     }
 }

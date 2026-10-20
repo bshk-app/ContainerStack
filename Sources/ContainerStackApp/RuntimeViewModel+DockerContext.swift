@@ -8,30 +8,38 @@ final class DockerContextTakeoverPreference {
 
     private(set) var isEnabled: Bool
     @ObservationIgnored private(set) var isConfigured: Bool
-    @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let key: String
+    @ObservationIgnored private let save: (Bool) -> Void
 
-    init(
+    /// `stored` is nil until the choice was ever made; `save` persists each one.
+    init(stored: Bool?, save: @escaping (Bool) -> Void) {
+        isEnabled = stored ?? false
+        isConfigured = stored != nil
+        self.save = save
+    }
+
+    convenience init(
         defaults: UserDefaults = .standard,
         key: String = DockerContextTakeoverPreference.defaultKey
     ) {
-        self.defaults = defaults
-        self.key = key
-        let stored = defaults.object(forKey: key) as? Bool
-        isEnabled = stored ?? false
-        isConfigured = stored != nil
+        self.init(stored: defaults.object(forKey: key) as? Bool, save: { defaults.set($0, forKey: key) })
     }
 
     func setEnabled(_ isEnabled: Bool) {
         self.isEnabled = isEnabled
         isConfigured = true
-        defaults.set(isEnabled, forKey: key)
+        save(isEnabled)
     }
 
     func preserveActiveContextIfUnconfigured(_ activeContext: String?) {
         guard !isConfigured, activeContext == DockerContext.name else { return }
         setEnabled(true)
     }
+}
+
+struct DockerContextReading: Sendable {
+    let active: String?
+    let installed: Bool?
+    let defaultSocket: DockerSocketStatus
 }
 
 struct DockerContextPreferenceSequencer {
@@ -115,65 +123,100 @@ extension RuntimeViewModel {
         }
     }
 
-    func refreshDockerContext(includeInstalledContext: Bool = true) async {
+    /// False when a newer read began while this one ran: its result was dropped, and the cached
+    /// context is about to be replaced by that newer read.
+    @discardableResult
+    func refreshDockerContext(includeInstalledContext: Bool = true) async -> Bool {
         let generation = dockerContextRefreshSequencer.begin()
-        let state = await Task.detached {
-            let active = DockerCLI.activeContext()
-            let installed: Bool?
-            if includeInstalledContext {
-                installed = try? DockerCLI.installedContexts().contains(DockerContext.name)
-            } else {
-                installed = nil
-            }
-            let defaultSocket = DockerContext.socketStatus(atPath: "/var/run/docker.sock")
-            return (active: active, installed: installed, defaultSocket: defaultSocket)
-        }.value
-        guard dockerContextRefreshSequencer.isCurrent(generation) else { return }
+        let read = dockerContextStore.read
+        let state = await Task.detached { await read(includeInstalledContext) }.value
+        guard dockerContextRefreshSequencer.isCurrent(generation) else { return false }
         activeDockerContext = state.active
         dockerContextTakeoverPreference.preserveActiveContextIfUnconfigured(state.active)
         if let installed = state.installed {
             isDockerContextInstalled = installed
         }
         defaultDockerSocketStatus = state.defaultSocket
+        return true
+    }
+
+    nonisolated static func readDockerContextFromCLI(
+        includeInstalledContext: Bool
+    ) -> DockerContextReading {
+        let installed: Bool?
+        if includeInstalledContext {
+            installed = try? DockerCLI.installedContexts().contains(DockerContext.name)
+        } else {
+            installed = nil
+        }
+        return DockerContextReading(
+            active: DockerCLI.activeContext(),
+            installed: installed,
+            defaultSocket: DockerContext.socketStatus(atPath: "/var/run/docker.sock")
+        )
     }
 
     /// A missing context is first-run setup. An existing context that is no longer active is a
     /// conflict: silently reclaiming it would undo a choice the user made in another product.
     func adoptDockerContextIfEnabled() async {
-        await refreshDockerContext()
-        guard
-            DockerContext.shouldAdopt(
+        await adoptDockerContextIfEnabled(
+            adopt: { await self.applyDockerContextPreference(startingWith: $0) },
+            repair: { _ = await self.repairDockerContextRecord() }
+        )
+    }
+
+    /// Adoptions overlap now that the monitor outlives the window: a probe that sees the socket
+    /// return starts one, and so does opening the window. An adoption whose read was overtaken
+    /// decided on the cached context, which can predate the user's switch to another one. So one
+    /// runs at a time, one asked for meanwhile runs after it, and each decides only on a read
+    /// nothing overtook; an overtaken read is simply taken again.
+    func adoptDockerContextIfEnabled(adopt: (Bool) async -> Void, repair: () async -> Void) async {
+        guard !isAdoptingDockerContext else {
+            isDockerContextAdoptionPending = true
+            return
+        }
+        isAdoptingDockerContext = true
+        defer { isAdoptingDockerContext = false }
+
+        repeat {
+            isDockerContextAdoptionPending = false
+            while await !refreshDockerContext() {}
+            if DockerContext.shouldAdopt(
                 activeContext: activeDockerContext,
                 installed: isDockerContextInstalled,
                 takeoverEnabled: takesOverDockerContext
-            )
-        else {
-            await repairStaleContextRecordIfNeeded()
-            return
-        }
-        guard let initialState = dockerContextPreferenceSequencer.request(true) else { return }
-        await applyDockerContextPreference(startingWith: initialState)
+            ) {
+                if let initialState = dockerContextPreferenceSequencer.request(true) {
+                    await adopt(initialState)
+                }
+            } else {
+                await repair()
+            }
+        } while isDockerContextAdoptionPending
     }
 
     /// `shouldAdopt` deliberately never activates an installed-but-inactive context; this repairs
     /// its record anyway, without ever running `context use`.
-    private func repairStaleContextRecordIfNeeded() async {
-        guard takesOverDockerContext, isDockerContextInstalled == true,
+    func repairDockerContextRecord() async -> Bool {
+        let preference = dockerContextTakeoverPreference
+        let recordedSocketPath = dockerContextStore.recordedSocketPath
+        let repairRecord = dockerContextStore.repairRecord
+        guard preference.isEnabled, isDockerContextInstalled == true,
             activeDockerContext != DockerContext.name
-        else { return }
+        else { return false }
         let currentSocketPath = socketPath
         let recorded = await Task.detached {
-            try? DockerCLI.recordedSocketPath(for: DockerContext.name)
+            try? recordedSocketPath(DockerContext.name)
         }.value
         guard
             DockerContext.shouldRepairStaleRecord(
                 activeContext: activeDockerContext,
                 installed: isDockerContextInstalled,
-                takeoverEnabled: takesOverDockerContext,
+                takeoverEnabled: preference.isEnabled,
                 recordedSocketPath: recorded,
                 currentSocketPath: currentSocketPath
             )
-        else { return }
+        else { return false }
         // Shares install/uninstall's mutation slot so the two never write to the context store at
         // the same time; never touches dockerContextPreferenceSequencer itself.
         await acquireDockerContextMutationSlot()
@@ -181,14 +224,16 @@ extension RuntimeViewModel {
         // Re-checked after the slot is granted: an uninstall could have run first and cleared
         // ownership.
         guard activeDockerContext != DockerContext.name, isDockerContextInstalled == true,
-            takesOverDockerContext
-        else { return }
+            preference.isEnabled
+        else { return false }
         do {
-            try await Task.detached { try DockerCLI.repairRecord(socketPath: currentSocketPath) }.value
+            try await Task.detached { try repairRecord(currentSocketPath) }.value
             serviceMessage =
                 "Docker context '\(DockerContext.name)' pointed at a retired socket; repaired the record without switching to it."
+            return true
         } catch {
-            // Best-effort: retried on the next launch, not worth surfacing as an error.
+            // Best-effort for the poll: retried on the next launch, not surfaced as an error.
+            return false
         }
     }
 
@@ -235,8 +280,9 @@ extension RuntimeViewModel {
 
     private func installDockerContext() async {
         let socketPath = socketPath
+        let install = dockerContextStore.install
         do {
-            try await Task.detached { try DockerCLI.installContext(socketPath: socketPath) }.value
+            try await Task.detached { try install(socketPath) }.value
             await refreshDockerContext()
             if isDockerContextActive {
                 serviceMessage = "Docker context '\(DockerContext.name)' is active."
@@ -253,8 +299,9 @@ extension RuntimeViewModel {
     }
 
     private func uninstallDockerContext() async {
+        let uninstall = dockerContextStore.uninstall
         do {
-            let removed = try await Task.detached { try DockerCLI.uninstallContext() }.value
+            let removed = try await Task.detached { try uninstall() }.value
             serviceMessage =
                 removed
                 ? "Docker context '\(DockerContext.name)' removed."

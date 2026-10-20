@@ -67,7 +67,7 @@ struct CStackCLI {
     ) async throws -> Bool {
         switch invocation.command {
         case "doctor":
-            try await doctor(client)
+            await doctor(invocation, client: client)
         case "ping":
             print(try await client.health().pingOK ? "OK" : "FAILED")
         case "version":

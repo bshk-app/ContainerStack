@@ -61,20 +61,22 @@ extension RuntimeViewModel {
         }
     }
 
-    func refreshImages() async {
-        let epoch = inventoryEpoch
+    /// `epoch` is the refresh's when a refresh calls this; called on its own, the fetch takes its own.
+    func refreshImages(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         do {
             let fetched = try await client.listImages()
             guard inventoryEpochIsCurrent(epoch) else { return }
             images = fetched
             imagesErrorMessage = nil
         } catch {
+            guard inventoryEpochIsCurrent(epoch) else { return }
             imagesErrorMessage = "Images could not be listed: \(error)"
         }
     }
 
-    func refreshContainers() async {
-        let epoch = inventoryEpoch
+    func refreshContainers(epoch: Int? = nil) async {
+        let epoch = epoch ?? inventoryEpoch
         do {
             let fetched = try await client.listContainers(all: true)
             guard inventoryEpochIsCurrent(epoch) else { return }
@@ -91,6 +93,7 @@ extension RuntimeViewModel {
                 self.selectedContainerID = nil
             }
         } catch {
+            guard inventoryEpochIsCurrent(epoch) else { return }
             containersErrorMessage = "Containers could not be listed: \(error)"
         }
     }
@@ -104,20 +107,17 @@ enum RuntimeConnectionRecovery {
         recoveryRequested || error.map(isHTTPServerFailure) == true
     }
 
-    /// `isStarting` is deliberately unused: an absent API server must remain recoverable while
-    /// the runtime is coming up, which is the state that previously stayed stuck forever.
-    static func shouldAttemptRestart(
-        apiserverRunning: Bool?,
-        isStarting _: Bool,
-        isRestarting: Bool,
-        hasRuntimeFailure: Bool
-    ) -> Bool {
-        guard !isRestarting, !hasRuntimeFailure else { return false }
-        return apiserverRunning == false
+    /// Whether the probe should ask for a recovery restart. What runs meanwhile, and a Stop since
+    /// the probe began, are the lifecycle queue's to weigh (#102): it lets recovery displace a
+    /// running Start, since an absent API server must remain recoverable while the runtime is
+    /// coming up, which is the state that previously stayed stuck forever.
+    static func shouldAttemptRestart(apiserverRunning: Bool?, hasRuntimeFailure: Bool) -> Bool {
+        !hasRuntimeFailure && apiserverRunning == false
     }
 
     static func isStopRecoveryError(_ error: Error) -> Bool {
-        (error as? UnixSocketError) == .timedOut || isDeadXPC(error)
+        if case .timedOut = error as? ProcessRunnerError { return true }
+        return (error as? UnixSocketError) == .timedOut || isDeadXPC(error)
     }
 
     private static func isHTTPServerFailure(_ error: Error) -> Bool {
@@ -130,11 +130,20 @@ enum RuntimeConnectionRecovery {
     }
 
     private static func isDeadXPC(_ error: Error) -> Bool {
-        guard let apiError = error as? DockerAPIError,
+        if let apiError = error as? DockerAPIError,
             case .httpStatus(500, message: let message?) = apiError
-        else {
-            return false
+        {
+            return isDeadXPCMessage(message)
         }
+        if let runnerError = error as? ComposeRunner.RunnerError,
+            case .commandFailed(let output) = runnerError
+        {
+            return isDeadXPCMessage(output)
+        }
+        return false
+    }
+
+    private static func isDeadXPCMessage(_ message: String) -> Bool {
         let normalized = message.lowercased()
         return normalized.contains("xpc connection error")
             && (normalized.contains("connection interrupted")

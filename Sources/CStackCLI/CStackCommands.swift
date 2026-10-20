@@ -1,148 +1,18 @@
 import ContainerStackCore
 import Darwin
-import Foundation
 
 extension CStackCLI {
     // MARK: - Commands
 
-    static func doctor(_ client: DockerAPIClient) async throws {
-        // This leads, because it is the one state where every other check misleads. With the app root
-        // deleted the socket still answers `_ping` with 200 while `/info` fails — measured on a
-        // disposable runtime, `cstack doctor` printed "Failed to generate system information" and
-        // stopped, which names neither the cause nor the way out.
-        let systemStatus = CommandShell.output(
-            executablePath: RuntimeProcessConfiguration.make(
-                socktainerPath: "",
-                bundledInstallRoot: RuntimeProcessConfiguration.bundledInstallRoot(
-                    forExecutableAt: Bundle.main.executableURL
-                )
-            ).containerPath,
-            arguments: ["system", "status"]
+    static func doctor(_ invocation: CStackInvocation, client: DockerAPIClient) async {
+        let configuration = runtimeConfiguration(socketPath: invocation.socketPath)
+        let runner = DiagnosticRunner(
+            client: client,
+            probe: ShellSystemProbe(containerPath: configuration.containerPath),
+            socketPath: configuration.socketPath,
+            bridgePath: configuration.socktainerPath
         )
-        if let missing = RuntimeStatusParser.missingAppRoot(systemStatus) {
-            let responds = (try? await client.ping()) ?? false
-            print("Docker socket: \(responds ? "healthy" : "not responding")")
-            print("Runtime storage: MISSING — storing into \(missing), which no longer exists.")
-            print("Images, volumes and containers kept there cannot be found.")
-            print("The restart moves it back to the default location. Run: cstack runtime restart")
-            return
-        }
-
-        let health = try await client.health()
-        print("Docker socket: healthy")
-        print("API version: \(health.version.apiVersion ?? "unknown")")
-        print("Engine: \(health.version.version ?? "unknown")")
-        print("Containers: \(health.info.containers.map(String.init) ?? "unknown")")
-        print("Images: \(health.info.images.map(String.init) ?? "unknown")")
-        if let root = RuntimeStatusParser.appRoot(systemStatus) {
-            print("Runtime storage: \(root)")
-        }
-
-        // A healthy API says nothing about reachability: without a host route to the container
-        // subnet every published port fails while every API call still succeeds.
-        let containers = try await client.listContainers(all: false)
-        guard containers.contains(where: \.isRunning) else {
-            print("Container routes: no running containers to check")
-            return
-        }
-
-        // Only networks a running container publishes on can break a published port. Judging every
-        // network condemned the runtime for an idle `default` nobody was using (#36).
-        let networks = try await client.listNetworks()
-        let publishing = NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks)
-        // Silence has two causes and they call for opposite reactions, so they are never merged (#45).
-        let uncheckable = NetworkRouteHealth.uncheckablePublishingNetworks(containers: containers, networks: networks)
-        if publishing.isEmpty, uncheckable.isEmpty {
-            print("Container routes: no running container publishes ports")
-        } else if !publishing.isEmpty {
-            let routes = CommandShell.output(
-                executablePath: "/usr/sbin/netstat",
-                arguments: ["-rn", "-f", "inet"]
-            )
-            if !NetworkRouteHealth.canJudgeRoutes(routes) {
-                print("Container routes: could not read the routing table")
-            } else {
-                let unroutable = NetworkRouteHealth.unroutableNetworks(publishing, routes: routes)
-                if unroutable.isEmpty {
-                    print("Container routes: reachable (\(publishing.map(\.label).joined(separator: ", ")))")
-                } else {
-                    print("Container routes: NO ROUTE to \(unroutable.map(\.label).joined(separator: ", "))")
-                    // The ports do not refuse — they accept and then nothing answers, which is why this
-                    // gets mistaken for an application bug. The container restart that looks like the
-                    // cheaper repair was measured failing on every network this bridge creates; the runtime
-                    // restart recovered the same case in 17s and kept the container addresses.
-                    print("Published ports accept connections and then hang.")
-                    print("Restarting the containers does not fix it. Run: cstack runtime restart")
-                }
-            }
-        }
-
-        if !uncheckable.isEmpty {
-            print("Container routes: cannot check \(uncheckable.joined(separator: ", ")) — no subnet reported")
-        }
-
-        await reportMemoryCommitment(client, running: containers.filter(\.isRunning))
-    }
-
-    /// Every container here runs in its own micro-VM. The inspect value is the
-    /// configured limit, not current RSS, but host use can grow toward it as the
-    /// guest fills caches. Report that capacity without pretending it is already
-    /// resident.
-    private static func reportMemoryCommitment(
-        _ client: DockerAPIClient,
-        running: [DockerContainerSummary]
-    ) async {
-        var limits: [Int64?] = []
-        var inspectFailures = 0
-        for container in running {
-            do {
-                limits.append(try await client.inspectContainer(id: container.id).memoryLimitBytes)
-            } catch {
-                inspectFailures += 1
-            }
-        }
-
-        guard !limits.isEmpty else {
-            print(
-                "Container memory limits: unavailable — \(inspectFailures) running container(s) could not be inspected."
-            )
-            return
-        }
-
-        let hostBytes = HostMemory.totalBytes() ?? 0
-        let commitment = MemoryCommitment.measure(limits: limits, hostBytes: hostBytes)
-
-        if hostBytes > 0 {
-            let summary =
-                "\(ByteSize.formatted(commitment.configuredBytes)) in explicit container limits vs \(ByteSize.formatted(hostBytes)) host memory"
-            switch commitment.verdict {
-            case .within:
-                print("Container memory limits: \(summary)")
-            case .approaching:
-                print(
-                    "Container memory limits: \(summary) — guests approaching their limits may pressure other applications"
-                )
-            case .exceeding:
-                print("Container memory limits: HIGH — \(summary)")
-                print("Guests do not reserve every byte immediately, but host use can grow toward these limits.")
-                print("Stop a container or recreate it with a smaller --memory.")
-            }
-        } else {
-            print(
-                "Container memory limits: \(ByteSize.formatted(commitment.configuredBytes)) configured (host memory unknown)"
-            )
-        }
-
-        if commitment.containersWithoutLimit > 0 {
-            print(
-                "\(commitment.containersWithoutLimit) running container(s) have no explicit memory limit and are excluded from that total."
-            )
-        }
-        if inspectFailures > 0 {
-            print(
-                "\(inspectFailures) running container(s) could not be inspected, so the total is incomplete."
-            )
-        }
+        print(DoctorTextRenderer.render(await runner.run(checks: CheckID.cliSet)))
     }
 
     static func listContainers(_ client: DockerAPIClient, all: Bool) async throws {

@@ -21,6 +21,23 @@ public enum DockerHTTPParseError: Error, Equatable, Sendable {
     case invalidChunkedBody
 }
 
+/// Thrown inside the one shared `request`, so doctor can render it on four check lines: without
+/// `LocalizedError` a human reads Foundation's bridge, which names the module and a case index.
+extension DockerHTTPParseError: LocalizedError, CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .missingHeaderTerminator: return "The Docker API sent a response whose headers never ended."
+        case .invalidHeaderEncoding: return "The Docker API sent response headers that are not valid UTF-8."
+        case .invalidStatusLine: return "The Docker API sent a response with no status line."
+        case .invalidStatusCode: return "The Docker API sent a response whose status code is not a number."
+        case .invalidHeader: return "The Docker API sent a response header that is not a name and a value."
+        case .invalidChunkedBody: return "The Docker API sent a chunked response body that could not be decoded."
+        }
+    }
+
+    public var errorDescription: String? { description }
+}
+
 public enum DockerHTTPResponseParser {
     public static func parse(_ data: Data) throws -> DockerHTTPResponse {
         let delimiter = Data("\r\n\r\n".utf8)

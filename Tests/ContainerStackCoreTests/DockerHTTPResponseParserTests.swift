@@ -62,3 +62,24 @@ extension DockerHTTPResponseParserTests {
         }
     }
 }
+
+@Suite("What a malformed Docker response tells the person reading it")
+struct DockerHTTPParseErrorDescriptionTests {
+    // Doctor renders `localizedDescription` on four check lines and other sites interpolate the error,
+    // so both paths are pinned: one conformance dropped would leak Foundation's bridge past a golden.
+    @Test("every case reads the same through both description paths")
+    func bothDescriptionPathsAgree() {
+        let cases: [(DockerHTTPParseError, String)] = [
+            (.missingHeaderTerminator, "The Docker API sent a response whose headers never ended."),
+            (.invalidHeaderEncoding, "The Docker API sent response headers that are not valid UTF-8."),
+            (.invalidStatusLine, "The Docker API sent a response with no status line."),
+            (.invalidStatusCode, "The Docker API sent a response whose status code is not a number."),
+            (.invalidHeader, "The Docker API sent a response header that is not a name and a value."),
+            (.invalidChunkedBody, "The Docker API sent a chunked response body that could not be decoded."),
+        ]
+        for (error, expected) in cases {
+            #expect(error.localizedDescription == expected)
+            #expect(String(describing: error) == expected)
+        }
+    }
+}

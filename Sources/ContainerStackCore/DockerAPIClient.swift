@@ -682,9 +682,3 @@ public struct UnixSocketTransport: DockerAPITransport, Sendable {
         return .timedOut
     }
 }
-
-public enum UnixSocketError: Error, Equatable, Sendable {
-    case pathTooLong
-    case timedOut
-    case systemCallFailed(Int32)
-}

@@ -53,13 +53,20 @@ let package = Package(
             name: "ContainerStackRuntime",
             dependencies: ["ContainerStackCore"]
         ),
+        // Fakes both test targets share: SwiftPM lets no test target import another.
+        // No product lists it, so it never ships; only the test targets build it.
+        .target(
+            name: "DiagnosticTestSupport",
+            dependencies: ["ContainerStackCore"],
+            path: "Tests/DiagnosticTestSupport"
+        ),
         .testTarget(
             name: "ContainerStackCoreTests",
-            dependencies: ["ContainerStackCore"]
+            dependencies: ["ContainerStackCore", "DiagnosticTestSupport"]
         ),
         .testTarget(
             name: "ContainerStackAppTests",
-            dependencies: ["ContainerStackApp"],
+            dependencies: ["ContainerStackApp", "DiagnosticTestSupport"],
             path: "Tests/ContainerStackAppTests"
         ),
     ]

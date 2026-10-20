@@ -37,10 +37,12 @@ jobs:
           ref: ${{ inputs.tag }}
           fetch-depth: 0
 
+      # See release.yml's identical step for why this is owner/repo/path@main
+      # and not a local ./ reference: this job checks out a historical tag,
+      # which may predate this action's existence in that tag's tree. Same
+      # $/path follow-up note applies once actionlint@v1.7.12 supports it.
       - name: Install zamokctl and the Sparkle tools
-        run: |
-          brew install bshk-app/tap/zamokctl
-          brew install --cask sparkle
+        uses: bshk-app/ContainerStack/.github/actions/install-sparkle-tools@main
 
       - name: Repair the feed and cask from the immutable assets
         run: ./scripts/repair-release-distribution.sh "${{ inputs.tag }}" "$RELEASE_CHANNEL"

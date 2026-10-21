@@ -17,6 +17,10 @@ struct CStackCLI {
     }
 
     private static func run(_ invocation: CStackInvocation, client: DockerAPIClient) async throws {
+        if invocation.wantsHelp {
+            printUsage()
+            return
+        }
         if invocation.command == "compose" {
             runCompose(invocation)
         }
@@ -80,8 +84,6 @@ struct CStackCLI {
             try context(invocation)
         case "runtime":
             try runtimeControl(invocation)
-        case "help":
-            printUsage()
         default:
             return false
         }

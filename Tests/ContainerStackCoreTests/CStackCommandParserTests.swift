@@ -4,6 +4,38 @@ import Testing
 @testable import ContainerStackCore
 
 struct CStackCommandParserTests {
+    @Test(
+        "a help flag asks for help instead of running the command",
+        arguments: [
+            ["--help"],
+            ["-h"],
+            ["help"],
+            ["runtime", "--help"],
+            ["runtime", "-h"],
+            ["runtime", "restart", "--help"],
+            ["prune", "--help"],
+        ]
+    )
+    func helpFlagAsksForHelp(arguments: [String]) {
+        #expect(CStackInvocation(arguments: arguments).wantsHelp)
+    }
+
+    @Test(
+        "a command without a help flag runs",
+        arguments: [[], ["runtime"], ["runtime", "restart"], ["ps", "--all"], ["doctor"]]
+    )
+    func commandWithoutHelpFlagRuns(arguments: [String]) {
+        #expect(!CStackInvocation(arguments: arguments).wantsHelp)
+    }
+
+    @Test
+    func composePassesItsHelpFlagToDockerCompose() {
+        let invocation = CStackInvocation(arguments: ["compose", "--help"])
+
+        #expect(!invocation.wantsHelp)
+        #expect(invocation.passthrough == ["--help"])
+    }
+
     @Test
     func defaultsToDoctorWithoutArguments() {
         let invocation = CStackInvocation(arguments: [])

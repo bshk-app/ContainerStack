@@ -74,6 +74,11 @@ public struct CStackInvocation: Equatable, Sendable {
         flags.contains(flag)
     }
 
+    /// `compose` hands its `--help` to docker compose. Every other command prints usage and does nothing.
+    public var wantsHelp: Bool {
+        command == "help" || (isSet("help") && command != "compose")
+    }
+
     public func value(_ option: String) -> String? {
         options[option]
     }

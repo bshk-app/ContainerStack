@@ -74,6 +74,10 @@ public struct CStackInvocation: Equatable, Sendable {
         flags.contains(flag)
     }
 
+    public var wantsHelp: Bool {
+        command == "help" || (isSet("help") && command != "compose")
+    }
+
     public func value(_ option: String) -> String? {
         options[option]
     }

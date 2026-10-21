@@ -6,6 +6,10 @@ import Foundation
 struct CStackCLI {
     static func main() async {
         let invocation = CStackInvocation(arguments: Array(CommandLine.arguments.dropFirst()))
+        if invocation.wantsHelp {
+            printUsage()
+            return
+        }
         let client = DockerAPIClient(socketPath: invocation.socketPath ?? RuntimeProcessConfiguration.defaultSocketPath)
 
         do {
@@ -80,8 +84,6 @@ struct CStackCLI {
             try context(invocation)
         case "runtime":
             try runtimeControl(invocation)
-        case "help":
-            printUsage()
         default:
             return false
         }

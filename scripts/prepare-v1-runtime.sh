@@ -43,7 +43,7 @@ resolve_data_root() {
     local reported
     # Everything after the field name: the path contains a space ("Application Support"), so $2
     # alone truncates it to /Users/<you>/Library/Application.
-    reported="$(container system status 2>/dev/null | awk '$1 == "appRoot" { $1 = ""; sub(/^[ \t]+/, ""); print }')"
+    reported="$(container system status 2>/dev/null | awk '$1 == "appRoot" || $1 == "paths.appRoot" { $1 = ""; sub(/^[ \t]+/, ""); print }')"
     reported="${reported%/}"
     if [[ -n "$reported" ]]; then
         printf '%s\n' "$reported"

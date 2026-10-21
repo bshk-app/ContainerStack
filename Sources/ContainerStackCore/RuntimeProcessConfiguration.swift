@@ -193,7 +193,7 @@ public enum RuntimeStatusParser {
             }
     }
 
-    /// The `appRoot` row of `container system status`, without its trailing slash.
+    /// The `paths.appRoot` row (`appRoot` before 1.4.1) of `container system status`, without its trailing slash.
     ///
     /// Everything after the field name is the value. Splitting the row on whitespace truncates
     /// `Library/Application Support` at the space — a restore script did exactly that and pointed a
@@ -201,12 +201,12 @@ public enum RuntimeStatusParser {
     public static func appRoot(_ output: String) -> String? {
         for line in output.split(whereSeparator: \.isNewline) {
             let row = line.trimmingCharacters(in: .whitespaces)
-            guard row.hasPrefix("appRoot"),
-                let separator = row.dropFirst("appRoot".count).first,
+            guard let field = ["paths.appRoot", "appRoot"].first(where: { row.hasPrefix($0) }),
+                let separator = row.dropFirst(field.count).first,
                 separator.isWhitespace
             else { continue }
 
-            let value = row.dropFirst("appRoot".count).trimmingCharacters(in: .whitespaces)
+            let value = row.dropFirst(field.count).trimmingCharacters(in: .whitespaces)
             guard !value.isEmpty else { return nil }
             return value.count > 1 && value.hasSuffix("/") ? String(value.dropLast()) : value
         }

@@ -13,7 +13,7 @@ readonly SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 # Homebrew channel pins the version through a keg-only `container@1.6.0`
 # formula, which costs ~30 MB instead of ~500 MB. Turn it on for a standalone
 # .app handed out outside Homebrew, where nothing else can guarantee the
-# version. See docs/vendoring-apple-container.md.
+# version. See docs/apple-container-distribution.md.
 readonly VENDOR_CONTAINER_RUNTIME="${VENDOR_CONTAINER_RUNTIME:-0}"
 readonly CONTAINER_RUNTIME_ROOT="${CONTAINER_RUNTIME_ROOT:-}"
 

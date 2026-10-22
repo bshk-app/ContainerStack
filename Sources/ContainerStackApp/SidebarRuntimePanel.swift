@@ -40,7 +40,6 @@ struct SidebarRuntimePanel: View {
             .padding(.horizontal, 10)
             .frame(height: 36)
         }
-        .background(theme.sidebarBackground)
     }
 
     private var footerLabel: String {

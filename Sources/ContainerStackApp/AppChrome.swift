@@ -107,8 +107,6 @@ extension DashboardDestination {
 struct DashboardSidebar: View {
     @Binding var selection: DashboardDestination
     let model: RuntimeViewModel
-    @Environment(\.appTheme) private var theme
-    @State private var hovered: DashboardDestination?
     @AppStorage(DashboardDestination.hiddenItemsKey) private var hiddenRaw = ""
 
     private var hidden: Set<DashboardDestination> {
@@ -116,22 +114,19 @@ struct DashboardSidebar: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionLabel("Docker")
-            ForEach(DashboardDestination.visibleDockerItems(hiding: hidden)) { item in
-                sidebarRow(item)
+        List(selection: listSelection) {
+            Section("Docker") {
+                ForEach(DashboardDestination.visibleDockerItems(hiding: hidden)) { item in
+                    row(item)
+                }
             }
-            sectionLabel("General")
-                .padding(.top, 8)
-            ForEach(DashboardDestination.generalItems) { item in
-                sidebarRow(item)
+            Section("General") {
+                ForEach(DashboardDestination.generalItems) { item in
+                    row(item)
+                }
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(theme.sidebarBackground)
+        .listStyle(.sidebar)
         .contextMenu {
             Section("Show in Sidebar") {
                 ForEach(DashboardDestination.dockerItems) { item in
@@ -153,56 +148,24 @@ struct DashboardSidebar: View {
         )
     }
 
-    private func sectionLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(theme.textTertiary)
-            .padding(.horizontal, 8)
-            .padding(.top, 7)
-            .padding(.bottom, 5)
+    /// `List` sets its selection to nil on a click below the rows; the dashboard always shows a section.
+    private var listSelection: Binding<DashboardDestination?> {
+        Binding(
+            get: { selection },
+            set: { if let item = $0 { selection = item } }
+        )
     }
 
-    private func sidebarRow(_ item: DashboardDestination) -> some View {
-        let isSelected = selection == item
+    private func row(_ item: DashboardDestination) -> some View {
         let badge = badge(for: item)
-        return Button {
-            selection = item
-        } label: {
-            HStack(spacing: 8) {
-                LucideIcon(item.lucide)
-                    .frame(width: 14, height: 14)
-                Text(item.title)
-                    .font(.system(size: 13))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if !badge.isEmpty {
-                    Text(badge)
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
-                        .foregroundStyle(
-                            isSelected ? Color.white.opacity(0.78) : theme.textTertiary
-                        )
-                }
-            }
-            .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
-            .padding(.horizontal, 8)
-            .frame(height: 28)
-            .background(
-                rowBackground(item, isSelected: isSelected),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .contentShape(Rectangle())
+        return Label {
+            Text(item.title)
+        } icon: {
+            LucideIcon(item.lucide)
+                .frame(width: 15, height: 15)
         }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            hovered = hovering ? item : (hovered == item ? nil : hovered)
-        }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private func rowBackground(_ item: DashboardDestination, isSelected: Bool) -> Color {
-        if isSelected { return theme.selection }
-        if hovered == item { return theme.rowHover }
-        return .clear
+        .badge(badge.isEmpty ? nil : Text(badge).monospacedDigit())
+        .tag(item)
     }
 
     private func badge(for item: DashboardDestination) -> String {

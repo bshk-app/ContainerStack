@@ -114,14 +114,13 @@ struct ResourceCreateBar: View {
     let icon: Lucide
     let isBusy: Bool
     let isEnabled: Bool
-    var focused: FocusState<Bool>.Binding?
     let action: (String) -> Void
 
     @State private var text = ""
 
     var body: some View {
         HStack(spacing: 10) {
-            createField
+            TextField(placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
                 .font(.callout.monospaced())
                 .onSubmit(submit)
@@ -151,15 +150,5 @@ struct ResourceCreateBar: View {
         guard !value.isEmpty else { return }
         action(value)
         text = ""
-    }
-
-    @ViewBuilder
-    private var createField: some View {
-        let field = TextField(placeholder, text: $text)
-        if let focused {
-            field.focused(focused)
-        } else {
-            field
-        }
     }
 }

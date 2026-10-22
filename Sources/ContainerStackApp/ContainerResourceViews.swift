@@ -49,22 +49,25 @@ struct SystemSettingsView: View {
 }
 
 struct RunContainerSheet: View {
-    let image: String
+    /// The images to choose from. With one image the caller already chose it, so no picker shows.
+    let images: [String]
     let settings: ContainerResourceSettings
-    let onRun: (ContainerResourceLimits) -> Void
+    let onRun: (String, ContainerResourceLimits) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var image: String
     @State private var cpus: Int
     @State private var memoryGiB: Int
 
     init(
-        image: String,
+        images: [String],
         settings: ContainerResourceSettings,
-        onRun: @escaping (ContainerResourceLimits) -> Void
+        onRun: @escaping (String, ContainerResourceLimits) -> Void
     ) {
-        self.image = image
+        self.images = images
         self.settings = settings
         self.onRun = onRun
+        _image = State(initialValue: images.first ?? "")
         _cpus = State(initialValue: settings.cpus)
         _memoryGiB = State(initialValue: settings.memoryGiB)
     }
@@ -74,13 +77,24 @@ struct RunContainerSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Run Container")
                     .font(.title2.weight(.semibold))
-                Text(image)
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if images.count == 1 {
+                    Text(image)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
 
             Form {
+                if images.count > 1 {
+                    Section {
+                        Picker("Image", selection: $image) {
+                            ForEach(images, id: \.self) { name in
+                                Text(name).tag(name)
+                            }
+                        }
+                    }
+                }
                 Section("Resources") {
                     ResourceLimitFields(
                         cpus: $cpus,
@@ -97,13 +111,18 @@ struct RunContainerSheet: View {
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Run") {
-                    onRun(ContainerResourceSettings.limits(cpus: cpus, memoryGiB: memoryGiB))
+                    onRun(image, ContainerResourceSettings.limits(cpus: cpus, memoryGiB: memoryGiB))
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(!Self.canRun(image, from: images))
             }
         }
         .padding(24)
-        .frame(width: 460, height: 340)
+        .frame(width: 460, height: images.count > 1 ? 400 : 340)
+    }
+
+    nonisolated static func canRun(_ image: String, from images: [String]) -> Bool {
+        images.contains(image)
     }
 }

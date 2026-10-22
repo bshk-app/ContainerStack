@@ -2,7 +2,7 @@ import ContainerStackCore
 import SwiftUI
 
 extension DockerImageSummary {
-    fileprivate var displayName: String {
+    var displayName: String {
         repositoryTags?.first ?? ResourceIdentifier.short(id)
     }
 
@@ -29,9 +29,6 @@ struct ImagesView: View {
     let model: RuntimeViewModel
     let resourceSettings: ContainerResourceSettings
     var searchText: String = ""
-    var focusPull: Bool = false
-    var onFocusConsumed: () -> Void = {}
-    @FocusState private var pullFocused: Bool
     @State private var selectedImageID: String?
     @State private var runImage: RunImage?
     @Environment(\.appTheme) private var theme
@@ -43,8 +40,7 @@ struct ImagesView: View {
                 actionTitle: "Pull",
                 icon: .download,
                 isBusy: model.busyResource != nil,
-                isEnabled: model.canMutate,
-                focused: $pullFocused
+                isEnabled: model.canMutate
             ) { reference in
                 Task { await model.pull(reference: reference) }
             }
@@ -105,19 +101,9 @@ struct ImagesView: View {
         }
         .background(theme.windowBackground)
         .sheet(item: $runImage) { request in
-            RunContainerSheet(image: request.image, settings: resourceSettings) { limits in
-                Task { await model.run(image: request.image, resourceLimits: limits) }
+            RunContainerSheet(images: [request.image], settings: resourceSettings) { image, limits in
+                Task { await model.run(image: image, resourceLimits: limits) }
             }
-        }
-        .onChange(of: focusPull) { _, want in
-            guard want else { return }
-            pullFocused = true
-            onFocusConsumed()
-        }
-        .onAppear {
-            guard focusPull else { return }
-            pullFocused = true
-            onFocusConsumed()
         }
     }
 

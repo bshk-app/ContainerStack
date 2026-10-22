@@ -44,7 +44,7 @@ struct DashboardView: View {
     let resourceSettings: ContainerResourceSettings
     @State private var navigation = DashboardNavigation()
     @State private var isConfirmingPrune = false
-    @State private var focusImagePull = false
+    @State private var isChoosingImageToRun = false
     /// Outlives the section's view, so a run in flight when the section is left is still the one
     /// a return visit joins (F-007), and the 30s window holds across visits (F-011).
     @State private var doctor: DoctorViewModel
@@ -75,9 +75,7 @@ struct DashboardView: View {
                         ImagesView(
                             model: model,
                             resourceSettings: resourceSettings,
-                            searchText: navigation.searchText,
-                            focusPull: focusImagePull,
-                            onFocusConsumed: { focusImagePull = false }
+                            searchText: navigation.searchText
                         )
                     case .volumes:
                         VolumesView(model: model, searchText: navigation.searchText)
@@ -95,11 +93,16 @@ struct DashboardView: View {
                 .searchable(text: $navigation.searchText, placement: .toolbar, prompt: "Search")
                 .toolbar {
                     ToolbarItem {
-                        Button("Run image") {
-                            navigation.selection = .images
-                            focusImagePull = true
-                        }
-                        .disabled(!model.canMutate)
+                        Button("Run\u{2026}") { isChoosingImageToRun = true }
+                            .help(
+                                model.images.isEmpty
+                                    ? "Pull an image in Images first"
+                                    : "Run a container from a local image"
+                            )
+                            .disabled(
+                                !model.canMutate || model.busyResource != nil || model.isRunningContainer
+                                    || model.images.isEmpty
+                            )
                     }
                     ToolbarItem {
                         Menu {
@@ -112,6 +115,14 @@ struct DashboardView: View {
                         } label: {
                             LucideLabel(title: "More", icon: .ellipsis)
                         }
+                    }
+                }
+                .sheet(isPresented: $isChoosingImageToRun) {
+                    RunContainerSheet(
+                        images: model.images.map(\.displayName),
+                        settings: resourceSettings
+                    ) { image, limits in
+                        Task { await model.run(image: image, resourceLimits: limits) }
                     }
                 }
             }

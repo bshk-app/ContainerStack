@@ -150,7 +150,7 @@ struct SidebarRuntimePanel: View {
         switch model.runtimeState {
         case .starting:
             ProgressView()
-                .controlSize(.small)
+                .controlSize(.mini)
                 .frame(width: 10, height: 10)
         case .running:
             Circle().fill(.green).frame(width: 8, height: 8)

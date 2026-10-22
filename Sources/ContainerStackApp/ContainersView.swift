@@ -104,22 +104,25 @@ private struct ContainerGroupHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Button(action: toggle) {
-                LucideIcon(isCollapsed ? .chevronRight : .chevronDown)
-                    .frame(width: 8, height: 8)
-                    .foregroundStyle(theme.textTertiary)
-                    .frame(width: 15, height: 15)
+                HStack(spacing: 6) {
+                    LucideIcon(isCollapsed ? .chevronRight : .chevronDown)
+                        .frame(width: 8, height: 8)
+                        .foregroundStyle(theme.textTertiary)
+                        .frame(width: 15, height: 15)
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.textPrimary)
+                    Text("\(runningCount)/\(group.containers.count) running")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.textSecondary)
+                    Spacer(minLength: 8)
+                }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(isCollapsed ? "Expand group" : "Collapse group")
             .accessibilityLabel(isCollapsed ? "Expand group \(title)" : "Collapse group \(title)")
-
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(theme.textPrimary)
-            Text("\(runningCount)/\(group.containers.count) running")
-                .font(.system(size: 11))
-                .foregroundStyle(theme.textSecondary)
-            Spacer(minLength: 8)
+            .accessibilityValue("\(runningCount) of \(group.containers.count) running")
             if group.project != nil {
                 Button {
                     Task {

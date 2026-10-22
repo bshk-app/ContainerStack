@@ -81,13 +81,6 @@ extension Color {
 }
 
 extension DashboardDestination {
-    var sidebarTitle: String {
-        switch self {
-        case .overview: "Activity Monitor"
-        default: title
-        }
-    }
-
     static let dockerItems: [DashboardDestination] = [
         .containers, .stacks, .images, .volumes, .networks, .doctor,
     ]
@@ -142,7 +135,7 @@ struct DashboardSidebar: View {
         .contextMenu {
             Section("Show in Sidebar") {
                 ForEach(DashboardDestination.dockerItems) { item in
-                    Toggle(item.sidebarTitle, isOn: visibility(of: item))
+                    Toggle(item.title, isOn: visibility(of: item))
                 }
             }
         }
@@ -178,7 +171,7 @@ struct DashboardSidebar: View {
             HStack(spacing: 8) {
                 LucideIcon(item.lucide)
                     .frame(width: 14, height: 14)
-                Text(item.sidebarTitle)
+                Text(item.title)
                     .font(.system(size: 13))
                     .lineLimit(1)
                 Spacer(minLength: 4)

@@ -34,19 +34,13 @@ struct VolumesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ResourceSplitPane {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredVolumes) { volume in
-                                VolumeRow(
-                                    volume: volume,
-                                    model: model,
-                                    isSelected: selectedVolumeName == volume.name
-                                ) {
-                                    selectedVolumeName = volume.name
-                                }
-                            }
+                    List(selection: $selectedVolumeName) {
+                        ForEach(filteredVolumes) { volume in
+                            VolumeRow(volume: volume, model: model)
+                                .tag(volume.name)
                         }
                     }
+                    .listStyle(.inset)
                 } inspector: {
                     VolumeInspector(volume: selectedVolume, model: model)
                 }
@@ -123,19 +117,13 @@ struct NetworksView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ResourceSplitPane {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredNetworks) { network in
-                                NetworkRow(
-                                    network: network,
-                                    model: model,
-                                    isSelected: selectedNetworkID == network.id
-                                ) {
-                                    selectedNetworkID = network.id
-                                }
-                            }
+                    List(selection: $selectedNetworkID) {
+                        ForEach(filteredNetworks) { network in
+                            NetworkRow(network: network, model: model)
+                                .tag(network.id)
                         }
                     }
+                    .listStyle(.inset)
                 } inspector: {
                     NetworkInspector(network: selectedNetwork, model: model)
                 }
@@ -161,31 +149,22 @@ struct NetworksView: View {
 private struct VolumeRow: View {
     let volume: DockerVolumeSummary
     let model: RuntimeViewModel
-    let isSelected: Bool
-    let onSelect: () -> Void
-    @Environment(\.appTheme) private var theme
     @State private var isConfirmingDelete = false
 
     var body: some View {
-        SelectableResourceRow(
-            isSelected: isSelected,
-            accessibilityLabel: volume.name,
-            action: onSelect
-        ) {
+        ResourceRow {
             HStack(spacing: 9) {
                 ResourceAvatar(
                     text: ResourceAvatar.initials(from: volume.name),
-                    tint: Color(uiHex: 0x14B8A6),
-                    isSelected: isSelected
+                    tint: Color(uiHex: 0x14B8A6)
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(volume.name)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
                         .lineLimit(1)
                     Text(volume.mountpoint ?? "No mountpoint")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.78) : theme.textSecondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -195,8 +174,7 @@ private struct VolumeRow: View {
                 icon: .trash,
                 help: "Delete",
                 accessibilityLabel: "Delete volume \(volume.name)",
-                destructive: true,
-                isSelected: isSelected
+                destructive: true
             ) {
                 isConfirmingDelete = true
             }
@@ -216,45 +194,35 @@ private struct VolumeRow: View {
 private struct NetworkRow: View {
     let network: DockerNetworkSummary
     let model: RuntimeViewModel
-    let isSelected: Bool
-    let onSelect: () -> Void
-    @Environment(\.appTheme) private var theme
     @State private var isConfirmingDelete = false
 
     var body: some View {
-        SelectableResourceRow(
-            isSelected: isSelected,
-            accessibilityLabel: network.name,
-            action: onSelect
-        ) {
+        ResourceRow {
             HStack(spacing: 9) {
                 ResourceAvatar(
                     text: ResourceAvatar.initials(from: network.name),
-                    tint: Color(uiHex: 0x3B82F6),
-                    isSelected: isSelected
+                    tint: Color(uiHex: 0x3B82F6)
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(network.name)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
                         .lineLimit(1)
                     Text(network.subnet ?? "No subnet")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.78) : theme.textSecondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(network.driver ?? "nat")
                     .font(.system(size: 11))
-                    .foregroundStyle(isSelected ? Color.white.opacity(0.78) : theme.textSecondary)
+                    .foregroundStyle(.secondary)
             }
         } actions: {
             RowActionButton(
                 icon: .trash,
                 help: "Delete",
                 accessibilityLabel: "Delete network \(network.name)",
-                destructive: true,
-                isSelected: isSelected
+                destructive: true
             ) {
                 isConfirmingDelete = true
             }

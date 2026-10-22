@@ -25,9 +25,23 @@ struct ContainersView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ResourceSplitPane {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredGroups) { group in
+                    List(selection: selection) {
+                        ForEach(filteredGroups) { group in
+                            Section {
+                                if !collapsed.contains(group.id) {
+                                    ForEach(group.containers) { container in
+                                        ContainerRow(
+                                            container: container,
+                                            model: model,
+                                            onShowLogs: {
+                                                model.selectedContainerID = container.id
+                                                inspectorTab = .logs
+                                            }
+                                        )
+                                        .tag(container.id)
+                                    }
+                                }
+                            } header: {
                                 ContainerGroupHeader(
                                     group: group,
                                     model: model,
@@ -39,21 +53,10 @@ struct ContainersView: View {
                                         collapsed.insert(group.id)
                                     }
                                 }
-                                if !collapsed.contains(group.id) {
-                                    ForEach(group.containers) { container in
-                                        ContainerRow(
-                                            container: container,
-                                            model: model,
-                                            onShowLogs: {
-                                                model.selectedContainerID = container.id
-                                                inspectorTab = .logs
-                                            }
-                                        )
-                                    }
-                                }
                             }
                         }
                     }
+                    .listStyle(.inset)
                 } inspector: {
                     ContainerInspector(
                         container: selectedContainer,
@@ -81,6 +84,12 @@ struct ContainersView: View {
         return model.containers.first { $0.id == selectedContainerID }
     }
 
+    private var selection: Binding<String?> {
+        Binding(
+            get: { model.selectedContainerID },
+            set: { model.selectedContainerID = $0 }
+        )
+    }
 }
 
 private struct ContainerGroupHeader: View {
@@ -141,12 +150,6 @@ private struct ContainerGroupHeader: View {
                 .disabled(model.busyResource != nil || !model.canMutate)
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 26)
-        .background(theme.sidebarBackground.opacity(0.72))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 0.5)
-        }
     }
 }
 
@@ -172,45 +175,33 @@ struct ContainerRow: View {
     let container: DockerContainerSummary
     let model: RuntimeViewModel
     var onShowLogs: () -> Void = {}
-    /// Runs after the row selects its container.
-    var onSelect: () -> Void = {}
+    /// For a row outside a `List`, which has no selection of its own: runs after the row
+    /// selects its container.
+    var onSelect: (() -> Void)?
 
-    @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     private var isBusy: Bool {
         model.isBusy(container)
     }
 
-    private var isSelected: Bool {
-        model.selectedContainerID == container.id
-    }
-
     var body: some View {
-        SelectableResourceRow(
-            isSelected: isSelected,
-            accessibilityLabel: container.name,
-            action: select
-        ) {
+        ResourceRow(onSelect: selectAction) {
             HStack(spacing: 9) {
                 avatar
                 VStack(alignment: .leading, spacing: 2) {
                     Text(container.name)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
                         .lineLimit(1)
                     Text(container.image ?? "unknown")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(
-                            isSelected ? Color.white.opacity(0.78) : theme.textSecondary
-                        )
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Text(container.rowPortLabel ?? "")
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(
-                        isSelected ? Color.white.opacity(0.78) : theme.textSecondary
-                    )
+                    .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(width: 96, alignment: .trailing)
                     .help(container.portSummary ?? "")
@@ -220,8 +211,7 @@ struct ContainerRow: View {
                 RowActionButton(
                     icon: container.isRunning ? .square : .play,
                     help: container.isRunning ? "Stop" : "Start",
-                    accessibilityLabel: "\(container.isRunning ? "Stop" : "Start") \(container.name)",
-                    isSelected: isSelected
+                    accessibilityLabel: "\(container.isRunning ? "Stop" : "Start") \(container.name)"
                 ) {
                     Task { await model.toggle(container: container) }
                 }
@@ -231,8 +221,7 @@ struct ContainerRow: View {
                 RowActionButton(
                     icon: .scrollText,
                     help: "Logs",
-                    accessibilityLabel: "Show logs for \(container.name)",
-                    isSelected: isSelected
+                    accessibilityLabel: "Show logs for \(container.name)"
                 ) {
                     onShowLogs()
                 }
@@ -241,8 +230,7 @@ struct ContainerRow: View {
                     icon: .trash,
                     help: "Delete",
                     accessibilityLabel: "Delete \(container.name)",
-                    destructive: true,
-                    isSelected: isSelected
+                    destructive: true
                 ) {
                     isConfirmingDelete = true
                 }
@@ -259,26 +247,31 @@ struct ContainerRow: View {
         }
     }
 
-    private func select() {
-        model.selectedContainerID = container.id
-        onSelect()
+    private var selectAction: (() -> Void)? {
+        guard let onSelect else { return nil }
+        return {
+            model.selectedContainerID = container.id
+            onSelect()
+        }
     }
 
     private var avatar: some View {
         ResourceAvatar(
             text: ResourceAvatar.initials(from: container.composeService ?? container.name),
             tint: ResourceAvatar.tint(for: container.name),
-            isOn: container.isRunning,
-            isSelected: isSelected
+            isOn: container.isRunning
         )
         .overlay(alignment: .bottomTrailing) {
             Circle()
                 .fill(container.isRunning ? Color.green : Color.gray.opacity(0.7))
                 .frame(width: 10, height: 10)
-                .overlay(
-                    Circle().stroke(isSelected ? theme.selection : theme.windowBackground, lineWidth: 2.5)
-                )
+                .overlay(Circle().stroke(ringColor, lineWidth: 2.5))
                 .offset(x: 3, y: 3)
         }
+    }
+
+    /// The ring cuts the status dot out of the avatar, so it takes the color behind the row.
+    private var ringColor: Color {
+        Color(nsColor: prominence == .increased ? .selectedContentBackgroundColor : .controlBackgroundColor)
     }
 }

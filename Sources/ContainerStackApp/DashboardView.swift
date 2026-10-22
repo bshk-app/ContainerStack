@@ -362,6 +362,9 @@ private struct RecentContainers: View {
                         },
                         onSelect: openContainers
                     )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 10))
                 }
             }
         }

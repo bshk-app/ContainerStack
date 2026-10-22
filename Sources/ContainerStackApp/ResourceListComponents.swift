@@ -18,40 +18,30 @@ struct ResourceSplitPane<ListContent: View, Inspector: View>: View {
     }
 }
 
-struct SelectableResourceRow<Content: View, Actions: View>: View {
-    let isSelected: Bool
-    let accessibilityLabel: String
-    let action: () -> Void
+/// A resource row: the content takes the free width and the actions sit at the trailing edge.
+/// Inside `List(selection:)` the list selects the row; `onSelect` serves a row outside a list.
+struct ResourceRow<Content: View, Actions: View>: View {
+    var onSelect: (() -> Void)?
     @ViewBuilder var content: () -> Content
     @ViewBuilder var actions: () -> Actions
-    @Environment(\.appTheme) private var theme
-    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 9) {
-            Button(action: action) {
-                content()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            if let onSelect {
+                Button(action: onSelect) { label }
+                    .buttonStyle(.plain)
+            } else {
+                label
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
             actions()
         }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .background(rowBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 0.5)
-        }
-        .onHover { isHovered = $0 }
+        .padding(.vertical, 3)
     }
 
-    private var rowBackground: Color {
-        if isSelected { return theme.selection }
-        if isHovered { return theme.rowHover }
-        return .clear
+    private var label: some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 }
 
@@ -175,9 +165,9 @@ struct RowActionButton: View {
     let help: String
     let accessibilityLabel: String
     var destructive: Bool = false
-    var isSelected: Bool = false
     let action: () -> Void
     @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         Button(action: action) {
@@ -194,7 +184,7 @@ struct RowActionButton: View {
 
     /// Red is close to invisible on the selection fill, so a selected row draws every glyph white.
     private var color: Color {
-        if isSelected { return Color.white.opacity(0.9) }
+        if prominence == .increased { return Color.white.opacity(0.9) }
         return destructive ? theme.destructive.opacity(0.8) : theme.textSecondary
     }
 }
@@ -203,8 +193,8 @@ struct ResourceAvatar: View {
     let text: String
     let tint: Color
     var isOn: Bool = true
-    var isSelected: Bool = false
     @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         Text(text)
@@ -212,16 +202,18 @@ struct ResourceAvatar: View {
             .foregroundStyle(foreground)
             .frame(width: 27, height: 27)
             .background(background, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            // The initials repeat the row's name, so VoiceOver would read "we, demo-webserver-1".
+            .accessibilityHidden(true)
     }
 
     /// A tinted tile loses its letters on the selection fill, so a selected row draws it white.
     private var foreground: Color {
-        if isSelected { return .white }
+        if prominence == .increased { return .white }
         return isOn ? tint : theme.textSecondary
     }
 
     private var background: Color {
-        if isSelected { return Color.white.opacity(0.22) }
+        if prominence == .increased { return Color.white.opacity(0.22) }
         return (isOn ? tint : Color.gray).opacity(0.22)
     }
 

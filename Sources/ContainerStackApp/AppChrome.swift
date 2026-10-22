@@ -8,10 +8,6 @@ struct AppTheme: Equatable {
     let textPrimary: Color
     let textSecondary: Color
     let textTertiary: Color
-    /// The system's selected-row fill, the one AppKit pairs with white text. It follows the user's
-    /// accent like the native buttons do, and is darker than the accent itself (see `AppThemeTests`).
-    let selection: Color
-    let rowHover: Color
     let subtleFill: Color
     let success: Color
     let destructive: Color
@@ -23,8 +19,6 @@ struct AppTheme: Equatable {
         textPrimary: Color(uiHex: 0xEBEBF5),
         textSecondary: Color(uiHex: 0xEBEBF5).opacity(0.60),
         textTertiary: Color(uiHex: 0xEBEBF5).opacity(0.35),
-        selection: Color(nsColor: .selectedContentBackgroundColor),
-        rowHover: Color.white.opacity(0.06),
         subtleFill: Color.white.opacity(0.08),
         success: Color(uiHex: 0x86EFAC),
         destructive: Color(uiHex: 0xFF8F88)
@@ -37,8 +31,6 @@ struct AppTheme: Equatable {
         textPrimary: Color(uiHex: 0x1D1D1F),
         textSecondary: Color(uiHex: 0x1D1D1F).opacity(0.55),
         textTertiary: Color(uiHex: 0x1D1D1F).opacity(0.35),
-        selection: Color(nsColor: .selectedContentBackgroundColor),
-        rowHover: Color.black.opacity(0.05),
         subtleFill: Color.black.opacity(0.06),
         success: Color(uiHex: 0x15692D),
         destructive: Color(uiHex: 0xD70015)

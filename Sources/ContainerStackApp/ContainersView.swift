@@ -172,6 +172,8 @@ struct ContainerRow: View {
     let container: DockerContainerSummary
     let model: RuntimeViewModel
     var onShowLogs: () -> Void = {}
+    /// Runs after the row selects its container.
+    var onSelect: () -> Void = {}
 
     @Environment(\.appTheme) private var theme
 
@@ -259,6 +261,7 @@ struct ContainerRow: View {
 
     private func select() {
         model.selectedContainerID = container.id
+        onSelect()
     }
 
     private var avatar: some View {

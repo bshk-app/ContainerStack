@@ -4,8 +4,6 @@ import SwiftUI
 struct AppTheme: Equatable {
     let windowBackground: Color
     let sidebarBackground: Color
-    let headerBackground: Color
-    let searchFill: Color
     let hairline: Color
     let textPrimary: Color
     let textSecondary: Color
@@ -21,8 +19,6 @@ struct AppTheme: Equatable {
     static let dark = AppTheme(
         windowBackground: Color(uiHex: 0x1E1E1E),
         sidebarBackground: Color(uiHex: 0x262628),
-        headerBackground: Color(uiHex: 0x1E1E1E),
-        searchFill: Color(uiHex: 0x1A1A1C),
         hairline: Color.white.opacity(0.07),
         textPrimary: Color(uiHex: 0xEBEBF5),
         textSecondary: Color(uiHex: 0xEBEBF5).opacity(0.60),
@@ -39,8 +35,6 @@ struct AppTheme: Equatable {
     static let light = AppTheme(
         windowBackground: Color(uiHex: 0xF5F5F7),
         sidebarBackground: Color(uiHex: 0xECECEE),
-        headerBackground: Color(uiHex: 0xF5F5F7),
-        searchFill: Color.white,
         hairline: Color.black.opacity(0.08),
         textPrimary: Color(uiHex: 0x1D1D1F),
         textSecondary: Color(uiHex: 0x1D1D1F).opacity(0.55),

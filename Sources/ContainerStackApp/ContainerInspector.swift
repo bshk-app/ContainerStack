@@ -4,8 +4,9 @@ import SwiftUI
 
 struct ContainerInspector: View {
     @State private var isConfirmingDelete = false
+    /// "Info", not "Stats": the first tab lists the container's details and no resource usage.
     enum Tab: String, CaseIterable, Identifiable {
-        case stats = "Stats"
+        case info = "Info"
         case logs = "Logs"
         case ports = "Ports"
         var id: Self { self }
@@ -35,11 +36,11 @@ struct ContainerInspector: View {
     private func populated(_ container: DockerContainerSummary) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             header(container)
-            tabBar
+            tabPicker
             Group {
                 switch tab {
-                case .stats:
-                    statsList(container)
+                case .info:
+                    InspectorStatBlock(rows: infoRows(container))
                 case .logs:
                     InspectorLogsView(container: container, model: model)
                 case .ports:
@@ -81,75 +82,33 @@ struct ContainerInspector: View {
         }
     }
 
-    private var tabBar: some View {
-        HStack(spacing: 2) {
+    private var tabPicker: some View {
+        Picker("Inspector section", selection: $tab) {
             ForEach(Tab.allCases) { item in
-                Button {
-                    tab = item
-                } label: {
-                    Text(item.rawValue)
-                        .font(.system(size: 12))
-                        .foregroundStyle(tab == item ? theme.textPrimary : theme.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 21)
-                        .background(
-                            tab == item ? theme.searchFill : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        )
-                }
-                .buttonStyle(.plain)
+                Text(item.rawValue).tag(item)
             }
         }
-        .padding(2)
-        .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .strokeBorder(theme.hairline, lineWidth: 0.5)
-        )
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
-        .padding(.top, 13)
+        .padding(.top, 5)
         .padding(.bottom, 4)
     }
 
-    private func statsList(_ container: DockerContainerSummary) -> some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                statRow("Status", container.status ?? container.state ?? "—")
-                statRow("Container ID", String(container.id.prefix(12)), mono: true)
-                statRow("Image", container.image ?? "—", mono: true)
-                statRow("Command", container.command ?? "—", mono: true)
-                statRow("Stack", container.composeProject ?? "—")
-                statRow(
-                    "Network",
-                    container.networkNames.isEmpty ? "—" : container.networkNames.joined(separator: ", ")
-                )
-            }
-            .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(theme.hairline, lineWidth: 0.5)
-            )
-            .padding(16)
-        }
-    }
-
-    private func statRow(_ key: String, _ value: String, mono: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(key)
-                .font(.system(size: 11))
-                .foregroundStyle(theme.textSecondary)
-                .frame(width: 96, alignment: .leading)
-            Text(value)
-                .font(mono ? .system(size: 12, design: .monospaced) : .system(size: 12))
-                .foregroundStyle(theme.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .textSelection(.enabled)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 0.5)
-        }
+    private func infoRows(_ container: DockerContainerSummary) -> [(key: String, value: String, mono: Bool)] {
+        [
+            ("Status", container.status ?? container.state ?? "—", false),
+            ("Container ID", String(container.id.prefix(12)), true),
+            ("Image", container.image ?? "—", true),
+            ("Command", container.command ?? "—", true),
+            ("Stack", container.composeProject ?? "—", false),
+            (
+                "Network",
+                container.networkNames.isEmpty ? "—" : container.networkNames.joined(separator: ", "),
+                false
+            ),
+        ]
     }
 
     private func portsList(_ container: DockerContainerSummary) -> some View {

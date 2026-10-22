@@ -6,7 +6,7 @@ struct ContainersView: View {
     var searchText: String = ""
     @Environment(\.appTheme) private var theme
     @State private var collapsed = Set<String>()
-    @State private var inspectorTab = ContainerInspector.Tab.stats
+    @State private var inspectorTab = ContainerInspector.Tab.info
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

@@ -317,6 +317,7 @@ private struct NewStackSheet: View {
                 Spacer()
                 Button("Create") { submit() }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(trimmedName.isEmpty || directory == nil)
             }
         }

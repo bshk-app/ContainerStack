@@ -201,7 +201,12 @@ private struct InspectorLogsView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(10)
                 }
-                .background(Color.black.opacity(0.35), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .defaultScrollAnchor(.bottom)
+                .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(theme.hairline, lineWidth: 0.5)
+                )
                 .padding(16)
             }
         }

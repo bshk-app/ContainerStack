@@ -202,6 +202,7 @@ private struct ContainerLogsSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }
+            .defaultScrollAnchor(.bottom)
             .background(.black.opacity(0.88), in: .rect(cornerRadius: 10))
             .foregroundStyle(.white)
         }

@@ -51,54 +51,34 @@ struct ContainerInspector: View {
     }
 
     private func header(_ container: DockerContainerSummary) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Text(container.composeService ?? container.name)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(theme.textPrimary)
-                    .lineLimit(1)
-                Text(pillTitle(container))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(pillForeground(container))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(
-                        pillBackground(container),
-                        in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    )
-            }
-            Text(container.name)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(theme.textSecondary)
-                .lineLimit(1)
-                .padding(.top, 5)
-            HStack(spacing: 6) {
-                actionButton(
-                    container.isRunning ? "Stop" : "Start",
-                    prominent: !container.isRunning
-                ) {
-                    Task { await model.toggle(container: container) }
-                }
-                actionButton("Restart") {
-                    Task { await model.restart(container: container) }
-                }
-                actionButton("Delete", destructive: true) {
-                    isConfirmingDelete = true
-                }
-            }
-            .padding(.top, 12)
-            .disabled(model.isBusy(container) || !model.canMutate)
-            .confirmDestructive(
-                $isConfirmingDelete,
-                title: "Delete container \(container.name)?",
-                confirmTitle: "Delete Container",
-                message: "A running container is stopped first. Its writable layer is deleted; named volumes are kept."
+        InspectorHeader(
+            title: container.composeService ?? container.name,
+            subtitle: container.name,
+            pill: pillTitle(container),
+            pillTint: pillTint(container)
+        ) {
+            InspectorAction(
+                title: container.isRunning ? "Stop" : "Start",
+                prominent: !container.isRunning
             ) {
-                Task { await model.remove(container: container) }
+                Task { await model.toggle(container: container) }
+            }
+            InspectorAction(title: "Restart") {
+                Task { await model.restart(container: container) }
+            }
+            InspectorAction(title: "Delete", destructive: true) {
+                isConfirmingDelete = true
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 15)
+        .disabled(model.isBusy(container) || !model.canMutate)
+        .confirmDestructive(
+            $isConfirmingDelete,
+            title: "Delete container \(container.name)?",
+            confirmTitle: "Delete Container",
+            message: "A running container is stopped first. Its writable layer is deleted; named volumes are kept."
+        ) {
+            Task { await model.remove(container: container) }
+        }
     }
 
     private var tabBar: some View {
@@ -227,32 +207,6 @@ struct ContainerInspector: View {
         )
     }
 
-    private func actionButton(
-        _ title: String,
-        prominent: Bool = false,
-        destructive: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(destructive ? theme.destructive : Color.white)
-                .padding(.horizontal, 12)
-                .frame(height: 22)
-                .background(
-                    prominent
-                        ? theme.accent
-                        : theme.sidebarBackground,
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .strokeBorder(theme.hairline, lineWidth: 0.5)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
     private func pillTitle(_ container: DockerContainerSummary) -> String {
         let status = container.status?.lowercased() ?? ""
         if status.contains("unhealthy") { return "unhealthy" }
@@ -260,25 +214,11 @@ struct ContainerInspector: View {
         return container.isRunning ? "running" : "stopped"
     }
 
-    private func pillForeground(_ container: DockerContainerSummary) -> Color {
+    private func pillTint(_ container: DockerContainerSummary) -> Color? {
         switch pillTitle(container) {
-        case "healthy", "running":
-            return Color(uiHex: 0x86EFAC)
-        case "unhealthy":
-            return theme.destructive
-        default:
-            return theme.textSecondary
-        }
-    }
-
-    private func pillBackground(_ container: DockerContainerSummary) -> Color {
-        switch pillTitle(container) {
-        case "healthy", "running":
-            return Color.green.opacity(0.18)
-        case "unhealthy":
-            return theme.destructive.opacity(0.16)
-        default:
-            return Color.white.opacity(0.08)
+        case "healthy", "running": theme.success
+        case "unhealthy": theme.destructive
+        default: nil
         }
     }
 }

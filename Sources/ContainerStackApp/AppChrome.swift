@@ -14,6 +14,8 @@ struct AppTheme: Equatable {
     let accentTop: Color
     let accentBottom: Color
     let rowHover: Color
+    let subtleFill: Color
+    let success: Color
     let destructive: Color
 
     static let dark = AppTheme(
@@ -29,6 +31,8 @@ struct AppTheme: Equatable {
         accentTop: Color(uiHex: 0x0A8CFF),
         accentBottom: Color(uiHex: 0x0A72E0),
         rowHover: Color.white.opacity(0.06),
+        subtleFill: Color.white.opacity(0.08),
+        success: Color(uiHex: 0x86EFAC),
         destructive: Color(uiHex: 0xFF8F88)
     )
 
@@ -45,6 +49,8 @@ struct AppTheme: Equatable {
         accentTop: Color(uiHex: 0x0A8CFF),
         accentBottom: Color(uiHex: 0x0A72E0),
         rowHover: Color.black.opacity(0.05),
+        subtleFill: Color.black.opacity(0.06),
+        success: Color(uiHex: 0x15692D),
         destructive: Color(uiHex: 0xD70015)
     )
 

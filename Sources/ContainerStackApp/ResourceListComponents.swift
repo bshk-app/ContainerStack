@@ -71,6 +71,8 @@ struct InspectorHeader<Actions: View>: View {
     let title: String
     let subtitle: String
     var pill: String?
+    /// Colors the pill's text and fill; `nil` draws it neutral.
+    var pillTint: Color?
     @ViewBuilder var actions: () -> Actions
     @Environment(\.appTheme) private var theme
 
@@ -84,11 +86,11 @@ struct InspectorHeader<Actions: View>: View {
                 if let pill {
                     Text(pill)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(theme.textSecondary)
+                        .foregroundStyle(pillTint ?? theme.textSecondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(
-                            Color.white.opacity(0.08),
+                            pillTint?.opacity(0.16) ?? theme.subtleFill,
                             in: RoundedRectangle(cornerRadius: 5, style: .continuous)
                         )
                 }
@@ -155,22 +157,16 @@ struct InspectorAction: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(destructive ? theme.destructive : Color.white)
-                .padding(.horizontal, 12)
-                .frame(height: 22)
-                .background(
-                    prominent ? theme.accent : theme.sidebarBackground,
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .strokeBorder(theme.hairline, lineWidth: 0.5)
-                )
+        let button = Button(title, role: destructive ? .destructive : nil, action: action)
+            .controlSize(.small)
+        if prominent {
+            button.buttonStyle(.borderedProminent)
+        } else if destructive {
+            // macOS draws a bordered destructive button like any other, so the red title is the cue.
+            button.buttonStyle(.bordered).foregroundStyle(theme.destructive)
+        } else {
+            button.buttonStyle(.bordered)
         }
-        .buttonStyle(.plain)
     }
 }
 

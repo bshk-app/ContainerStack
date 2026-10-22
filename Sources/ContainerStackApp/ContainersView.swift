@@ -270,16 +270,7 @@ struct ContainerRow: View {
     }
 
     private var tileTint: Color {
-        let palette: [Color] = [
-            Color(uiHex: 0x3B82F6),
-            Color(uiHex: 0x8B5CF6),
-            Color(uiHex: 0x06B6D4),
-            Color(uiHex: 0xEF4444),
-            Color(uiHex: 0xF59E0B),
-            Color(uiHex: 0x22C55E),
-        ]
-        let index = abs(container.name.hashValue) % palette.count
-        return palette[index]
+        ResourceAvatar.tint(for: container.name)
     }
 
     private var tileBackground: Color {

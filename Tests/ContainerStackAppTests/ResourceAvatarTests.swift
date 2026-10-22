@@ -13,6 +13,14 @@ final class ResourceAvatarTests: XCTestCase {
         XCTAssertEqual(image(tag: "alpine").avatarInitials, "al")
     }
 
+    /// `String.hashValue` is seeded per process, so a tint taken from it changed on every
+    /// launch. A hash that changes between processes fails these pinned values.
+    func testPaletteIndexIsTheSameInEveryProcess() {
+        XCTAssertEqual(ResourceAvatar.paletteIndex(for: "ab", count: 6), 3)
+        XCTAssertEqual(ResourceAvatar.paletteIndex(for: "web", count: 6), 0)
+        XCTAssertEqual(ResourceAvatar.paletteIndex(for: "demo-webserver-1", count: 6), 5)
+    }
+
     private func image(tag: String) -> DockerImageSummary {
         DockerImageSummary(
             id: "sha256:" + String(repeating: "a", count: 64),

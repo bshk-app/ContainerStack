@@ -220,6 +220,25 @@ struct ResourceAvatar: View {
         let seed = letters.count >= 2 ? String(letters.prefix(2)) : String(source.prefix(2))
         return seed.lowercased()
     }
+
+    private static let palette: [Color] = [
+        Color(uiHex: 0x3B82F6),
+        Color(uiHex: 0x8B5CF6),
+        Color(uiHex: 0x06B6D4),
+        Color(uiHex: 0xEF4444),
+        Color(uiHex: 0xF59E0B),
+        Color(uiHex: 0x22C55E),
+    ]
+
+    static func tint(for name: String) -> Color {
+        palette[paletteIndex(for: name, count: palette.count)]
+    }
+
+    /// `String.hashValue` is seeded per process, so a tint taken from it would change on every launch.
+    nonisolated static func paletteIndex(for name: String, count: Int) -> Int {
+        let sum = name.unicodeScalars.reduce(UInt(0)) { $0 &+ UInt($1.value) }
+        return Int(sum % UInt(count))
+    }
 }
 
 enum ResourceUsage {

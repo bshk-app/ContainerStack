@@ -9,7 +9,7 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
     /// version constraint, so the pin is carried by the *name* of a keg-only
     /// formula — the `container@x.y.z` convention Homebrew itself uses for
     /// `node@20` and friends.
-    public static let pinnedContainerVersion = "1.3.1"
+    public static let pinnedContainerVersion = "1.6.0"
 
     /// Ordered by how much they guarantee about the version.
     ///

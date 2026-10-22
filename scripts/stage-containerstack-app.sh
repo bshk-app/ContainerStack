@@ -10,7 +10,7 @@ readonly SOCKTAINER_BINARY="${SOCKTAINER_BINARY:-${HOME}/.local/bin/socktainer}"
 readonly SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 
 # Vendoring the Apple Container runtime into the bundle. Off by default: the
-# Homebrew channel pins the version through a keg-only `container@1.3.1`
+# Homebrew channel pins the version through a keg-only `container@1.6.0`
 # formula, which costs ~30 MB instead of ~500 MB. Turn it on for a standalone
 # .app handed out outside Homebrew, where nothing else can guarantee the
 # version. See docs/vendoring-apple-container.md.
@@ -137,7 +137,7 @@ otool -l "$output_bundle/Contents/MacOS/ContainerStack" \
 # that points at the wrong file. Under Resources the same tree is sealed as
 # resources while its Mach-O keep their own signatures.
 #
-# `ditto` rather than cp -R: it preserves the Apple signatures on the way in, so
+# `ditto` rather than cp -R: it preserves the code signatures on the way in, so
 # anything that fails to verify later failed during OUR re-signing rather than
 # arriving broken. The tree carries its own LICENSE and NOTICE.md (Apache-2.0
 # §4a, §4d) — prepare-container-runtime.sh refuses to produce one without them.
@@ -200,11 +200,12 @@ plutil -lint "$output_bundle/Contents/Library/LaunchAgents/com.containerstack.ru
 if [[ -n "$SIGNING_IDENTITY" ]]; then
     require_command codesign
 
-    # The vendored runtime arrives signed by "Apple Inc. - Containerization".
-    # Nested code under a different team identifier does not inherit our
-    # bundle's designated requirement, so every Mach-O in it is re-signed with
-    # ours. Deepest-first: signing a directory seals what is already inside it,
-    # so an outer signature applied first is invalidated by the inner ones.
+    # The vendored runtime arrives signed by its publisher: the Developer ID of
+    # the fork (team Q8H6GWJ658), or "Apple Inc. - Containerization" for Apple's
+    # release. Nested code under a different team identifier does not inherit
+    # our bundle's designated requirement, so every Mach-O in it is re-signed
+    # with ours. Deepest-first: signing a directory seals what is already inside
+    # it, so an outer signature applied first is invalidated by the inner ones.
     #
     # `container-runtime-linux` is the one that boots the micro-VMs and is the
     # only binary upstream gives an entitlement. It keeps

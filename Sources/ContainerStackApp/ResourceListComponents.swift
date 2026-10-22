@@ -215,7 +215,7 @@ struct ResourceAvatar: View {
             )
     }
 
-    static func initials(from source: String) -> String {
+    nonisolated static func initials(from source: String) -> String {
         let letters = source.filter(\.isLetter)
         let seed = letters.count >= 2 ? String(letters.prefix(2)) : String(source.prefix(2))
         return seed.lowercased()

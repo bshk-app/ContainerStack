@@ -5,6 +5,19 @@ extension DockerImageSummary {
     fileprivate var displayName: String {
         repositoryTags?.first ?? ResourceIdentifier.short(id)
     }
+
+    /// Most local images share the `docker.io/library/` prefix, so initials taken from the
+    /// full reference read "do" on every row.
+    var avatarInitials: String {
+        ResourceAvatar.initials(from: Self.repositoryName(of: displayName))
+    }
+
+    /// `docker.io/library/redis:7-alpine` → `redis`: the last path component, without a tag or digest.
+    private static func repositoryName(of reference: String) -> String {
+        let withoutDigest = reference.split(separator: "@").first.map(String.init) ?? reference
+        let lastComponent = withoutDigest.split(separator: "/").last.map(String.init) ?? withoutDigest
+        return lastComponent.split(separator: ":").first.map(String.init) ?? lastComponent
+    }
 }
 
 private struct RunImage: Identifiable {
@@ -144,7 +157,7 @@ struct ImageRow: View {
         ) {
             HStack(spacing: 9) {
                 ResourceAvatar(
-                    text: ResourceAvatar.initials(from: image.displayName),
+                    text: image.avatarInitials,
                     tint: Color(uiHex: 0x8B5CF6),
                     isOn: true
                 )

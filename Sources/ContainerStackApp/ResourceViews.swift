@@ -297,12 +297,12 @@ private struct VolumeInspector: View {
                     Task { await model.remove(volume: volume) }
                 }
 
+                // No "Used by" row: the container list carries no mounts, so it could only read "—".
                 InspectorStatBlock(
                     rows: [
                         ("Driver", volume.driver ?? "local", false),
                         ("Mount", volume.mountpoint ?? "—", true),
                         ("Created", volume.createdAt ?? "—", false),
-                        ("Used by", "—", false),
                     ]
                 )
             }

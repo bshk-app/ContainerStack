@@ -24,7 +24,7 @@ struct ContainersView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(spacing: 0) {
+                ResourceSplitPane {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(filteredGroups) { group in
@@ -54,15 +54,12 @@ struct ContainersView: View {
                             }
                         }
                     }
-                    Rectangle()
-                        .fill(theme.hairline)
-                        .frame(width: 0.5)
+                } inspector: {
                     ContainerInspector(
                         container: selectedContainer,
                         model: model,
                         tab: $inspectorTab
                     )
-                    .frame(width: 404)
                 }
             }
 
@@ -177,7 +174,6 @@ struct ContainerRow: View {
     var onShowLogs: () -> Void = {}
 
     @Environment(\.appTheme) private var theme
-    @State private var isHovered = false
 
     private var isBusy: Bool {
         model.isBusy(container)
@@ -188,63 +184,63 @@ struct ContainerRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 9) {
-            Button {
-                model.selectedContainerID = container.id
-            } label: {
-                HStack(spacing: 9) {
-                    avatar
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(container.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
-                            .lineLimit(1)
-                        Text(container.image ?? "unknown")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(
-                                isSelected ? Color.white.opacity(0.78) : theme.textSecondary
-                            )
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(container.rowPortLabel ?? "")
+        SelectableResourceRow(
+            isSelected: isSelected,
+            accessibilityLabel: container.name,
+            action: select
+        ) {
+            HStack(spacing: 9) {
+                avatar
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(container.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
+                        .lineLimit(1)
+                    Text(container.image ?? "unknown")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(
                             isSelected ? Color.white.opacity(0.78) : theme.textSecondary
                         )
                         .lineLimit(1)
-                        .frame(width: 96, alignment: .trailing)
-                        .help(container.portSummary ?? "")
                 }
-                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(container.rowPortLabel ?? "")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(
+                        isSelected ? Color.white.opacity(0.78) : theme.textSecondary
+                    )
+                    .lineLimit(1)
+                    .frame(width: 96, alignment: .trailing)
+                    .help(container.portSummary ?? "")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(container.name)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
+        } actions: {
             HStack(spacing: 2) {
-                rowButton(
+                RowActionButton(
                     icon: container.isRunning ? .square : .play,
                     help: container.isRunning ? "Stop" : "Start",
-                    accessibilityLabel: "\(container.isRunning ? "Stop" : "Start") \(container.name)"
+                    accessibilityLabel: "\(container.isRunning ? "Stop" : "Start") \(container.name)",
+                    isSelected: isSelected
                 ) {
                     Task { await model.toggle(container: container) }
                 }
                 .disabled(isBusy || !model.canMutate)
                 // Reading, so it survives a bridge that cannot be changed through -
                 // which is when someone most wants to see why.
-                rowButton(
+                RowActionButton(
                     icon: .scrollText,
                     help: "Logs",
-                    accessibilityLabel: "Show logs for \(container.name)"
+                    accessibilityLabel: "Show logs for \(container.name)",
+                    isSelected: isSelected
                 ) {
                     onShowLogs()
                 }
                 .disabled(isBusy || !model.isHealthy)
-                rowButton(
+                RowActionButton(
                     icon: .trash,
                     help: "Delete",
                     accessibilityLabel: "Delete \(container.name)",
-                    destructive: true
+                    destructive: true,
+                    isSelected: isSelected
                 ) {
                     isConfirmingDelete = true
                 }
@@ -259,76 +255,27 @@ struct ContainerRow: View {
                 Task { await model.remove(container: container) }
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .background(rowBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 0.5)
-        }
-        .onHover { isHovered = $0 }
+    }
+
+    private func select() {
+        model.selectedContainerID = container.id
     }
 
     private var avatar: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Text(tile)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tileForeground)
-                .frame(width: 27, height: 27)
-                .background(tileBackground, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        ResourceAvatar(
+            text: ResourceAvatar.initials(from: container.composeService ?? container.name),
+            tint: ResourceAvatar.tint(for: container.name),
+            isOn: container.isRunning,
+            isSelected: isSelected
+        )
+        .overlay(alignment: .bottomTrailing) {
             Circle()
                 .fill(container.isRunning ? Color.green : Color.gray.opacity(0.7))
                 .frame(width: 10, height: 10)
-                .overlay(Circle().stroke(rowBackground, lineWidth: 2.5))
+                .overlay(
+                    Circle().stroke(isSelected ? theme.selection : theme.windowBackground, lineWidth: 2.5)
+                )
                 .offset(x: 3, y: 3)
         }
-    }
-
-    private var tile: String {
-        let source = container.composeService ?? container.name
-        let letters = source.filter(\.isLetter)
-        let seed = letters.count >= 2 ? String(letters.prefix(2)) : String(source.prefix(2))
-        return seed.lowercased()
-    }
-
-    private var tileTint: Color {
-        ResourceAvatar.tint(for: container.name)
-    }
-
-    private var tileBackground: Color {
-        container.isRunning ? tileTint.opacity(0.22) : Color.gray.opacity(0.22)
-    }
-
-    private var tileForeground: Color {
-        container.isRunning ? tileTint : theme.textSecondary
-    }
-
-    private var rowBackground: Color {
-        if isSelected { return theme.selection }
-        if isHovered { return theme.rowHover }
-        return .clear
-    }
-
-    private func rowButton(
-        icon: Lucide,
-        help: String,
-        accessibilityLabel: String,
-        destructive: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            LucideIcon(icon)
-                .frame(width: 11, height: 11)
-                .foregroundStyle(glyphColor(destructive: destructive))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private func glyphColor(destructive: Bool) -> Color {
-        if isSelected { return Color.white.opacity(0.9) }
-        return destructive ? theme.destructive.opacity(0.8) : theme.textSecondary
     }
 }

@@ -23,10 +23,7 @@ struct ContainerInspector: View {
                 populated(container)
                     .id(container.id)
             } else {
-                Text("No Selection")
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.textSecondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyInspector()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

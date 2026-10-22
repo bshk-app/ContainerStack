@@ -150,6 +150,23 @@ private struct ContainerGroupHeader: View {
     }
 }
 
+extension DockerContainerSummary {
+    /// The row's column fits one mapping, so it shows the first published one and a count.
+    /// Docker reports the IPv4 and the IPv6 binding of a mapping separately; they fold into one.
+    var rowPortLabel: String? {
+        var mappings: [(label: String, type: String?)] = []
+        for port in ports ?? [] {
+            guard let host = port.publicPort, host != 0 else { continue }
+            let label = "\(host)→\(port.privatePort.map(String.init) ?? "?")"
+            if !mappings.contains(where: { $0.label == label && $0.type == port.type }) {
+                mappings.append((label, port.type))
+            }
+        }
+        guard let first = mappings.first else { return nil }
+        return mappings.count > 1 ? "\(first.label) +\(mappings.count - 1)" : first.label
+    }
+}
+
 struct ContainerRow: View {
     @State private var isConfirmingDelete = false
     let container: DockerContainerSummary
@@ -187,13 +204,14 @@ struct ContainerRow: View {
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(container.portSummary ?? "")
+                    Text(container.rowPortLabel ?? "")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(
                             isSelected ? Color.white.opacity(0.78) : theme.textSecondary
                         )
                         .lineLimit(1)
                         .frame(width: 96, alignment: .trailing)
+                        .help(container.portSummary ?? "")
                 }
                 .contentShape(Rectangle())
             }

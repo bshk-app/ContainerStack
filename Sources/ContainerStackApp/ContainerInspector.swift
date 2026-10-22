@@ -153,8 +153,7 @@ struct ContainerInspector: View {
                     }
                 }
                 .font(.system(size: 11))
-                .foregroundStyle(theme.accent)
-                .buttonStyle(.plain)
+                .buttonStyle(.link)
             }
         }
         .padding(.horizontal, 11)

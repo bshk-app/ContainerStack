@@ -8,9 +8,9 @@ struct AppTheme: Equatable {
     let textPrimary: Color
     let textSecondary: Color
     let textTertiary: Color
-    let accent: Color
-    let accentTop: Color
-    let accentBottom: Color
+    /// The system's selected-row fill, the one AppKit pairs with white text. It follows the user's
+    /// accent like the native buttons do, and is darker than the accent itself (see `AppThemeTests`).
+    let selection: Color
     let rowHover: Color
     let subtleFill: Color
     let success: Color
@@ -23,9 +23,7 @@ struct AppTheme: Equatable {
         textPrimary: Color(uiHex: 0xEBEBF5),
         textSecondary: Color(uiHex: 0xEBEBF5).opacity(0.60),
         textTertiary: Color(uiHex: 0xEBEBF5).opacity(0.35),
-        accent: Color(uiHex: 0x0A84FF),
-        accentTop: Color(uiHex: 0x0A8CFF),
-        accentBottom: Color(uiHex: 0x0A72E0),
+        selection: Color(nsColor: .selectedContentBackgroundColor),
         rowHover: Color.white.opacity(0.06),
         subtleFill: Color.white.opacity(0.08),
         success: Color(uiHex: 0x86EFAC),
@@ -39,9 +37,7 @@ struct AppTheme: Equatable {
         textPrimary: Color(uiHex: 0x1D1D1F),
         textSecondary: Color(uiHex: 0x1D1D1F).opacity(0.55),
         textTertiary: Color(uiHex: 0x1D1D1F).opacity(0.35),
-        accent: Color(uiHex: 0x0A84FF),
-        accentTop: Color(uiHex: 0x0A8CFF),
-        accentBottom: Color(uiHex: 0x0A72E0),
+        selection: Color(nsColor: .selectedContentBackgroundColor),
         rowHover: Color.black.opacity(0.05),
         subtleFill: Color.black.opacity(0.06),
         success: Color(uiHex: 0x15692D),
@@ -211,7 +207,7 @@ struct DashboardSidebar: View {
     }
 
     private func rowBackground(_ item: DashboardDestination, isSelected: Bool) -> Color {
-        if isSelected { return theme.accent }
+        if isSelected { return theme.selection }
         if hovered == item { return theme.rowHover }
         return .clear
     }

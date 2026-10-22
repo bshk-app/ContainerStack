@@ -49,7 +49,7 @@ struct SelectableResourceRow<Content: View, Actions: View>: View {
     }
 
     private var rowBackground: Color {
-        if isSelected { return theme.accent }
+        if isSelected { return theme.selection }
         if isHovered { return theme.rowHover }
         return .clear
     }
@@ -192,8 +192,9 @@ struct RowActionButton: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
+    /// Red is close to invisible on the selection fill, so a selected row draws every glyph white.
     private var color: Color {
-        if isSelected { return destructive ? theme.destructive : Color.white.opacity(0.9) }
+        if isSelected { return Color.white.opacity(0.9) }
         return destructive ? theme.destructive.opacity(0.8) : theme.textSecondary
     }
 }
@@ -202,17 +203,26 @@ struct ResourceAvatar: View {
     let text: String
     let tint: Color
     var isOn: Bool = true
+    var isSelected: Bool = false
     @Environment(\.appTheme) private var theme
 
     var body: some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(isOn ? tint : theme.textSecondary)
+            .foregroundStyle(foreground)
             .frame(width: 27, height: 27)
-            .background(
-                (isOn ? tint : Color.gray).opacity(0.22),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
+            .background(background, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    /// A tinted tile loses its letters on the selection fill, so a selected row draws it white.
+    private var foreground: Color {
+        if isSelected { return .white }
+        return isOn ? tint : theme.textSecondary
+    }
+
+    private var background: Color {
+        if isSelected { return Color.white.opacity(0.22) }
+        return (isOn ? tint : Color.gray).opacity(0.22)
     }
 
     nonisolated static func initials(from source: String) -> String {

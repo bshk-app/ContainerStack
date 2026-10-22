@@ -159,7 +159,7 @@ struct ImageRow: View {
                 ResourceAvatar(
                     text: image.avatarInitials,
                     tint: Color(uiHex: 0x8B5CF6),
-                    isOn: true
+                    isSelected: isSelected
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(image.displayName)

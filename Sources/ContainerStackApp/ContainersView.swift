@@ -300,7 +300,7 @@ struct ContainerRow: View {
     }
 
     private var rowBackground: Color {
-        if isSelected { return theme.accent }
+        if isSelected { return theme.selection }
         if isHovered { return theme.rowHover }
         return .clear
     }
@@ -325,7 +325,7 @@ struct ContainerRow: View {
     }
 
     private func glyphColor(destructive: Bool) -> Color {
-        if isSelected { return destructive ? theme.destructive : Color.white.opacity(0.9) }
+        if isSelected { return Color.white.opacity(0.9) }
         return destructive ? theme.destructive.opacity(0.8) : theme.textSecondary
     }
 }

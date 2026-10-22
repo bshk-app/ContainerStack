@@ -175,7 +175,8 @@ private struct VolumeRow: View {
             HStack(spacing: 9) {
                 ResourceAvatar(
                     text: ResourceAvatar.initials(from: volume.name),
-                    tint: Color(uiHex: 0x14B8A6)
+                    tint: Color(uiHex: 0x14B8A6),
+                    isSelected: isSelected
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(volume.name)
@@ -229,7 +230,8 @@ private struct NetworkRow: View {
             HStack(spacing: 9) {
                 ResourceAvatar(
                     text: ResourceAvatar.initials(from: network.name),
-                    tint: Color(uiHex: 0x3B82F6)
+                    tint: Color(uiHex: 0x3B82F6),
+                    isSelected: isSelected
                 )
                 VStack(alignment: .leading, spacing: 2) {
                     Text(network.name)

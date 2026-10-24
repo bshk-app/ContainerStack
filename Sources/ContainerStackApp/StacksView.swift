@@ -6,12 +6,12 @@ import UniformTypeIdentifiers
 struct StacksView: View {
     let model: RuntimeViewModel
     var searchText: String = ""
+    @Binding var selectedStackID: UUID?
+    @Binding var openedStackID: UUID?
 
     @State private var showingNewStack = false
     @State private var newStackName = ""
     @State private var newStackDirectory: URL?
-    @State private var selectedStackID: UUID?
-    @State private var openedStackID: UUID?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -30,26 +30,18 @@ struct StacksView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ResourceSplitPane {
-                    List(selection: $selectedStackID) {
-                        ForEach(filteredStacks) { stack in
-                            StackRow(stack: stack, model: model)
-                                .tag(stack.id)
-                                .contextMenu {
-                                    Button("Unregister (keeps the file)") {
-                                        model.removeStack(stack)
-                                    }
+                List(selection: $selectedStackID) {
+                    ForEach(filteredStacks) { stack in
+                        StackRow(stack: stack, model: model)
+                            .tag(stack.id)
+                            .contextMenu {
+                                Button("Unregister (keeps the file)") {
+                                    model.removeStack(stack)
                                 }
-                        }
+                            }
                     }
-                    .listStyle(.inset)
-                } inspector: {
-                    StackInspector(
-                        stack: selectedStack,
-                        model: model,
-                        onEdit: { openedStackID = selectedStack?.id }
-                    )
                 }
+                .listStyle(.inset)
             }
 
             if let stackMessage = model.stackMessage {
@@ -62,6 +54,7 @@ struct StacksView: View {
         .navigationDestination(item: $openedStackID) { id in
             if let stack = model.allStacks.first(where: { $0.id == id }) {
                 StackDetailView(stack: stack, model: model)
+                    .fitsSplitColumn()
             }
         }
         .toolbar {
@@ -92,11 +85,6 @@ struct StacksView: View {
         model.allStacks.filter { stack in
             ResourceSearch.matches(searchText, stack.name, stack.fileURL.path)
         }
-    }
-
-    private var selectedStack: ComposeStack? {
-        guard let selectedStackID else { return nil }
-        return model.allStacks.first { $0.id == selectedStackID }
     }
 
     private func pickExistingFile() {
@@ -195,7 +183,7 @@ struct StackActionAvailability: Equatable {
     }
 }
 
-private struct StackInspector: View {
+struct StackInspector: View {
     let stack: ComposeStack?
     let model: RuntimeViewModel
     let onEdit: () -> Void

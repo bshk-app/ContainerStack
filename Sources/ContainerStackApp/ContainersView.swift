@@ -4,9 +4,9 @@ import SwiftUI
 struct ContainersView: View {
     let model: RuntimeViewModel
     var searchText: String = ""
+    @Binding var resources: ResourceSelection
     @Environment(\.appTheme) private var theme
     @State private var collapsed = Set<String>()
-    @State private var inspectorTab = ContainerInspector.Tab.info
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -24,46 +24,38 @@ struct ContainersView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ResourceSplitPane {
-                    List(selection: selection) {
-                        ForEach(filteredGroups) { group in
-                            Section {
-                                if !collapsed.contains(group.id) {
-                                    ForEach(group.containers) { container in
-                                        ContainerRow(
-                                            container: container,
-                                            model: model,
-                                            onShowLogs: {
-                                                model.selectedContainerID = container.id
-                                                inspectorTab = .logs
-                                            }
-                                        )
-                                        .tag(container.id)
-                                    }
+                List(selection: selection) {
+                    ForEach(filteredGroups) { group in
+                        Section {
+                            if !collapsed.contains(group.id) {
+                                ForEach(group.containers) { container in
+                                    ContainerRow(
+                                        container: container,
+                                        model: model,
+                                        onShowLogs: {
+                                            model.selectedContainerID = container.id
+                                            resources.showContainerLogs()
+                                        }
+                                    )
+                                    .tag(container.id)
                                 }
-                            } header: {
-                                ContainerGroupHeader(
-                                    group: group,
-                                    model: model,
-                                    isCollapsed: collapsed.contains(group.id)
-                                ) {
-                                    if collapsed.contains(group.id) {
-                                        collapsed.remove(group.id)
-                                    } else {
-                                        collapsed.insert(group.id)
-                                    }
+                            }
+                        } header: {
+                            ContainerGroupHeader(
+                                group: group,
+                                model: model,
+                                isCollapsed: collapsed.contains(group.id)
+                            ) {
+                                if collapsed.contains(group.id) {
+                                    collapsed.remove(group.id)
+                                } else {
+                                    collapsed.insert(group.id)
                                 }
                             }
                         }
                     }
-                    .listStyle(.inset)
-                } inspector: {
-                    ContainerInspector(
-                        container: selectedContainer,
-                        model: model,
-                        tab: $inspectorTab
-                    )
                 }
+                .listStyle(.inset)
             }
 
             if let containerMessage = model.containerMessage {
@@ -77,11 +69,6 @@ struct ContainersView: View {
 
     private var filteredGroups: [ContainerGroup] {
         ResourceSearch.containerGroups(model.containerGroups, query: searchText)
-    }
-
-    private var selectedContainer: DockerContainerSummary? {
-        guard let selectedContainerID = model.selectedContainerID else { return nil }
-        return model.containers.first { $0.id == selectedContainerID }
     }
 
     private var selection: Binding<String?> {

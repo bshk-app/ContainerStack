@@ -1,19 +1,64 @@
 import ContainerStackCore
 import SwiftUI
 
-struct ResourceSplitPane<ListContent: View, Inspector: View>: View {
-    @ViewBuilder var list: () -> ListContent
-    @ViewBuilder var inspector: () -> Inspector
+/// The state the screens share with the inspector column, which is outside them on the split view.
+struct ResourceSelection: Equatable {
+    var containerTab = ContainerInspector.Tab.info
+    var imageID: String?
+    var volumeName: String?
+    var networkID: String?
+    var stackID: UUID?
+    /// The inspector's Run sets it, and Images shows the sheet.
+    var runImage: RunImage?
+    var isInspectorShown = true
+
+    mutating func showContainerLogs() {
+        containerTab = .logs
+        isInspectorShown = true
+    }
+}
+
+extension View {
+    /// Content with a minimum width wider than its split view column makes the split view loop and throw.
+    func fitsSplitColumn() -> some View {
+        frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct ResourceInspector: View {
+    let destination: DashboardDestination
+    let model: RuntimeViewModel
+    @Binding var selection: ResourceSelection
+    @Binding var openedStackID: UUID?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        HStack(spacing: 0) {
-            list()
-            Rectangle()
-                .fill(theme.hairline)
-                .frame(width: 0.5)
-            inspector()
-                .frame(width: 404)
+        content
+            .fitsSplitColumn()
+            .background(theme.windowBackground)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch destination {
+        case .containers:
+            ContainerInspector(
+                container: model.containers.first { $0.id == model.selectedContainerID },
+                model: model,
+                tab: $selection.containerTab
+            )
+        case .images:
+            ImageInspector(image: model.images.first { $0.id == selection.imageID }, model: model) { image in
+                selection.runImage = RunImage(image: image)
+            }
+        case .volumes:
+            VolumeInspector(volume: model.volumes.first { $0.name == selection.volumeName }, model: model)
+        case .networks:
+            NetworkInspector(network: model.networks.first { $0.id == selection.networkID }, model: model)
+        case .stacks:
+            let stack = model.allStacks.first { $0.id == selection.stackID }
+            StackInspector(stack: stack, model: model) { openedStackID = stack?.id }
+        case .overview, .doctor:
+            EmptyInspector()
         }
     }
 }

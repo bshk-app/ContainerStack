@@ -4,8 +4,8 @@ import SwiftUI
 struct VolumesView: View {
     let model: RuntimeViewModel
     var searchText: String = ""
+    @Binding var selectedVolumeName: String?
     @State private var isConfirmingPrune = false
-    @State private var selectedVolumeName: String?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -33,17 +33,13 @@ struct VolumesView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ResourceSplitPane {
-                    List(selection: $selectedVolumeName) {
-                        ForEach(filteredVolumes) { volume in
-                            VolumeRow(volume: volume, model: model)
-                                .tag(volume.name)
-                        }
+                List(selection: $selectedVolumeName) {
+                    ForEach(filteredVolumes) { volume in
+                        VolumeRow(volume: volume, model: model)
+                            .tag(volume.name)
                     }
-                    .listStyle(.inset)
-                } inspector: {
-                    VolumeInspector(volume: selectedVolume, model: model)
                 }
+                .listStyle(.inset)
             }
 
             ResourceStatus(model: model)
@@ -79,16 +75,12 @@ struct VolumesView: View {
         }
     }
 
-    private var selectedVolume: DockerVolumeSummary? {
-        guard let selectedVolumeName else { return nil }
-        return model.volumes.first { $0.name == selectedVolumeName }
-    }
 }
 
 struct NetworksView: View {
     let model: RuntimeViewModel
     var searchText: String = ""
-    @State private var selectedNetworkID: String?
+    @Binding var selectedNetworkID: String?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -116,17 +108,13 @@ struct NetworksView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ResourceSplitPane {
-                    List(selection: $selectedNetworkID) {
-                        ForEach(filteredNetworks) { network in
-                            NetworkRow(network: network, model: model)
-                                .tag(network.id)
-                        }
+                List(selection: $selectedNetworkID) {
+                    ForEach(filteredNetworks) { network in
+                        NetworkRow(network: network, model: model)
+                            .tag(network.id)
                     }
-                    .listStyle(.inset)
-                } inspector: {
-                    NetworkInspector(network: selectedNetwork, model: model)
                 }
+                .listStyle(.inset)
             }
 
             ResourceStatus(model: model)
@@ -138,11 +126,6 @@ struct NetworksView: View {
         model.networks.filter { network in
             ResourceSearch.matches(searchText, network.name, network.subnet, network.driver)
         }
-    }
-
-    private var selectedNetwork: DockerNetworkSummary? {
-        guard let selectedNetworkID else { return nil }
-        return model.networks.first { $0.id == selectedNetworkID }
     }
 }
 
@@ -239,7 +222,7 @@ private struct NetworkRow: View {
     }
 }
 
-private struct VolumeInspector: View {
+struct VolumeInspector: View {
     let volume: DockerVolumeSummary?
     let model: RuntimeViewModel
     @State private var isConfirmingDelete = false
@@ -280,7 +263,7 @@ private struct VolumeInspector: View {
     }
 }
 
-private struct NetworkInspector: View {
+struct NetworkInspector: View {
     let network: DockerNetworkSummary?
     let model: RuntimeViewModel
     @State private var isConfirmingDelete = false

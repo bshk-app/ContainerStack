@@ -26,13 +26,25 @@ enum DashboardDestination: String, CaseIterable, Hashable, Identifiable {
 
 }
 
+/// The section on screen and the toolbar query, which every section filters by.
+struct DashboardNavigation: Equatable {
+    var selection: DashboardDestination = .containers
+    var searchText = ""
+
+    /// For a jump from one section to another. A query typed for the old section could filter
+    /// the new one down to nothing, and hide what the jump opened.
+    mutating func open(_ destination: DashboardDestination) {
+        selection = destination
+        searchText = ""
+    }
+}
+
 struct DashboardView: View {
     let model: RuntimeViewModel
     let resourceSettings: ContainerResourceSettings
-    @State private var selection: DashboardDestination = .containers
+    @State private var navigation = DashboardNavigation()
     @State private var isConfirmingPrune = false
-    @State private var searchText = ""
-    @State private var focusImagePull = false
+    @State private var isChoosingImageToRun = false
     /// Outlives the section's view, so a run in flight when the section is left is still the one
     /// a return visit joins (F-007), and the 30s window holds across visits (F-011).
     @State private var doctor: DoctorViewModel
@@ -45,7 +57,7 @@ struct DashboardView: View {
 
     var body: some View {
         NavigationSplitView {
-            DashboardSidebar(selection: $selection, model: model)
+            DashboardSidebar(selection: $navigation.selection, model: model)
                 .navigationSplitViewColumnWidth(min: 196, ideal: 210, max: 248)
                 .navigationTitle("")
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -54,40 +66,43 @@ struct DashboardView: View {
         } detail: {
             NavigationStack {
                 Group {
-                    switch selection {
+                    switch navigation.selection {
                     case .overview:
-                        OverviewView(model: model)
+                        OverviewView(model: model) { navigation.open(.containers) }
                     case .containers:
-                        ContainersView(model: model, searchText: searchText)
+                        ContainersView(model: model, searchText: navigation.searchText)
                     case .images:
                         ImagesView(
                             model: model,
                             resourceSettings: resourceSettings,
-                            searchText: searchText,
-                            focusPull: focusImagePull,
-                            onFocusConsumed: { focusImagePull = false }
+                            searchText: navigation.searchText
                         )
                     case .volumes:
-                        VolumesView(model: model, searchText: searchText)
+                        VolumesView(model: model, searchText: navigation.searchText)
                     case .networks:
-                        NetworksView(model: model, searchText: searchText)
+                        NetworksView(model: model, searchText: navigation.searchText)
                     case .stacks:
-                        StacksView(model: model, searchText: searchText)
+                        StacksView(model: model, searchText: navigation.searchText)
                     case .doctor:
                         DoctorView(doctor: doctor)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle(selection.title)
+                .navigationTitle(navigation.selection.title)
                 .navigationSubtitle(headerSubtitle)
-                .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
+                .searchable(text: $navigation.searchText, placement: .toolbar, prompt: "Search")
                 .toolbar {
                     ToolbarItem {
-                        Button("Run image") {
-                            selection = .images
-                            focusImagePull = true
-                        }
-                        .disabled(!model.canMutate)
+                        Button("Run\u{2026}") { isChoosingImageToRun = true }
+                            .help(
+                                model.images.isEmpty
+                                    ? "Pull an image in Images first"
+                                    : "Run a container from a local image"
+                            )
+                            .disabled(
+                                !model.canMutate || model.busyResource != nil || model.isRunningContainer
+                                    || model.images.isEmpty
+                            )
                     }
                     ToolbarItem {
                         Menu {
@@ -100,6 +115,14 @@ struct DashboardView: View {
                         } label: {
                             LucideLabel(title: "More", icon: .ellipsis)
                         }
+                    }
+                }
+                .sheet(isPresented: $isChoosingImageToRun) {
+                    RunContainerSheet(
+                        images: model.images.map(\.displayName),
+                        settings: resourceSettings
+                    ) { image, limits in
+                        Task { await model.run(image: image, resourceLimits: limits) }
                     }
                 }
             }
@@ -137,7 +160,7 @@ struct DashboardView: View {
     }
 
     private var headerSubtitle: String {
-        switch selection {
+        switch navigation.selection {
         case .containers:
             let running = model.containers.filter(\.isRunning).count
             return "\(running) of \(model.containers.count) running"
@@ -190,6 +213,7 @@ private struct ContainerLogsSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }
+            .defaultScrollAnchor(.bottom)
             .background(.black.opacity(0.88), in: .rect(cornerRadius: 10))
             .foregroundStyle(.white)
         }
@@ -200,6 +224,7 @@ private struct ContainerLogsSheet: View {
 
 private struct OverviewView: View {
     let model: RuntimeViewModel
+    let openContainers: () -> Void
 
     var body: some View {
         ScrollView {
@@ -219,7 +244,7 @@ private struct OverviewView: View {
                     OutputCard(output: containerOutput)
                 }
 
-                RecentContainers(model: model)
+                RecentContainers(model: model, openContainers: openContainers)
                 RuntimeDetails(model: model)
             }
             .padding(28)
@@ -319,6 +344,7 @@ private struct ResourceSummary: View {
 
 private struct RecentContainers: View {
     let model: RuntimeViewModel
+    let openContainers: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -344,8 +370,12 @@ private struct RecentContainers: View {
                         model: model,
                         onShowLogs: {
                             Task { await model.showLogs(for: container) }
-                        }
+                        },
+                        onSelect: openContainers
                     )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 10))
                 }
             }
         }

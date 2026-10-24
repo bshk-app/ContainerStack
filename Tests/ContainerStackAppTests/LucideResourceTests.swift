@@ -38,6 +38,13 @@ final class LucideResourceTests: XCTestCase {
         XCTAssertEqual(unresolved.map(\.rawValue), [], "missing Lucide assets in \(bundle.bundleURL.path)")
     }
 
+    /// `LucideIcon.body` runs on every model change. Loading the image there read and parsed
+    /// the SVG file each time.
+    @MainActor
+    func testIconImageIsLoadedOnce() {
+        XCTAssertTrue(Lucide.play.image === Lucide.play.image)
+    }
+
     func testAssetLookupFailsInABundleThatCarriesNoIcons() throws {
         let bundle = try XCTUnwrap(Bundle(url: FileManager.default.temporaryDirectory))
 

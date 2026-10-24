@@ -40,7 +40,6 @@ struct SidebarRuntimePanel: View {
             .padding(.horizontal, 10)
             .frame(height: 36)
         }
-        .background(theme.sidebarBackground)
     }
 
     private var footerLabel: String {
@@ -150,7 +149,7 @@ struct SidebarRuntimePanel: View {
         switch model.runtimeState {
         case .starting:
             ProgressView()
-                .controlSize(.small)
+                .controlSize(.mini)
                 .frame(width: 10, height: 10)
         case .running:
             Circle().fill(.green).frame(width: 8, height: 8)

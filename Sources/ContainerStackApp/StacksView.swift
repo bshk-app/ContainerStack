@@ -31,24 +31,18 @@ struct StacksView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ResourceSplitPane {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredStacks) { stack in
-                                StackRow(
-                                    stack: stack,
-                                    model: model,
-                                    isSelected: selectedStackID == stack.id
-                                ) {
-                                    selectedStackID = stack.id
-                                }
+                    List(selection: $selectedStackID) {
+                        ForEach(filteredStacks) { stack in
+                            StackRow(stack: stack, model: model)
+                                .tag(stack.id)
                                 .contextMenu {
                                     Button("Unregister (keeps the file)") {
                                         model.removeStack(stack)
                                     }
                                 }
-                            }
                         }
                     }
+                    .listStyle(.inset)
                 } inspector: {
                     StackInspector(
                         stack: selectedStack,
@@ -124,9 +118,7 @@ struct StacksView: View {
 private struct StackRow: View {
     let stack: ComposeStack
     let model: RuntimeViewModel
-    let isSelected: Bool
-    let onSelect: () -> Void
-    @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     private var statuses: [ComposeServiceStatus] {
         model.stackStatuses[stack.id] ?? []
@@ -140,52 +132,50 @@ private struct StackRow: View {
         model.busyStackID == stack.id
     }
 
+    private var isProminent: Bool {
+        prominence == .increased
+    }
+
     var body: some View {
-        SelectableResourceRow(
-            isSelected: isSelected,
-            accessibilityLabel: stack.name,
-            action: onSelect
-        ) {
+        ResourceRow {
             HStack(spacing: 9) {
                 LucideIcon(.layers)
                     .frame(width: 13, height: 13)
-                    .foregroundStyle(isSelected ? Color.white : Color(uiHex: 0x3B82F6))
+                    .foregroundStyle(isProminent ? Color.white : Color(uiHex: 0x3B82F6))
                     .frame(width: 27, height: 27)
                     .background(
-                        Color(uiHex: 0x3B82F6).opacity(isSelected ? 0.28 : 0.22),
+                        isProminent ? Color.white.opacity(0.22) : Color(uiHex: 0x3B82F6).opacity(0.22),
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                     )
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(stack.name)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
                         .lineLimit(1)
                     Text(stack.fileURL.path)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.78) : theme.textSecondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 8)
                 Text(statuses.isEmpty ? "—" : "\(runningCount)/\(statuses.count)")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.white.opacity(0.78) : theme.textSecondary)
+                    .foregroundStyle(.secondary)
             }
         } actions: {
             HStack(spacing: 2) {
                 RowActionButton(
                     icon: .play,
                     help: "Start stack",
-                    accessibilityLabel: "Start stack \(stack.name)",
-                    isSelected: isSelected
+                    accessibilityLabel: "Start stack \(stack.name)"
                 ) {
                     Task { await model.upStack(stack) }
                 }
                 RowActionButton(
                     icon: .square,
                     help: "Stop stack",
-                    accessibilityLabel: "Stop stack \(stack.name)",
-                    isSelected: isSelected
+                    accessibilityLabel: "Stop stack \(stack.name)"
                 ) {
                     Task { await model.downStack(stack, removeVolumes: false) }
                 }
@@ -317,6 +307,7 @@ private struct NewStackSheet: View {
                 Spacer()
                 Button("Create") { submit() }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(trimmedName.isEmpty || directory == nil)
             }
         }

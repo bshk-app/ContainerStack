@@ -2,8 +2,21 @@ import ContainerStackCore
 import SwiftUI
 
 extension DockerImageSummary {
-    fileprivate var displayName: String {
+    var displayName: String {
         repositoryTags?.first ?? ResourceIdentifier.short(id)
+    }
+
+    /// Most local images share the `docker.io/library/` prefix, so initials taken from the
+    /// full reference read "do" on every row.
+    var avatarInitials: String {
+        ResourceAvatar.initials(from: Self.repositoryName(of: displayName))
+    }
+
+    /// `docker.io/library/redis:7-alpine` → `redis`: the last path component, without a tag or digest.
+    private static func repositoryName(of reference: String) -> String {
+        let withoutDigest = reference.split(separator: "@").first.map(String.init) ?? reference
+        let lastComponent = withoutDigest.split(separator: "/").last.map(String.init) ?? withoutDigest
+        return lastComponent.split(separator: ":").first.map(String.init) ?? lastComponent
     }
 }
 
@@ -16,9 +29,6 @@ struct ImagesView: View {
     let model: RuntimeViewModel
     let resourceSettings: ContainerResourceSettings
     var searchText: String = ""
-    var focusPull: Bool = false
-    var onFocusConsumed: () -> Void = {}
-    @FocusState private var pullFocused: Bool
     @State private var selectedImageID: String?
     @State private var runImage: RunImage?
     @Environment(\.appTheme) private var theme
@@ -30,8 +40,7 @@ struct ImagesView: View {
                 actionTitle: "Pull",
                 icon: .download,
                 isBusy: model.busyResource != nil,
-                isEnabled: model.canMutate,
-                focused: $pullFocused
+                isEnabled: model.canMutate
             ) { reference in
                 Task { await model.pull(reference: reference) }
             }
@@ -50,19 +59,17 @@ struct ImagesView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ResourceSplitPane {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredImages, id: \.id) { image in
-                                ImageRow(
-                                    image: image,
-                                    model: model,
-                                    isSelected: selectedImageID == image.id,
-                                    onSelect: { selectedImageID = image.id },
-                                    onRun: { runImage = RunImage(image: image.displayName) }
-                                )
-                            }
+                    List(selection: $selectedImageID) {
+                        ForEach(filteredImages, id: \.id) { image in
+                            ImageRow(
+                                image: image,
+                                model: model,
+                                onRun: { runImage = RunImage(image: image.displayName) }
+                            )
+                            .tag(image.id)
                         }
                     }
+                    .listStyle(.inset)
                 } inspector: {
                     ImageInspector(image: selectedImage, model: model) { image in
                         runImage = RunImage(image: image)
@@ -94,19 +101,9 @@ struct ImagesView: View {
         }
         .background(theme.windowBackground)
         .sheet(item: $runImage) { request in
-            RunContainerSheet(image: request.image, settings: resourceSettings) { limits in
-                Task { await model.run(image: request.image, resourceLimits: limits) }
+            RunContainerSheet(images: [request.image], settings: resourceSettings) { image, limits in
+                Task { await model.run(image: image, resourceLimits: limits) }
             }
-        }
-        .onChange(of: focusPull) { _, want in
-            guard want else { return }
-            pullFocused = true
-            onFocusConsumed()
-        }
-        .onAppear {
-            guard focusPull else { return }
-            pullFocused = true
-            onFocusConsumed()
         }
     }
 
@@ -131,31 +128,19 @@ struct ImageRow: View {
     @State private var isConfirmingDelete = false
     let image: DockerImageSummary
     let model: RuntimeViewModel
-    var isSelected: Bool = false
-    var onSelect: () -> Void = {}
     var onRun: () -> Void = {}
-    @Environment(\.appTheme) private var theme
 
     var body: some View {
-        SelectableResourceRow(
-            isSelected: isSelected,
-            accessibilityLabel: image.displayName,
-            action: onSelect
-        ) {
+        ResourceRow {
             HStack(spacing: 9) {
-                ResourceAvatar(
-                    text: ResourceAvatar.initials(from: image.displayName),
-                    tint: Color(uiHex: 0x8B5CF6),
-                    isOn: true
-                )
+                ResourceAvatar(text: image.avatarInitials, tint: Color(uiHex: 0x8B5CF6))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(image.displayName)
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
-                        .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
                         .lineLimit(1)
                     Text(subtitle)
                         .font(.system(size: 11))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.78) : theme.textSecondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
             }
@@ -164,8 +149,7 @@ struct ImageRow: View {
                 RowActionButton(
                     icon: .play,
                     help: "Run",
-                    accessibilityLabel: "Run \(image.displayName)",
-                    isSelected: isSelected
+                    accessibilityLabel: "Run \(image.displayName)"
                 ) {
                     onRun()
                 }
@@ -173,8 +157,7 @@ struct ImageRow: View {
                     icon: .trash,
                     help: "Delete",
                     accessibilityLabel: "Delete \(image.displayName)",
-                    destructive: true,
-                    isSelected: isSelected
+                    destructive: true
                 ) {
                     isConfirmingDelete = true
                 }

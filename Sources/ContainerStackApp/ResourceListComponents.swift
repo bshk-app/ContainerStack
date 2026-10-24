@@ -18,40 +18,30 @@ struct ResourceSplitPane<ListContent: View, Inspector: View>: View {
     }
 }
 
-struct SelectableResourceRow<Content: View, Actions: View>: View {
-    let isSelected: Bool
-    let accessibilityLabel: String
-    let action: () -> Void
+/// A resource row: the content takes the free width and the actions sit at the trailing edge.
+/// Inside `List(selection:)` the list selects the row; `onSelect` serves a row outside a list.
+struct ResourceRow<Content: View, Actions: View>: View {
+    var onSelect: (() -> Void)?
     @ViewBuilder var content: () -> Content
     @ViewBuilder var actions: () -> Actions
-    @Environment(\.appTheme) private var theme
-    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 9) {
-            Button(action: action) {
-                content()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            if let onSelect {
+                Button(action: onSelect) { label }
+                    .buttonStyle(.plain)
+            } else {
+                label
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
             actions()
         }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .background(rowBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 0.5)
-        }
-        .onHover { isHovered = $0 }
+        .padding(.vertical, 3)
     }
 
-    private var rowBackground: Color {
-        if isSelected { return theme.accent }
-        if isHovered { return theme.rowHover }
-        return .clear
+    private var label: some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 }
 
@@ -71,6 +61,8 @@ struct InspectorHeader<Actions: View>: View {
     let title: String
     let subtitle: String
     var pill: String?
+    /// Colors the pill's text and fill; `nil` draws it neutral.
+    var pillTint: Color?
     @ViewBuilder var actions: () -> Actions
     @Environment(\.appTheme) private var theme
 
@@ -84,11 +76,11 @@ struct InspectorHeader<Actions: View>: View {
                 if let pill {
                     Text(pill)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(theme.textSecondary)
+                        .foregroundStyle(pillTint ?? theme.textSecondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(
-                            Color.white.opacity(0.08),
+                            pillTint?.opacity(0.16) ?? theme.subtleFill,
                             in: RoundedRectangle(cornerRadius: 5, style: .continuous)
                         )
                 }
@@ -155,22 +147,16 @@ struct InspectorAction: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(destructive ? theme.destructive : Color.white)
-                .padding(.horizontal, 12)
-                .frame(height: 22)
-                .background(
-                    prominent ? theme.accent : theme.sidebarBackground,
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .strokeBorder(theme.hairline, lineWidth: 0.5)
-                )
+        let button = Button(title, role: destructive ? .destructive : nil, action: action)
+            .controlSize(.small)
+        if prominent {
+            button.buttonStyle(.borderedProminent)
+        } else if destructive {
+            // macOS draws a bordered destructive button like any other, so the red title is the cue.
+            button.buttonStyle(.bordered).foregroundStyle(theme.destructive)
+        } else {
+            button.buttonStyle(.bordered)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -179,9 +165,9 @@ struct RowActionButton: View {
     let help: String
     let accessibilityLabel: String
     var destructive: Bool = false
-    var isSelected: Bool = false
     let action: () -> Void
     @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         Button(action: action) {
@@ -196,8 +182,9 @@ struct RowActionButton: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
+    /// Red is close to invisible on the selection fill, so a selected row draws every glyph white.
     private var color: Color {
-        if isSelected { return destructive ? theme.destructive : Color.white.opacity(0.9) }
+        if prominence == .increased { return Color.white.opacity(0.9) }
         return destructive ? theme.destructive.opacity(0.8) : theme.textSecondary
     }
 }
@@ -207,22 +194,52 @@ struct ResourceAvatar: View {
     let tint: Color
     var isOn: Bool = true
     @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(isOn ? tint : theme.textSecondary)
+            .foregroundStyle(foreground)
             .frame(width: 27, height: 27)
-            .background(
-                (isOn ? tint : Color.gray).opacity(0.22),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
+            .background(background, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            // The initials repeat the row's name, so VoiceOver would read "we, demo-webserver-1".
+            .accessibilityHidden(true)
     }
 
-    static func initials(from source: String) -> String {
+    /// A tinted tile loses its letters on the selection fill, so a selected row draws it white.
+    private var foreground: Color {
+        if prominence == .increased { return .white }
+        return isOn ? tint : theme.textSecondary
+    }
+
+    private var background: Color {
+        if prominence == .increased { return Color.white.opacity(0.22) }
+        return (isOn ? tint : Color.gray).opacity(0.22)
+    }
+
+    nonisolated static func initials(from source: String) -> String {
         let letters = source.filter(\.isLetter)
         let seed = letters.count >= 2 ? String(letters.prefix(2)) : String(source.prefix(2))
         return seed.lowercased()
+    }
+
+    private static let palette: [Color] = [
+        Color(uiHex: 0x3B82F6),
+        Color(uiHex: 0x8B5CF6),
+        Color(uiHex: 0x06B6D4),
+        Color(uiHex: 0xEF4444),
+        Color(uiHex: 0xF59E0B),
+        Color(uiHex: 0x22C55E),
+    ]
+
+    static func tint(for name: String) -> Color {
+        palette[paletteIndex(for: name, count: palette.count)]
+    }
+
+    /// `String.hashValue` is seeded per process, so a tint taken from it would change on every launch.
+    nonisolated static func paletteIndex(for name: String, count: Int) -> Int {
+        let sum = name.unicodeScalars.reduce(UInt(0)) { $0 &+ UInt($1.value) }
+        return Int(sum % UInt(count))
     }
 }
 

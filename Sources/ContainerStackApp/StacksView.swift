@@ -194,6 +194,11 @@ struct StackInspector: View {
         return model.stackStatuses[stack.id] ?? []
     }
 
+    /// As for a container, Start is the prominent action only while there is something to start.
+    static func isStartProminent(_ statuses: [ComposeServiceStatus]) -> Bool {
+        statuses.isEmpty || statuses.contains { !$0.isRunning }
+    }
+
     var body: some View {
         if let stack {
             VStack(alignment: .leading, spacing: 0) {
@@ -209,7 +214,7 @@ struct StackInspector: View {
                         isHealthy: model.canMutate,
                         isBusy: model.busyStackID != nil
                     )
-                    InspectorAction(title: "Start", prominent: true) {
+                    InspectorAction(title: "Start", prominent: Self.isStartProminent(statuses)) {
                         Task { await model.upStack(stack) }
                     }
                     .disabled(!availability.canControl)

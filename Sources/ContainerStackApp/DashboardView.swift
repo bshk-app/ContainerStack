@@ -150,6 +150,8 @@ struct DashboardView: View {
                         } label: {
                             LucideLabel(title: "More", icon: .ellipsis)
                         }
+                        // The toolbar does not take the label's title and reads "chevron.pulldown" instead.
+                        .accessibilityLabel("More")
                     }
                 }
                 .sheet(isPresented: $isChoosingImageToRun) {

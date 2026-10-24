@@ -56,6 +56,7 @@ struct ContainersView: View {
                     }
                 }
                 .listStyle(.inset)
+                .focusesOnClick()
             }
 
             if let containerMessage = model.containerMessage {

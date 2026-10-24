@@ -40,6 +40,7 @@ struct VolumesView: View {
                     }
                 }
                 .listStyle(.inset)
+                .focusesOnClick()
             }
 
             ResourceStatus(model: model)
@@ -115,6 +116,7 @@ struct NetworksView: View {
                     }
                 }
                 .listStyle(.inset)
+                .focusesOnClick()
             }
 
             ResourceStatus(model: model)

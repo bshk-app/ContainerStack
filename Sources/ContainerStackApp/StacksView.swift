@@ -42,6 +42,7 @@ struct StacksView: View {
                     }
                 }
                 .listStyle(.inset)
+                .focusesOnClick()
             }
 
             if let stackMessage = model.stackMessage {

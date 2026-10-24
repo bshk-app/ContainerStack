@@ -69,6 +69,7 @@ struct ImagesView: View {
                     }
                 }
                 .listStyle(.inset)
+                .focusesOnClick()
             }
 
             if let resourceMessage = model.resourceMessage {

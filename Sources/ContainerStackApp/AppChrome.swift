@@ -119,6 +119,7 @@ struct DashboardSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .focusesOnClick()
         .contextMenu {
             Section("Show in Sidebar") {
                 ForEach(DashboardDestination.dockerItems) { item in

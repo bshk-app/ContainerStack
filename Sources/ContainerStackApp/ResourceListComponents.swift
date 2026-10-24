@@ -63,6 +63,23 @@ struct ResourceInspector: View {
     }
 }
 
+/// A click selects a row of a SwiftUI `List` but, unlike `NSTableView`, gives the list no keyboard focus.
+private struct FocusOnClick: ViewModifier {
+    @FocusState private var isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .focused($isFocused)
+            .simultaneousGesture(TapGesture().onEnded { isFocused = true })
+    }
+}
+
+extension View {
+    func focusesOnClick() -> some View {
+        modifier(FocusOnClick())
+    }
+}
+
 /// A resource row: the content takes the free width and the actions sit at the trailing edge.
 /// Inside `List(selection:)` the list selects the row; `onSelect` serves a row outside a list.
 struct ResourceRow<Content: View, Actions: View>: View {

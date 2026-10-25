@@ -35,6 +35,8 @@ struct StacksView: View {
                         StackRow(stack: stack, model: model)
                             .tag(stack.id)
                             .contextMenu {
+                                Button("Edit") { openedStackID = stack.id }
+                                Divider()
                                 Button("Unregister (keeps the file)") {
                                     model.removeStack(stack)
                                 }

@@ -20,7 +20,7 @@ extension DockerImageSummary {
     }
 }
 
-private struct RunImage: Identifiable {
+struct RunImage: Identifiable, Equatable {
     let image: String
     var id: String { image }
 }
@@ -29,8 +29,8 @@ struct ImagesView: View {
     let model: RuntimeViewModel
     let resourceSettings: ContainerResourceSettings
     var searchText: String = ""
-    @State private var selectedImageID: String?
-    @State private var runImage: RunImage?
+    @Binding var selectedImageID: String?
+    @Binding var runImage: RunImage?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -58,28 +58,18 @@ struct ImagesView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ResourceSplitPane {
-                    List(selection: $selectedImageID) {
-                        ForEach(filteredImages, id: \.id) { image in
-                            ImageRow(
-                                image: image,
-                                model: model,
-                                onRun: { runImage = RunImage(image: image.displayName) }
-                            )
-                            .tag(image.id)
-                        }
-                    }
-                    .listStyle(.inset)
-                } inspector: {
-                    ImageInspector(image: selectedImage, model: model) { image in
-                        runImage = RunImage(image: image)
-                    }
-                    .task(id: selectedImageID) {
-                        if let image = selectedImage {
-                            await model.loadImageDetail(for: image)
-                        }
+                List(selection: $selectedImageID) {
+                    ForEach(filteredImages, id: \.id) { image in
+                        ImageRow(
+                            image: image,
+                            model: model,
+                            onRun: { runImage = RunImage(image: image.displayName) }
+                        )
+                        .tag(image.id)
                     }
                 }
+                .listStyle(.inset)
+                .focusesOnClick()
             }
 
             if let resourceMessage = model.resourceMessage {
@@ -118,10 +108,6 @@ struct ImagesView: View {
         }
     }
 
-    private var selectedImage: DockerImageSummary? {
-        guard let selectedImageID else { return nil }
-        return model.images.first { $0.id == selectedImageID }
-    }
 }
 
 struct ImageRow: View {
@@ -181,7 +167,7 @@ struct ImageRow: View {
     }
 }
 
-private struct ImageInspector: View {
+struct ImageInspector: View {
     @State private var isConfirmingDelete = false
     let image: DockerImageSummary?
     let model: RuntimeViewModel
@@ -192,6 +178,15 @@ private struct ImageInspector: View {
     }
 
     var body: some View {
+        content
+            .task(id: image?.id) {
+                if let image {
+                    await model.loadImageDetail(for: image)
+                }
+            }
+    }
+
+    @ViewBuilder private var content: some View {
         if let image {
             let name = image.displayName
             let used = ResourceUsage.containers(usingImage: image, from: model.containers)

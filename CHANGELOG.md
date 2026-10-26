@@ -12,6 +12,60 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.8.0](https://github.com/bshk-app/ContainerStack/compare/v0.7.0...v0.8.0) (2026-10-26)
+
+
+### Added
+
+* **app:** decide which runtime operation runs in one queue ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([2baef33](https://github.com/bshk-app/ContainerStack/commit/2baef3335baa40d37ce49b6322ca66d828c0c512))
+* **app:** draw the sidebar as a native source list ([fcf9aac](https://github.com/bshk-app/ContainerStack/commit/fcf9aac2535c4e37786631b717f7ebfc639e8114))
+* **app:** run Start, Stop and Restart through one queue ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([99bad42](https://github.com/bshk-app/ContainerStack/commit/99bad42cff4221c953398427847f6998e9e637d6))
+* **app:** show containers, images, volumes, networks and stacks in native lists ([3db9ae4](https://github.com/bshk-app/ContainerStack/commit/3db9ae48583828cd4da824163a8de677e37e524c))
+* **app:** use native lists and fix UI defects ([22c9be5](https://github.com/bshk-app/ContainerStack/commit/22c9be5db52197d2a7ac10cea94beb3620448e25))
+
+
+### Fixed
+
+* **app:** call the overview section Overview in the sidebar ([bce6e5e](https://github.com/bshk-app/ContainerStack/commit/bce6e5e4beaea80a7e1f4812108e9043cf4f7764))
+* **app:** draw selected rows with the system selection color ([c574f99](https://github.com/bshk-app/ContainerStack/commit/c574f9934537f275871c7a61a3d9f841b713e7c8))
+* **app:** drop the volume Used by row that always read a dash ([d298d94](https://github.com/bshk-app/ContainerStack/commit/d298d9488080931e6a8ff1fcacee91211268e015))
+* **app:** fit published ports into the container row ([741d543](https://github.com/bshk-app/ContainerStack/commit/741d5435312e5a1e5cdc9a1eabb1a9ce306323ec))
+* **app:** fit the sidebar's starting spinner in its slot ([d2e191b](https://github.com/bshk-app/ContainerStack/commit/d2e191bb9e7236a0c77809b81107c931e1a50d16))
+* **app:** focus lists on click and give the inspector its own column ([b67cf10](https://github.com/bshk-app/ContainerStack/commit/b67cf1004b9aec9757180f8a5e31ca1ccb831f48))
+* **app:** give a list keyboard focus when the user clicks it ([4eb74e7](https://github.com/bshk-app/ContainerStack/commit/4eb74e7ecff3b0c4be915c1ba68f6fe0ab60d3d2))
+* **app:** give the inspector its own column and toolbar area ([17b17be](https://github.com/bshk-app/ContainerStack/commit/17b17be4a4ab351c65c6403eedfaff1c9a9dbafe))
+* **app:** keep a container's avatar tint across launches ([7079aad](https://github.com/bshk-app/ContainerStack/commit/7079aad4a5fa0fc58036622c4907a112a2bcc26a))
+* **app:** keep tests away from the user's Docker configuration ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([dfe2d0d](https://github.com/bshk-app/ContainerStack/commit/dfe2d0d9faa57604fb2baa4b54bb11f44de5add1))
+* **app:** let the whole group header expand and collapse its group ([7ea0899](https://github.com/bshk-app/ContainerStack/commit/7ea08994228b2eaed15b53a003521c4de8c597e0))
+* **app:** make Create the default button of the New Stack sheet ([a6984ed](https://github.com/bshk-app/ContainerStack/commit/a6984edc57020b3d378bccc54de9445eab94add1))
+* **app:** make inspector actions and status pills readable in light mode ([bbc4c23](https://github.com/bshk-app/ContainerStack/commit/bbc4c2385b13d526ca3ae506616dc63c1487e8aa))
+* **app:** make Start prominent only while a stack service is stopped ([311ca76](https://github.com/bshk-app/ContainerStack/commit/311ca76501a81e31f4320af8847a99472b434ab2))
+* **app:** make the toolbar Run button run a container ([bb58eb0](https://github.com/bshk-app/ContainerStack/commit/bb58eb0bb1498128c8c5630d161a0cd53b06c4c0))
+* **app:** name the app in the menu bar Quit item and add Command-Q ([a22f1c9](https://github.com/bshk-app/ContainerStack/commit/a22f1c9c4f077a18e97a0cb4a7b04722f4c12db9))
+* **app:** name the first inspector tab Info and draw the tabs natively ([2772ed1](https://github.com/bshk-app/ContainerStack/commit/2772ed17291f20439d25e9859aeab2af58f7da7a))
+* **app:** name the toolbar More menu for VoiceOver ([77e8d17](https://github.com/bshk-app/ContainerStack/commit/77e8d1779eae74dbf3edf07e943ed3b64a5621d8))
+* **app:** open a recent container from Overview in Containers ([2f28966](https://github.com/bshk-app/ContainerStack/commit/2f289666df02536cac982944f19d4bbd95fb0515))
+* **app:** open container logs at the newest line ([05405d2](https://github.com/bshk-app/ContainerStack/commit/05405d236f540e9cd01c8ee310faf2bfa5a1468d))
+* **app:** open the stack editor from a stack row's context menu ([38b2e14](https://github.com/bshk-app/ContainerStack/commit/38b2e144ce974e8c02aede25ea48d1d2306c41a6))
+* **app:** publish a refresh's lists under the epoch it began with ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([650e10b](https://github.com/bshk-app/ContainerStack/commit/650e10b5a2e550acc840029a88237a911916703d))
+* **app:** take image avatar initials from the repository name ([75fb51b](https://github.com/bshk-app/ContainerStack/commit/75fb51b7bccef9a21908c343803a1e96e6a6c6aa))
+* **compose:** give down and restart a deadline, and recover on it ([3538585](https://github.com/bshk-app/ContainerStack/commit/3538585283d237345a65ff4c4832a81478d4cd60)), closes [#101](https://github.com/bshk-app/ContainerStack/issues/101)
+* **compose:** give stack down and restart a deadline, and recover on it ([ba261a9](https://github.com/bshk-app/ContainerStack/commit/ba261a963652bdea2bfbb09052887de842ee0ede))
+* **compose:** keep unbounded verbs on their old path, isolate the process registry ([ac630e9](https://github.com/bshk-app/ContainerStack/commit/ac630e970d80868022390bab0c2947c55679f2de))
+* **core:** keep a child's output when the drain starts late ([d6cc86c](https://github.com/bshk-app/ContainerStack/commit/d6cc86c53fc5eb05c9fdd85c2612fd7dc7fc68aa))
+* **core:** start a bounded child and register it as one step ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([79c5f0f](https://github.com/bshk-app/ContainerStack/commit/79c5f0fb0e8bc9bfd804c31885b0f973d7d373b3))
+* **hooks:** lower the comment gate's candidate bound to any length, warn-only ([b72af14](https://github.com/bshk-app/ContainerStack/commit/b72af144a1e959877771f821577ac8b1cf5d3bca))
+* **runtime:** end the helper's bounded children on SIGTERM ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([b266428](https://github.com/bshk-app/ContainerStack/commit/b2664288885c2577cf6c32206e02c9ea94115084))
+
+
+### Changed
+
+* **app:** build the container screen from the shared list parts ([c2b1bc2](https://github.com/bshk-app/ContainerStack/commit/c2b1bc253a3e1a39f7cb178ddcbc76ace37cb804))
+* **app:** give the cached advisories their own type ([f7303fa](https://github.com/bshk-app/ContainerStack/commit/f7303fafd99d7c820d98cbfe3df211dfb40c10c3))
+* **app:** give the cached advisories their own type ([874796a](https://github.com/bshk-app/ContainerStack/commit/874796abb8d989acee919b404b93b393570b3e9e))
+* **app:** put what runtime operations wait on behind one seam ([#102](https://github.com/bshk-app/ContainerStack/issues/102)) ([3e0505c](https://github.com/bshk-app/ContainerStack/commit/3e0505c35f71205917c274f75f5fb301f74f9c1d))
+* **app:** read each Lucide icon from disk once ([6a560ec](https://github.com/bshk-app/ContainerStack/commit/6a560ec80fd08e8b0fa9f2594389183823d926c6))
+
 ## [0.7.0](https://github.com/bshk-app/ContainerStack/compare/v0.6.1...v0.7.0) (2026-10-06)
 
 ContainerStack gets a Doctor: the checks `cstack doctor` runs, now in the sidebar, with a button

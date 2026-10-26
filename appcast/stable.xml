@@ -3,6 +3,58 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.8.0</title>
+            <pubDate>Mon, 26 Oct 2026 20:01:31 +0000</pubDate>
+            <sparkle:version>439</sparkle:version>
+            <sparkle:shortVersionString>0.8.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>ContainerStack now uses native macOS lists and a separate inspector column. You can move<br>
+through the lists with the keyboard. The runtime now runs Start, Stop and Restart one at a<br>
+time, in the order of your clicks.</p>
+<h3>Added</h3>
+<ul>
+<li>Native lists for the sidebar, Containers, Images, Volumes, Networks and Stacks, with the<br>
+system selection color and VoiceOver support. A click on a row gives that list keyboard<br>
+focus, and the arrow keys move the selection.</li>
+<li>The inspector is a column of its own, with a Hide Inspector button in the toolbar. The<br>
+toolbar buttons of a screen stay over its list.</li>
+<li>Run… in the toolbar opens the Run Container sheet with a picker of local images. Pull<br>
+stays in Images.</li>
+<li>Edit in the context menu of a stack row opens the stack editor, also when the inspector<br>
+is hidden.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>Start, Stop and Restart of the runtime run through one queue. The app does the last action<br>
+that you click. A Stop during a Restart now ends the restart. Before, the app lost that Stop.</li>
+<li>When the app stops the runtime helper, the helper also stops the <code class="notranslate">container system start</code><br>
+that it began. Before, that start could overlap the next Stop.</li>
+<li>Stop and Restart of a stack now have a 120-second deadline. Before, a runtime that did not<br>
+answer kept the stack busy and disabled every stack action.</li>
+<li>A status check on a busy Mac no longer loses the output of the command.</li>
+<li>In light mode, the inspector buttons and the status pills are readable.</li>
+<li>Start in the stack inspector is the prominent button only while a service is stopped.</li>
+<li>Image avatars take their initials from the repository name, not from <code class="notranslate">docker.io</code>. A<br>
+container keeps its avatar color across launches.</li>
+<li>The port column shows the first mapping and a count, for example <code class="notranslate">8080→80 +1</code>.</li>
+<li>A click anywhere on a group header expands or collapses the group.</li>
+<li>Return in the New Stack sheet creates the stack.</li>
+<li>Logs open at the newest line. A recent container in Overview opens in Containers.</li>
+<li>The sidebar says Overview, and the first inspector tab is Info. The menu bar Quit item has<br>
+Command-Q. The volume inspector no longer shows a Used by row that always read "—".</li>
+</ul>
+<h3>Known limitations</h3>
+<ul>
+<li>Images and volumes that you create outside the app show only after Refresh or a relaunch.</li>
+<li>Stop on a stack runs <code class="notranslate">docker compose down</code>. It removes the containers and the network of<br>
+the stack. A stack that the app found only from container labels then leaves the list.</li>
+<li>A second pull of an image whose layers are already on disk can stay at "Pulling…".</li>
+<li>The inspector has a fixed width of 404 pt. The search field stays over the inspector.</li>
+</ul>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.8.0/ContainerStack-0.8.0.dmg" length="22739377" type="application/octet-stream" sparkle:edSignature="WW2wP1nFbhwUZVaEzV40KSTmzV+rm6Ub92V1eoL5iX+y+b3VLtXylblIhNd6mWxTOQuLqTuiahDYedezW+bxDA=="/>
+        </item>
+        <item>
             <title>0.7.0</title>
             <pubDate>Tue, 06 Oct 2026 19:34:39 +0000</pubDate>
             <sparkle:version>382</sparkle:version>

@@ -13,11 +13,11 @@ import Foundation
 /// is already resident.
 public struct MemoryCommitment: Equatable, Sendable {
     public enum Verdict: Equatable, Sendable {
-        /// Explicit limits are comfortably inside host memory.
+        /// Configured VM sizes are comfortably inside host memory.
         case within
         /// Guests approaching their limits could pressure other applications.
         case approaching
-        /// Explicit limits consume at least four fifths of host capacity.
+        /// Configured VM sizes consume at least four fifths of host capacity.
         case exceeding
     }
 
@@ -27,7 +27,7 @@ public struct MemoryCommitment: Equatable, Sendable {
 
     public let configuredBytes: Int64
     public let hostBytes: Int64
-    /// Containers running without an explicit `HostConfig.Memory`. Named separately because the
+    /// Containers without a reported `HostConfig.Memory`. Named separately because the
     /// total understates by however many there are — an unknown is not a zero.
     public let containersWithoutLimit: Int
 
@@ -37,7 +37,8 @@ public struct MemoryCommitment: Equatable, Sendable {
         self.containersWithoutLimit = containersWithoutLimit
     }
 
-    /// `limits` is one entry per running container: its `HostConfig.Memory`, or nil where the
+    /// `limits` is one entry per running container: its `HostConfig.Memory` (including the
+    /// default VM size reported by socktainer), or nil where the
     /// runtime reports none. Docker writes `0` for "no limit", so zero and negative are treated
     /// the same as nil rather than summed as nothing.
     public static func measure(limits: [Int64?], hostBytes: Int64) -> MemoryCommitment {

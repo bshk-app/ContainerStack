@@ -82,11 +82,17 @@ extension RuntimeViewModel {
         await run(.restart(replacingSibling: replacingSibling), origin: .user) == .completed(true)
     }
 
+    @discardableResult
+    func restartBridge() async -> Bool {
+        await run(.restartBridge, origin: .user) == .completed(true)
+    }
+
     private func perform(_ operation: RuntimeOperation, token: Int) async -> Bool {
         switch operation {
         case .start: await performStart(token: token)
         case .stop(let replacingSibling): await performStop(replacingSibling: replacingSibling, token: token)
         case .restart(let replacingSibling): await performRestart(replacingSibling: replacingSibling, token: token)
+        case .restartBridge: await performRestart(replacingSibling: true, bridgeOnly: true, token: token)
         }
     }
 
@@ -228,7 +234,7 @@ extension RuntimeViewModel {
 
     /// Also runs inline, under Start's token, when Start adopts a bridge from an older build: a
     /// request from inside an operation would be dropped or wait on itself (§3.4).
-    func performRestart(replacingSibling: Bool, token: Int) async -> Bool {
+    func performRestart(replacingSibling: Bool, bridgeOnly: Bool = false, token: Int) async -> Bool {
         runtimeRecoveryRequested = false
         isRestarting = true
         runtimeFailure = nil
@@ -239,11 +245,8 @@ extension RuntimeViewModel {
         await endRuntimeHelper()
         guard lifecycle.isCurrent(token) else { return false }
 
-        let steps = RuntimeRestartPlan.steps(
-            configuration: runtimeConfiguration(),
-            agentRegistered: isAgentRegistered,
-            replacingSibling: replacingSibling
-        )
+        let plan = bridgeOnly ? RuntimeRestartPlan.bridgeSteps : RuntimeRestartPlan.steps
+        let steps = plan(runtimeConfiguration(), isAgentRegistered, replacingSibling)
         var launched = false
         for step in steps {
             runtimeMessage = message(for: step)

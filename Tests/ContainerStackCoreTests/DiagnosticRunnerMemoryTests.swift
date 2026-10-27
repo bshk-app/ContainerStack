@@ -93,7 +93,8 @@ struct DiagnosticRunnerMemoryTests {
     func limitsWithinHostMemoryPass() async {
         let check = await memoryCheck(limits: [4_000_000_000])
         #expect(check?.verdict == .ok)
-        #expect(check?.summary == "Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory")
+        #expect(
+            check?.summary == "Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory")
         #expect(check?.detail == nil)
         #expect(check?.remedy == nil)
     }
@@ -104,7 +105,7 @@ struct DiagnosticRunnerMemoryTests {
         let check = await memoryCheck(limits: [10_000_000_000])
         #expect(check?.verdict == .warning)
         #expect(
-            check?.summary == "Container memory limits: 10.0 GB in explicit container limits vs 16.0 GB host memory"
+            check?.summary == "Container memory limits: 10.0 GB in configured container limits vs 16.0 GB host memory"
                 + " — guests approaching their limits may pressure other applications"
         )
         #expect(check?.remedy == nil)
@@ -120,7 +121,7 @@ struct DiagnosticRunnerMemoryTests {
         #expect(check?.verdict != .failure)
         #expect(
             check?.summary
-                == "Container memory limits: HIGH — 14.0 GB in explicit container limits vs 16.0 GB host memory"
+                == "Container memory limits: HIGH — 14.0 GB in configured container limits vs 16.0 GB host memory"
         )
         #expect(
             check?.detail
@@ -186,7 +187,7 @@ struct DiagnosticRunnerMemoryTests {
                 .check(.memoryCommitment)
             #expect(check?.verdict == .indeterminate)
             #expect(check?.verdict != .ok)
-            let measured = "Container memory limits: \(ByteSize.formatted(limit)) in explicit"
+            let measured = "Container memory limits: \(ByteSize.formatted(limit)) in configured"
             #expect(check?.summary.hasPrefix(measured) == true)
             #expect(check?.summary.hasPrefix("Container memory limits: HIGH") == false)
             #expect(
@@ -213,7 +214,7 @@ struct DiagnosticRunnerMemoryTests {
         #expect(check?.verdict != .indeterminate)
         #expect(
             check?.summary
-                == "Container memory limits: HIGH — 14.0 GB in explicit container limits vs 16.0 GB host memory"
+                == "Container memory limits: HIGH — 14.0 GB in configured container limits vs 16.0 GB host memory"
         )
         #expect(
             check?.detail
@@ -260,10 +261,11 @@ struct DiagnosticRunnerMemoryTests {
     func containersWithoutALimitAreNamed() async {
         let check = await memoryCheck(limits: [4_000_000_000, nil])
         #expect(check?.verdict == .ok)
-        #expect(check?.summary == "Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory")
+        #expect(
+            check?.summary == "Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory")
         #expect(
             check?.detail
-                == "1 running container(s) have no explicit memory limit and are excluded from that total."
+                == "1 running container(s) have no reported memory limit and are excluded from that total."
         )
     }
 

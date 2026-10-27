@@ -1,57 +1,109 @@
 import ContainerStackCore
 import SwiftUI
 
-struct ResourceSplitPane<ListContent: View, Inspector: View>: View {
-    @ViewBuilder var list: () -> ListContent
-    @ViewBuilder var inspector: () -> Inspector
+/// The state the screens share with the inspector column, which is outside them on the split view.
+struct ResourceSelection: Equatable {
+    var containerTab = ContainerInspector.Tab.info
+    var imageID: String?
+    var volumeName: String?
+    var networkID: String?
+    var stackID: UUID?
+    /// The inspector's Run sets it, and Images shows the sheet.
+    var runImage: RunImage?
+    var isInspectorShown = true
+
+    mutating func showContainerLogs() {
+        containerTab = .logs
+        isInspectorShown = true
+    }
+}
+
+extension View {
+    /// Content with a minimum width wider than its split view column makes the split view loop and throw.
+    func fitsSplitColumn() -> some View {
+        frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+struct ResourceInspector: View {
+    let destination: DashboardDestination
+    let model: RuntimeViewModel
+    @Binding var selection: ResourceSelection
+    @Binding var openedStackID: UUID?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        HStack(spacing: 0) {
-            list()
-            Rectangle()
-                .fill(theme.hairline)
-                .frame(width: 0.5)
-            inspector()
-                .frame(width: 404)
+        content
+            .fitsSplitColumn()
+            .background(theme.windowBackground)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch destination {
+        case .containers:
+            ContainerInspector(
+                container: model.containers.first { $0.id == model.selectedContainerID },
+                model: model,
+                tab: $selection.containerTab
+            )
+        case .images:
+            ImageInspector(image: model.images.first { $0.id == selection.imageID }, model: model) { image in
+                selection.runImage = RunImage(image: image)
+            }
+        case .volumes:
+            VolumeInspector(volume: model.volumes.first { $0.name == selection.volumeName }, model: model)
+        case .networks:
+            NetworkInspector(network: model.networks.first { $0.id == selection.networkID }, model: model)
+        case .stacks:
+            let stack = model.allStacks.first { $0.id == selection.stackID }
+            StackInspector(stack: stack, model: model) { openedStackID = stack?.id }
+        case .overview, .doctor:
+            EmptyInspector()
         }
     }
 }
 
-struct SelectableResourceRow<Content: View, Actions: View>: View {
-    let isSelected: Bool
-    let accessibilityLabel: String
-    let action: () -> Void
+/// A click selects a row of a SwiftUI `List` but, unlike `NSTableView`, gives the list no keyboard focus.
+private struct FocusOnClick: ViewModifier {
+    @FocusState private var isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .focused($isFocused)
+            .simultaneousGesture(TapGesture().onEnded { isFocused = true })
+    }
+}
+
+extension View {
+    func focusesOnClick() -> some View {
+        modifier(FocusOnClick())
+    }
+}
+
+/// A resource row: the content takes the free width and the actions sit at the trailing edge.
+/// Inside `List(selection:)` the list selects the row; `onSelect` serves a row outside a list.
+struct ResourceRow<Content: View, Actions: View>: View {
+    var onSelect: (() -> Void)?
     @ViewBuilder var content: () -> Content
     @ViewBuilder var actions: () -> Actions
-    @Environment(\.appTheme) private var theme
-    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 9) {
-            Button(action: action) {
-                content()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            if let onSelect {
+                Button(action: onSelect) { label }
+                    .buttonStyle(.plain)
+            } else {
+                label
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
             actions()
         }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .background(rowBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 0.5)
-        }
-        .onHover { isHovered = $0 }
+        .padding(.vertical, 3)
     }
 
-    private var rowBackground: Color {
-        if isSelected { return theme.accent }
-        if isHovered { return theme.rowHover }
-        return .clear
+    private var label: some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 }
 
@@ -71,6 +123,8 @@ struct InspectorHeader<Actions: View>: View {
     let title: String
     let subtitle: String
     var pill: String?
+    /// Colors the pill's text and fill; `nil` draws it neutral.
+    var pillTint: Color?
     @ViewBuilder var actions: () -> Actions
     @Environment(\.appTheme) private var theme
 
@@ -84,11 +138,11 @@ struct InspectorHeader<Actions: View>: View {
                 if let pill {
                     Text(pill)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(theme.textSecondary)
+                        .foregroundStyle(pillTint ?? theme.textSecondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .background(
-                            Color.white.opacity(0.08),
+                            pillTint?.opacity(0.16) ?? theme.subtleFill,
                             in: RoundedRectangle(cornerRadius: 5, style: .continuous)
                         )
                 }
@@ -155,22 +209,16 @@ struct InspectorAction: View {
     @Environment(\.appTheme) private var theme
 
     var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(destructive ? theme.destructive : Color.white)
-                .padding(.horizontal, 12)
-                .frame(height: 22)
-                .background(
-                    prominent ? theme.accent : theme.sidebarBackground,
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .strokeBorder(theme.hairline, lineWidth: 0.5)
-                )
+        let button = Button(title, role: destructive ? .destructive : nil, action: action)
+            .controlSize(.small)
+        if prominent {
+            button.buttonStyle(.borderedProminent)
+        } else if destructive {
+            // macOS draws a bordered destructive button like any other, so the red title is the cue.
+            button.buttonStyle(.bordered).foregroundStyle(theme.destructive)
+        } else {
+            button.buttonStyle(.bordered)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -179,9 +227,9 @@ struct RowActionButton: View {
     let help: String
     let accessibilityLabel: String
     var destructive: Bool = false
-    var isSelected: Bool = false
     let action: () -> Void
     @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         Button(action: action) {
@@ -196,8 +244,9 @@ struct RowActionButton: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
+    /// Red is close to invisible on the selection fill, so a selected row draws every glyph white.
     private var color: Color {
-        if isSelected { return destructive ? theme.destructive : Color.white.opacity(0.9) }
+        if prominence == .increased { return Color.white.opacity(0.9) }
         return destructive ? theme.destructive.opacity(0.8) : theme.textSecondary
     }
 }
@@ -207,22 +256,52 @@ struct ResourceAvatar: View {
     let tint: Color
     var isOn: Bool = true
     @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(isOn ? tint : theme.textSecondary)
+            .foregroundStyle(foreground)
             .frame(width: 27, height: 27)
-            .background(
-                (isOn ? tint : Color.gray).opacity(0.22),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
+            .background(background, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            // The initials repeat the row's name, so VoiceOver would read "we, demo-webserver-1".
+            .accessibilityHidden(true)
     }
 
-    static func initials(from source: String) -> String {
+    /// A tinted tile loses its letters on the selection fill, so a selected row draws it white.
+    private var foreground: Color {
+        if prominence == .increased { return .white }
+        return isOn ? tint : theme.textSecondary
+    }
+
+    private var background: Color {
+        if prominence == .increased { return Color.white.opacity(0.22) }
+        return (isOn ? tint : Color.gray).opacity(0.22)
+    }
+
+    nonisolated static func initials(from source: String) -> String {
         let letters = source.filter(\.isLetter)
         let seed = letters.count >= 2 ? String(letters.prefix(2)) : String(source.prefix(2))
         return seed.lowercased()
+    }
+
+    private static let palette: [Color] = [
+        Color(uiHex: 0x3B82F6),
+        Color(uiHex: 0x8B5CF6),
+        Color(uiHex: 0x06B6D4),
+        Color(uiHex: 0xEF4444),
+        Color(uiHex: 0xF59E0B),
+        Color(uiHex: 0x22C55E),
+    ]
+
+    static func tint(for name: String) -> Color {
+        palette[paletteIndex(for: name, count: palette.count)]
+    }
+
+    /// `String.hashValue` is seeded per process, so a tint taken from it would change on every launch.
+    nonisolated static func paletteIndex(for name: String, count: Int) -> Int {
+        let sum = name.unicodeScalars.reduce(UInt(0)) { $0 &+ UInt($1.value) }
+        return Int(sum % UInt(count))
     }
 }
 

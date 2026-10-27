@@ -6,12 +6,12 @@ import UniformTypeIdentifiers
 struct StacksView: View {
     let model: RuntimeViewModel
     var searchText: String = ""
+    @Binding var selectedStackID: UUID?
+    @Binding var openedStackID: UUID?
 
     @State private var showingNewStack = false
     @State private var newStackName = ""
     @State private var newStackDirectory: URL?
-    @State private var selectedStackID: UUID?
-    @State private var openedStackID: UUID?
     @Environment(\.appTheme) private var theme
 
     var body: some View {
@@ -30,32 +30,21 @@ struct StacksView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ResourceSplitPane {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredStacks) { stack in
-                                StackRow(
-                                    stack: stack,
-                                    model: model,
-                                    isSelected: selectedStackID == stack.id
-                                ) {
-                                    selectedStackID = stack.id
-                                }
-                                .contextMenu {
-                                    Button("Unregister (keeps the file)") {
-                                        model.removeStack(stack)
-                                    }
+                List(selection: $selectedStackID) {
+                    ForEach(filteredStacks) { stack in
+                        StackRow(stack: stack, model: model)
+                            .tag(stack.id)
+                            .contextMenu {
+                                Button("Edit") { openedStackID = stack.id }
+                                Divider()
+                                Button("Unregister (keeps the file)") {
+                                    model.removeStack(stack)
                                 }
                             }
-                        }
                     }
-                } inspector: {
-                    StackInspector(
-                        stack: selectedStack,
-                        model: model,
-                        onEdit: { openedStackID = selectedStack?.id }
-                    )
                 }
+                .listStyle(.inset)
+                .focusesOnClick()
             }
 
             if let stackMessage = model.stackMessage {
@@ -68,6 +57,7 @@ struct StacksView: View {
         .navigationDestination(item: $openedStackID) { id in
             if let stack = model.allStacks.first(where: { $0.id == id }) {
                 StackDetailView(stack: stack, model: model)
+                    .fitsSplitColumn()
             }
         }
         .toolbar {
@@ -100,11 +90,6 @@ struct StacksView: View {
         }
     }
 
-    private var selectedStack: ComposeStack? {
-        guard let selectedStackID else { return nil }
-        return model.allStacks.first { $0.id == selectedStackID }
-    }
-
     private func pickExistingFile() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
@@ -124,9 +109,7 @@ struct StacksView: View {
 private struct StackRow: View {
     let stack: ComposeStack
     let model: RuntimeViewModel
-    let isSelected: Bool
-    let onSelect: () -> Void
-    @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     private var statuses: [ComposeServiceStatus] {
         model.stackStatuses[stack.id] ?? []
@@ -140,52 +123,50 @@ private struct StackRow: View {
         model.busyStackID == stack.id
     }
 
+    private var isProminent: Bool {
+        prominence == .increased
+    }
+
     var body: some View {
-        SelectableResourceRow(
-            isSelected: isSelected,
-            accessibilityLabel: stack.name,
-            action: onSelect
-        ) {
+        ResourceRow {
             HStack(spacing: 9) {
                 LucideIcon(.layers)
                     .frame(width: 13, height: 13)
-                    .foregroundStyle(isSelected ? Color.white : Color(uiHex: 0x3B82F6))
+                    .foregroundStyle(isProminent ? Color.white : Color(uiHex: 0x3B82F6))
                     .frame(width: 27, height: 27)
                     .background(
-                        Color(uiHex: 0x3B82F6).opacity(isSelected ? 0.28 : 0.22),
+                        isProminent ? Color.white.opacity(0.22) : Color(uiHex: 0x3B82F6).opacity(0.22),
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                     )
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(stack.name)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
                         .lineLimit(1)
                     Text(stack.fileURL.path)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.78) : theme.textSecondary)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 8)
                 Text(statuses.isEmpty ? "—" : "\(runningCount)/\(statuses.count)")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSelected ? Color.white.opacity(0.78) : theme.textSecondary)
+                    .foregroundStyle(.secondary)
             }
         } actions: {
             HStack(spacing: 2) {
                 RowActionButton(
                     icon: .play,
                     help: "Start stack",
-                    accessibilityLabel: "Start stack \(stack.name)",
-                    isSelected: isSelected
+                    accessibilityLabel: "Start stack \(stack.name)"
                 ) {
                     Task { await model.upStack(stack) }
                 }
                 RowActionButton(
                     icon: .square,
                     help: "Stop stack",
-                    accessibilityLabel: "Stop stack \(stack.name)",
-                    isSelected: isSelected
+                    accessibilityLabel: "Stop stack \(stack.name)"
                 ) {
                     Task { await model.downStack(stack, removeVolumes: false) }
                 }
@@ -205,7 +186,7 @@ struct StackActionAvailability: Equatable {
     }
 }
 
-private struct StackInspector: View {
+struct StackInspector: View {
     let stack: ComposeStack?
     let model: RuntimeViewModel
     let onEdit: () -> Void
@@ -213,6 +194,11 @@ private struct StackInspector: View {
     private var statuses: [ComposeServiceStatus] {
         guard let stack else { return [] }
         return model.stackStatuses[stack.id] ?? []
+    }
+
+    /// As for a container, Start is the prominent action only while there is something to start.
+    static func isStartProminent(_ statuses: [ComposeServiceStatus]) -> Bool {
+        statuses.isEmpty || statuses.contains { !$0.isRunning }
     }
 
     var body: some View {
@@ -230,7 +216,7 @@ private struct StackInspector: View {
                         isHealthy: model.canMutate,
                         isBusy: model.busyStackID != nil
                     )
-                    InspectorAction(title: "Start", prominent: true) {
+                    InspectorAction(title: "Start", prominent: Self.isStartProminent(statuses)) {
                         Task { await model.upStack(stack) }
                     }
                     .disabled(!availability.canControl)
@@ -317,6 +303,7 @@ private struct NewStackSheet: View {
                 Spacer()
                 Button("Create") { submit() }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(trimmedName.isEmpty || directory == nil)
             }
         }

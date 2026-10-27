@@ -24,15 +24,43 @@ enum DashboardDestination: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
+    var hasInspector: Bool {
+        switch self {
+        case .containers, .images, .volumes, .networks, .stacks: true
+        case .overview, .doctor: false
+        }
+    }
+}
+
+/// The section on screen, the stack in the editor, and the toolbar query every section filters by.
+struct DashboardNavigation: Equatable {
+    var selection: DashboardDestination = .containers {
+        // The editor is part of Stacks. If it stays set, the next visit to Stacks opens it again.
+        didSet { if selection != oldValue { openedStackID = nil } }
+    }
+    var searchText = ""
+    var openedStackID: UUID?
+
+    /// The stack editor needs the full width, and the inspector would only repeat its stack.
+    var allowsInspector: Bool {
+        selection.hasInspector && openedStackID == nil
+    }
+
+    /// For a jump from one section to another. A query typed for the old section could filter
+    /// the new one down to nothing, and hide what the jump opened.
+    mutating func open(_ destination: DashboardDestination) {
+        selection = destination
+        searchText = ""
+    }
 }
 
 struct DashboardView: View {
     let model: RuntimeViewModel
     let resourceSettings: ContainerResourceSettings
-    @State private var selection: DashboardDestination = .containers
+    @State private var navigation = DashboardNavigation()
+    @State private var resources = ResourceSelection()
     @State private var isConfirmingPrune = false
-    @State private var searchText = ""
-    @State private var focusImagePull = false
+    @State private var isChoosingImageToRun = false
     /// Outlives the section's view, so a run in flight when the section is left is still the one
     /// a return visit joins (F-007), and the 30s window holds across visits (F-011).
     @State private var doctor: DoctorViewModel
@@ -45,7 +73,7 @@ struct DashboardView: View {
 
     var body: some View {
         NavigationSplitView {
-            DashboardSidebar(selection: $selection, model: model)
+            DashboardSidebar(selection: $navigation.selection, model: model)
                 .navigationSplitViewColumnWidth(min: 196, ideal: 210, max: 248)
                 .navigationTitle("")
                 .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -54,40 +82,62 @@ struct DashboardView: View {
         } detail: {
             NavigationStack {
                 Group {
-                    switch selection {
+                    switch navigation.selection {
                     case .overview:
-                        OverviewView(model: model)
+                        OverviewView(model: model) { navigation.open(.containers) }
                     case .containers:
-                        ContainersView(model: model, searchText: searchText)
+                        ContainersView(
+                            model: model,
+                            searchText: navigation.searchText,
+                            resources: $resources
+                        )
                     case .images:
                         ImagesView(
                             model: model,
                             resourceSettings: resourceSettings,
-                            searchText: searchText,
-                            focusPull: focusImagePull,
-                            onFocusConsumed: { focusImagePull = false }
+                            searchText: navigation.searchText,
+                            selectedImageID: $resources.imageID,
+                            runImage: $resources.runImage
                         )
                     case .volumes:
-                        VolumesView(model: model, searchText: searchText)
+                        VolumesView(
+                            model: model,
+                            searchText: navigation.searchText,
+                            selectedVolumeName: $resources.volumeName
+                        )
                     case .networks:
-                        NetworksView(model: model, searchText: searchText)
+                        NetworksView(
+                            model: model,
+                            searchText: navigation.searchText,
+                            selectedNetworkID: $resources.networkID
+                        )
                     case .stacks:
-                        StacksView(model: model, searchText: searchText)
+                        StacksView(
+                            model: model,
+                            searchText: navigation.searchText,
+                            selectedStackID: $resources.stackID,
+                            openedStackID: $navigation.openedStackID
+                        )
                     case .doctor:
                         DoctorView(doctor: doctor)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle(selection.title)
+                .fitsSplitColumn()
+                .navigationTitle(navigation.selection.title)
                 .navigationSubtitle(headerSubtitle)
-                .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
+                .searchable(text: $navigation.searchText, placement: .toolbar, prompt: "Search")
                 .toolbar {
                     ToolbarItem {
-                        Button("Run image") {
-                            selection = .images
-                            focusImagePull = true
-                        }
-                        .disabled(!model.canMutate)
+                        Button("Run\u{2026}") { isChoosingImageToRun = true }
+                            .help(
+                                model.images.isEmpty
+                                    ? "Pull an image in Images first"
+                                    : "Run a container from a local image"
+                            )
+                            .disabled(
+                                !model.canMutate || model.busyResource != nil || model.isRunningContainer
+                                    || model.images.isEmpty
+                            )
                     }
                     ToolbarItem {
                         Menu {
@@ -100,6 +150,42 @@ struct DashboardView: View {
                         } label: {
                             LucideLabel(title: "More", icon: .ellipsis)
                         }
+                        // The toolbar does not take the label's title and reads "chevron.pulldown" instead.
+                        .accessibilityLabel("More")
+                    }
+                }
+                .sheet(isPresented: $isChoosingImageToRun) {
+                    RunContainerSheet(
+                        images: model.images.map(\.displayName),
+                        settings: resourceSettings
+                    ) { image, limits in
+                        Task { await model.run(image: image, resourceLimits: limits) }
+                    }
+                }
+            }
+        }
+        // Only on the split view does the inspector get its own part of the toolbar.
+        .inspector(isPresented: inspectorPresented) {
+            ResourceInspector(
+                destination: navigation.selection,
+                model: model,
+                selection: $resources,
+                openedStackID: $navigation.openedStackID
+            )
+            // A drag on the divider of a resizable inspector makes the split view loop and throw.
+            .inspectorColumnWidth(404)
+            .toolbar {
+                if navigation.allowsInspector {
+                    ToolbarItem {
+                        Button {
+                            resources.isInspectorShown.toggle()
+                        } label: {
+                            Label(
+                                resources.isInspectorShown ? "Hide Inspector" : "Show Inspector",
+                                systemImage: "sidebar.trailing"
+                            )
+                        }
+                        .help(resources.isInspectorShown ? "Hide Inspector" : "Show Inspector")
                     }
                 }
             }
@@ -137,7 +223,7 @@ struct DashboardView: View {
     }
 
     private var headerSubtitle: String {
-        switch selection {
+        switch navigation.selection {
         case .containers:
             let running = model.containers.filter(\.isRunning).count
             return "\(running) of \(model.containers.count) running"
@@ -154,6 +240,18 @@ struct DashboardView: View {
         case .doctor:
             return doctor.statusLine
         }
+    }
+
+    /// Where the inspector is not allowed, the column hides but the user's Hide or Show choice stays.
+    private var inspectorPresented: Binding<Bool> {
+        Binding(
+            get: { navigation.allowsInspector && resources.isInspectorShown },
+            set: { isPresented in
+                if navigation.allowsInspector {
+                    resources.isInspectorShown = isPresented
+                }
+            }
+        )
     }
 
     private var logsBinding: Binding<Bool> {
@@ -190,6 +288,7 @@ private struct ContainerLogsSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }
+            .defaultScrollAnchor(.bottom)
             .background(.black.opacity(0.88), in: .rect(cornerRadius: 10))
             .foregroundStyle(.white)
         }
@@ -200,6 +299,7 @@ private struct ContainerLogsSheet: View {
 
 private struct OverviewView: View {
     let model: RuntimeViewModel
+    let openContainers: () -> Void
 
     var body: some View {
         ScrollView {
@@ -219,7 +319,7 @@ private struct OverviewView: View {
                     OutputCard(output: containerOutput)
                 }
 
-                RecentContainers(model: model)
+                RecentContainers(model: model, openContainers: openContainers)
                 RuntimeDetails(model: model)
             }
             .padding(28)
@@ -319,6 +419,7 @@ private struct ResourceSummary: View {
 
 private struct RecentContainers: View {
     let model: RuntimeViewModel
+    let openContainers: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -344,8 +445,12 @@ private struct RecentContainers: View {
                         model: model,
                         onShowLogs: {
                             Task { await model.showLogs(for: container) }
-                        }
+                        },
+                        onSelect: openContainers
                     )
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(.quaternary.opacity(0.35), in: .rect(cornerRadius: 10))
                 }
             }
         }

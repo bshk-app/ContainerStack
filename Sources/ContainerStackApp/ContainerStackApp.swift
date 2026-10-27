@@ -165,9 +165,10 @@ private struct MenuBarView: View {
 
             Divider()
 
-            Button("Quit") {
+            Button("Quit ContainerStack") {
                 NSApplication.shared.terminate(nil)
             }
+            .keyboardShortcut("q")
         }
         .padding(12)
         .frame(width: 250)

@@ -12,6 +12,52 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.8.0](https://github.com/bshk-app/ContainerStack/compare/v0.7.0...v0.8.0) (2026-10-26)
+
+ContainerStack now uses native macOS lists and a separate inspector column. You can move
+through the lists with the keyboard. The runtime now runs Start, Stop and Restart one at a
+time, in the order of your clicks.
+
+### Added
+
+- Native lists for the sidebar, Containers, Images, Volumes, Networks and Stacks, with the
+  system selection color and VoiceOver support. A click on a row gives that list keyboard
+  focus, and the arrow keys move the selection.
+- The inspector is a column of its own, with a Hide Inspector button in the toolbar. The
+  toolbar buttons of a screen stay over its list.
+- Run… in the toolbar opens the Run Container sheet with a picker of local images. Pull
+  stays in Images.
+- Edit in the context menu of a stack row opens the stack editor, also when the inspector
+  is hidden.
+
+### Fixed
+
+- Start, Stop and Restart of the runtime run through one queue. The app does the last action
+  that you click. A Stop during a Restart now ends the restart. Before, the app lost that Stop.
+- When the app stops the runtime helper, the helper also stops the `container system start`
+  that it began. Before, that start could overlap the next Stop.
+- Stop and Restart of a stack now have a 120-second deadline. Before, a runtime that did not
+  answer kept the stack busy and disabled every stack action.
+- A status check on a busy Mac no longer loses the output of the command.
+- In light mode, the inspector buttons and the status pills are readable.
+- Start in the stack inspector is the prominent button only while a service is stopped.
+- Image avatars take their initials from the repository name, not from `docker.io`. A
+  container keeps its avatar color across launches.
+- The port column shows the first mapping and a count, for example `8080→80 +1`.
+- A click anywhere on a group header expands or collapses the group.
+- Return in the New Stack sheet creates the stack.
+- Logs open at the newest line. A recent container in Overview opens in Containers.
+- The sidebar says Overview, and the first inspector tab is Info. The menu bar Quit item has
+  Command-Q. The volume inspector no longer shows a Used by row that always read "—".
+
+### Known limitations
+
+- Images and volumes that you create outside the app show only after Refresh or a relaunch.
+- Stop on a stack runs `docker compose down`. It removes the containers and the network of
+  the stack. A stack that the app found only from container labels then leaves the list.
+- A second pull of an image whose layers are already on disk can stay at "Pulling…".
+- The inspector has a fixed width of 404 pt. The search field stays over the inspector.
+
 ## [0.7.0](https://github.com/bshk-app/ContainerStack/compare/v0.6.1...v0.7.0) (2026-10-06)
 
 ContainerStack gets a Doctor: the checks `cstack doctor` runs, now in the sidebar, with a button

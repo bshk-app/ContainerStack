@@ -44,7 +44,7 @@ struct LucideIcon: View {
     }
 
     var body: some View {
-        Image(nsImage: icon.templateImage)
+        Image(nsImage: icon.image)
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
@@ -85,6 +85,16 @@ extension Lucide {
     func assetURL(in bundle: Bundle) -> URL? {
         bundle.url(forResource: rawValue, withExtension: "svg", subdirectory: "Lucide")
             ?? bundle.url(forResource: rawValue, withExtension: "svg")
+    }
+
+    @MainActor private static var loadedImages: [Lucide: NSImage] = [:]
+
+    /// `LucideIcon.body` runs on every model change, so each SVG is read and parsed once, not per render.
+    @MainActor var image: NSImage {
+        if let image = Self.loadedImages[self] { return image }
+        let image = templateImage
+        Self.loadedImages[self] = image
+        return image
     }
 
     /// A blank image reads as a control that has no icon, which is how an unstaged asset used to

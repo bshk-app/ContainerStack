@@ -4,9 +4,9 @@ import SwiftUI
 struct ContainersView: View {
     let model: RuntimeViewModel
     var searchText: String = ""
+    @Binding var resources: ResourceSelection
     @Environment(\.appTheme) private var theme
     @State private var collapsed = Set<String>()
-    @State private var inspectorTab = ContainerInspector.Tab.stats
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -24,46 +24,39 @@ struct ContainersView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(spacing: 0) {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(filteredGroups) { group in
-                                ContainerGroupHeader(
-                                    group: group,
-                                    model: model,
-                                    isCollapsed: collapsed.contains(group.id)
-                                ) {
-                                    if collapsed.contains(group.id) {
-                                        collapsed.remove(group.id)
-                                    } else {
-                                        collapsed.insert(group.id)
-                                    }
+                List(selection: selection) {
+                    ForEach(filteredGroups) { group in
+                        Section {
+                            if !collapsed.contains(group.id) {
+                                ForEach(group.containers) { container in
+                                    ContainerRow(
+                                        container: container,
+                                        model: model,
+                                        onShowLogs: {
+                                            model.selectedContainerID = container.id
+                                            resources.showContainerLogs()
+                                        }
+                                    )
+                                    .tag(container.id)
                                 }
-                                if !collapsed.contains(group.id) {
-                                    ForEach(group.containers) { container in
-                                        ContainerRow(
-                                            container: container,
-                                            model: model,
-                                            onShowLogs: {
-                                                model.selectedContainerID = container.id
-                                                inspectorTab = .logs
-                                            }
-                                        )
-                                    }
+                            }
+                        } header: {
+                            ContainerGroupHeader(
+                                group: group,
+                                model: model,
+                                isCollapsed: collapsed.contains(group.id)
+                            ) {
+                                if collapsed.contains(group.id) {
+                                    collapsed.remove(group.id)
+                                } else {
+                                    collapsed.insert(group.id)
                                 }
                             }
                         }
                     }
-                    Rectangle()
-                        .fill(theme.hairline)
-                        .frame(width: 0.5)
-                    ContainerInspector(
-                        container: selectedContainer,
-                        model: model,
-                        tab: $inspectorTab
-                    )
-                    .frame(width: 404)
                 }
+                .listStyle(.inset)
+                .focusesOnClick()
             }
 
             if let containerMessage = model.containerMessage {
@@ -79,11 +72,12 @@ struct ContainersView: View {
         ResourceSearch.containerGroups(model.containerGroups, query: searchText)
     }
 
-    private var selectedContainer: DockerContainerSummary? {
-        guard let selectedContainerID = model.selectedContainerID else { return nil }
-        return model.containers.first { $0.id == selectedContainerID }
+    private var selection: Binding<String?> {
+        Binding(
+            get: { model.selectedContainerID },
+            set: { model.selectedContainerID = $0 }
+        )
     }
-
 }
 
 private struct ContainerGroupHeader: View {
@@ -104,22 +98,25 @@ private struct ContainerGroupHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Button(action: toggle) {
-                LucideIcon(isCollapsed ? .chevronRight : .chevronDown)
-                    .frame(width: 8, height: 8)
-                    .foregroundStyle(theme.textTertiary)
-                    .frame(width: 15, height: 15)
+                HStack(spacing: 6) {
+                    LucideIcon(isCollapsed ? .chevronRight : .chevronDown)
+                        .frame(width: 8, height: 8)
+                        .foregroundStyle(theme.textTertiary)
+                        .frame(width: 15, height: 15)
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.textPrimary)
+                    Text("\(runningCount)/\(group.containers.count) running")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.textSecondary)
+                    Spacer(minLength: 8)
+                }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(isCollapsed ? "Expand group" : "Collapse group")
             .accessibilityLabel(isCollapsed ? "Expand group \(title)" : "Collapse group \(title)")
-
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(theme.textPrimary)
-            Text("\(runningCount)/\(group.containers.count) running")
-                .font(.system(size: 11))
-                .foregroundStyle(theme.textSecondary)
-            Spacer(minLength: 8)
+            .accessibilityValue("\(runningCount) of \(group.containers.count) running")
             if group.project != nil {
                 Button {
                     Task {
@@ -141,12 +138,23 @@ private struct ContainerGroupHeader: View {
                 .disabled(model.busyResource != nil || !model.canMutate)
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 26)
-        .background(theme.sidebarBackground.opacity(0.72))
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 0.5)
+    }
+}
+
+extension DockerContainerSummary {
+    /// The row's column fits one mapping, so it shows the first published one and a count.
+    /// Docker reports the IPv4 and the IPv6 binding of a mapping separately; they fold into one.
+    var rowPortLabel: String? {
+        var mappings: [(label: String, type: String?)] = []
+        for port in ports ?? [] {
+            guard let host = port.publicPort, host != 0 else { continue }
+            let label = "\(host)→\(port.privatePort.map(String.init) ?? "?")"
+            if !mappings.contains(where: { $0.label == label && $0.type == port.type }) {
+                mappings.append((label, port.type))
+            }
         }
+        guard let first = mappings.first else { return nil }
+        return mappings.count > 1 ? "\(first.label) +\(mappings.count - 1)" : first.label
     }
 }
 
@@ -155,53 +163,40 @@ struct ContainerRow: View {
     let container: DockerContainerSummary
     let model: RuntimeViewModel
     var onShowLogs: () -> Void = {}
+    /// For a row outside a `List`, which has no selection of its own: runs after the row
+    /// selects its container.
+    var onSelect: (() -> Void)?
 
-    @Environment(\.appTheme) private var theme
-    @State private var isHovered = false
+    @Environment(\.backgroundProminence) private var prominence
 
     private var isBusy: Bool {
         model.isBusy(container)
     }
 
-    private var isSelected: Bool {
-        model.selectedContainerID == container.id
-    }
-
     var body: some View {
-        HStack(spacing: 9) {
-            Button {
-                model.selectedContainerID = container.id
-            } label: {
-                HStack(spacing: 9) {
-                    avatar
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(container.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(isSelected ? Color.white : theme.textPrimary)
-                            .lineLimit(1)
-                        Text(container.image ?? "unknown")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(
-                                isSelected ? Color.white.opacity(0.78) : theme.textSecondary
-                            )
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    Text(container.portSummary ?? "")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(
-                            isSelected ? Color.white.opacity(0.78) : theme.textSecondary
-                        )
+        ResourceRow(onSelect: selectAction) {
+            HStack(spacing: 9) {
+                avatar
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(container.name)
+                        .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
-                        .frame(width: 96, alignment: .trailing)
+                    Text(container.image ?? "unknown")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(container.rowPortLabel ?? "")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(width: 96, alignment: .trailing)
+                    .help(container.portSummary ?? "")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(container.name)
-            .accessibilityAddTraits(isSelected ? .isSelected : [])
+        } actions: {
             HStack(spacing: 2) {
-                rowButton(
+                RowActionButton(
                     icon: container.isRunning ? .square : .play,
                     help: container.isRunning ? "Stop" : "Start",
                     accessibilityLabel: "\(container.isRunning ? "Stop" : "Start") \(container.name)"
@@ -211,7 +206,7 @@ struct ContainerRow: View {
                 .disabled(isBusy || !model.canMutate)
                 // Reading, so it survives a bridge that cannot be changed through -
                 // which is when someone most wants to see why.
-                rowButton(
+                RowActionButton(
                     icon: .scrollText,
                     help: "Logs",
                     accessibilityLabel: "Show logs for \(container.name)"
@@ -219,7 +214,7 @@ struct ContainerRow: View {
                     onShowLogs()
                 }
                 .disabled(isBusy || !model.isHealthy)
-                rowButton(
+                RowActionButton(
                     icon: .trash,
                     help: "Delete",
                     accessibilityLabel: "Delete \(container.name)",
@@ -238,85 +233,33 @@ struct ContainerRow: View {
                 Task { await model.remove(container: container) }
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 44)
-        .background(rowBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.hairline).frame(height: 0.5)
+    }
+
+    private var selectAction: (() -> Void)? {
+        guard let onSelect else { return nil }
+        return {
+            model.selectedContainerID = container.id
+            onSelect()
         }
-        .onHover { isHovered = $0 }
     }
 
     private var avatar: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Text(tile)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tileForeground)
-                .frame(width: 27, height: 27)
-                .background(tileBackground, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        ResourceAvatar(
+            text: ResourceAvatar.initials(from: container.composeService ?? container.name),
+            tint: ResourceAvatar.tint(for: container.name),
+            isOn: container.isRunning
+        )
+        .overlay(alignment: .bottomTrailing) {
             Circle()
                 .fill(container.isRunning ? Color.green : Color.gray.opacity(0.7))
                 .frame(width: 10, height: 10)
-                .overlay(Circle().stroke(rowBackground, lineWidth: 2.5))
+                .overlay(Circle().stroke(ringColor, lineWidth: 2.5))
                 .offset(x: 3, y: 3)
         }
     }
 
-    private var tile: String {
-        let source = container.composeService ?? container.name
-        let letters = source.filter(\.isLetter)
-        let seed = letters.count >= 2 ? String(letters.prefix(2)) : String(source.prefix(2))
-        return seed.lowercased()
-    }
-
-    private var tileTint: Color {
-        let palette: [Color] = [
-            Color(uiHex: 0x3B82F6),
-            Color(uiHex: 0x8B5CF6),
-            Color(uiHex: 0x06B6D4),
-            Color(uiHex: 0xEF4444),
-            Color(uiHex: 0xF59E0B),
-            Color(uiHex: 0x22C55E),
-        ]
-        let index = abs(container.name.hashValue) % palette.count
-        return palette[index]
-    }
-
-    private var tileBackground: Color {
-        container.isRunning ? tileTint.opacity(0.22) : Color.gray.opacity(0.22)
-    }
-
-    private var tileForeground: Color {
-        container.isRunning ? tileTint : theme.textSecondary
-    }
-
-    private var rowBackground: Color {
-        if isSelected { return theme.accent }
-        if isHovered { return theme.rowHover }
-        return .clear
-    }
-
-    private func rowButton(
-        icon: Lucide,
-        help: String,
-        accessibilityLabel: String,
-        destructive: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            LucideIcon(icon)
-                .frame(width: 11, height: 11)
-                .foregroundStyle(glyphColor(destructive: destructive))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private func glyphColor(destructive: Bool) -> Color {
-        if isSelected { return destructive ? theme.destructive : Color.white.opacity(0.9) }
-        return destructive ? theme.destructive.opacity(0.8) : theme.textSecondary
+    /// The ring cuts the status dot out of the avatar, so it takes the color behind the row.
+    private var ringColor: Color {
+        Color(nsColor: prominence == .increased ? .selectedContentBackgroundColor : .controlBackgroundColor)
     }
 }

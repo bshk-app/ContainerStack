@@ -4,6 +4,7 @@ enum RuntimeOperation: Equatable {
     case start
     case stop(replacingSibling: Bool)
     case restart(replacingSibling: Bool)
+    case restartBridge
 }
 
 /// How a request ended. Only one that ran to its end as the current operation completes.

@@ -87,7 +87,10 @@ public enum ContainerConfigFile {
     }
 
     /// Apple's `PathUtils.BaseConfigPath.home`: `$XDG_CONFIG_HOME/container`, else `~/.config/container`.
-    public static func userFileURL(environment: [String: String], home: URL) -> URL {
+    public static func userFileURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        home: URL = URL(fileURLWithPath: NSHomeDirectory())
+    ) -> URL {
         let configHome =
             environment["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
             ?? home.appending(path: ".config")
@@ -96,7 +99,9 @@ public enum ContainerConfigFile {
 
     /// `container system start` copies into `ApplicationRoot.defaultPath` unless `--app-root` names
     /// another root, and the runtime helper passes none.
-    public static func appRootCopyURL(applicationSupport: URL) -> URL {
+    public static func appRootCopyURL(
+        applicationSupport: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    ) -> URL {
         applicationSupport.appending(path: "com.apple.container/config/config.toml")
     }
 
@@ -250,5 +255,16 @@ public enum ContainerConfigFile {
             }
         }
         return nil
+    }
+}
+
+extension ContainerConfigFile.EditError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedLayout(let line):
+            "line \(line) defines the container table in a way that ContainerStack cannot edit"
+        case .invalidValue(let key, let line):
+            "line \(line) has a \(key) value that Apple Container cannot read"
+        }
     }
 }

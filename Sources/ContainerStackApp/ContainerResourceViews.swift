@@ -19,6 +19,9 @@ private struct ResourceLimitFields: View {
 
 struct SystemSettingsView: View {
     let settings: ContainerResourceSettings
+    let model: RuntimeViewModel
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var restartProblem: String?
 
     var body: some View {
         Form {
@@ -29,14 +32,59 @@ struct SystemSettingsView: View {
                     maximumCPUs: settings.maximumCPUs,
                     maximumMemoryGiB: settings.maximumMemoryGiB
                 )
+                .disabled(settings.problem != nil)
+                if let problem = settings.problem {
+                    Text(problem)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
             } header: {
                 Text("Default Container Resources")
             } footer: {
-                Text("These defaults prefill the resource limits for new containers.")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Used by Run Container, Docker API clients and the container CLI when no limit is specified.")
+                    Text(settings.memoryNote)
+                    Text("Saved immediately in \(settings.filePath).")
+                        .textSelection(.enabled)
+                }
+            }
+            if settings.awaitsBridgeRestart {
+                Section {
+                    Text("Saved. New Docker API containers use these defaults after a Docker bridge restart.")
+                    Text(
+                        "Restarting interrupts open builds, exec sessions and runner jobs."
+                            + " Running containers keep their size and continue running.")
+                    Button("Restart Docker Bridge") {
+                        Task {
+                            restartProblem = nil
+                            if await model.restartBridge() {
+                                settings.reload()
+                            } else {
+                                restartProblem = model.runtimeFailure ?? "Docker bridge restart did not complete."
+                            }
+                        }
+                    }
+                    .disabled(!model.canRestartRuntime || settings.problem != nil)
+                    if let restartProblem {
+                        Text(restartProblem)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                    }
+                }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 440, height: 210)
+        .frame(width: 520, height: 500)
+        .onAppear { settings.reload() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { settings.reload() }
+        }
+        .onChange(of: model.isRestarting) { _, restarting in
+            if !restarting { settings.reload() }
+        }
+        .onChange(of: settings.awaitsBridgeRestart) { _, awaitsRestart in
+            if !awaitsRestart { restartProblem = nil }
+        }
     }
 
     private var cpus: Binding<Int> {

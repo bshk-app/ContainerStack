@@ -25,6 +25,7 @@ struct ContainerResourceSettingsTests {
         #expect(try contents(of: userFile) == "[container]\ncpus = 8\nmemory = \"4g\"\n")
         #expect(settings.cpus == 8)
         #expect(settings.memoryGiB == 4)
+        #expect(settings.filePath == userFile.path)
     }
 
     @Test(arguments: [(8, 2), (16, 4), (18, 4), (32, 8), (64, 16)])
@@ -57,7 +58,7 @@ struct ContainerResourceSettingsTests {
 
         _ = makeSettings(defaults: defaults, memoryGiB: 16)
 
-        #expect(try contents(of: userFile) == "[container]\ncpus = 6\nmemory = \"4g\"\n")
+        #expect(try contents(of: userFile) == "[container]\nmemory = \"4g\"\ncpus = 6\n")
     }
 
     @Test func carriesTheOldSettingIntoTheFileOnce() throws {
@@ -154,11 +155,80 @@ struct ContainerResourceSettingsTests {
         #expect(!settings.awaitsBridgeRestart)
     }
 
+    /// Each container is its own VM, so the note compares one default with the Doctor's threshold
+    /// for all running containers together.
+    @Test(arguments: [(16, 4, 25), (18, 4, 22), (8, 2, 25)])
+    func memoryNoteComparesTheDefaultWithHostMemory(hostGiB: UInt64, memoryGiB: Int, percent: Int) throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let settings = makeSettings(defaults: defaults, memoryGiB: hostGiB)
+        settings.setMemoryGiB(memoryGiB)
+
+        #expect(
+            settings.memoryNote
+                == "Each container without limits is a VM with \(memoryGiB) GiB, \(percent)% of this Mac's memory."
+                + " The Doctor warns when running containers together reach 50%."
+        )
+    }
+
     @Test func limitsConvertGiBToBytes() {
         let limits = ContainerResourceSettings.limits(cpus: 6, memoryGiB: 5)
 
         #expect(limits.cpus == 6)
         #expect(limits.memoryInBytes == 5 * 1_024 * 1_024 * 1_024)
+    }
+
+    @Test func aFailedSaveKeepsTheLastSavedValuesAndReportsThePath() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let settings = makeSettings(defaults: defaults)
+        try write("container = { cpus = 4 }\n", to: userFile)
+
+        settings.setCPUs(6)
+
+        #expect(settings.cpus == 8)
+        #expect(settings.problem?.contains(userFile.path) == true)
+        #expect(try contents(of: userFile) == "container = { cpus = 4 }\n")
+    }
+
+    @Test func reloadingDoesNotHideAFailedInitialSave() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        // A regular file prevents creating the config directory.
+        try write("blocker", to: directory.appending(path: "container"))
+        defaults.set(6, forKey: Self.cpusKey)
+        let settings = makeSettings(defaults: defaults)
+        #expect(settings.problem != nil)
+
+        settings.reload()
+
+        #expect(settings.problem != nil)
+
+        try FileManager.default.moveItem(
+            at: directory.appending(path: "container"), to: directory.appending(path: "old-blocker"))
+        settings.reload()
+
+        #expect(settings.problem == nil)
+        #expect(settings.cpus == 6)
+        #expect(try ContainerConfigFile.load(from: userFile).cpus == 6)
+        #expect(defaults.object(forKey: Self.cpusKey) == nil)
+    }
+
+    @Test func aFailedMigrationStillReadsTheValuesTheFileSets() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let parent = userFile.deletingLastPathComponent()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: parent.path)
+            cleanUp(defaults)
+        }
+        try write("[container]\ncpus = 6\n", to: userFile)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: parent.path)
+
+        let settings = makeSettings(defaults: defaults)
+        settings.reload()
+
+        #expect(settings.problem != nil)
+        #expect(settings.cpus == 6)
     }
 
     private func makeSettings(

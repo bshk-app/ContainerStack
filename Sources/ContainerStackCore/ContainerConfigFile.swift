@@ -43,29 +43,39 @@ public enum ContainerConfigFile {
         return defaults
     }
 
-    /// Sets the given keys in `[container]`. A missing key goes after the last key of the table, and
+    /// Sets the given keys in `[container]`. A missing key goes below the table header, and
     /// a missing table goes at the end of the file.
     public static func updating(_ text: String, cpus: Int?, memoryGiB: Int?) throws -> String {
         var lines = lines(of: text)
         let table = try containerTable(in: lines)
+        let newline = text.contains("\r\n") ? "\r\n" : "\n"
         let entries = [("cpus", cpus.map { String($0) }), ("memory", memoryGiB.map { "\"\($0)g\"" })]
             .compactMap { key, value in value.map { (key, $0) } }
 
         guard let header = table.header else {
             guard !entries.isEmpty else { return text }
-            let separator = text.isEmpty ? "" : text.hasSuffix("\n") ? "\n" : "\n\n"
-            let block = (["[container]"] + entries.map { "\($0) = \($1)" }).joined(separator: "\n")
-            return text + separator + block + "\n"
+            let endsWithNewline = text.hasSuffix("\n") || text.hasSuffix("\r\n")
+            let separator = text.isEmpty ? "" : endsWithNewline ? newline : newline + newline
+            let block = (["[container]"] + entries.map { "\($0) = \($1)" }).joined(separator: newline)
+            return text + separator + block + newline
         }
 
-        var insertion = (table.keys.values.max() ?? header) + 1
+        // Insert before existing values: an unrelated key can span several lines (an array or
+        // string), so inserting after its first line would split its value.
+        var insertion = header + 1
+        if insertion == lines.count, entries.contains(where: { table.keys[$0.0] == nil }) {
+            if newline == "\r\n" { lines[header] += "\r" }
+            lines.append("")
+        }
+        // Replace before inserting, since insertion shifts the original line indexes.
         for (key, value) in entries {
             if let index = table.keys[key] {
                 lines[index] = replacingValue(of: lines[index], with: value)
-            } else {
-                lines.insert(Substring("\(key) = \(value)"), at: insertion)
-                insertion += 1
             }
+        }
+        for (key, value) in entries where table.keys[key] == nil {
+            lines.insert(Substring("\(key) = \(value)" + (newline == "\r\n" ? "\r" : "")), at: insertion)
+            insertion += 1
         }
         return lines.joined(separator: "\n")
     }
@@ -135,13 +145,20 @@ public enum ContainerConfigFile {
     }
 
     private static func lines(of text: String) -> [Substring] {
-        text.split(separator: "\n", omittingEmptySubsequences: false)
+        // CRLF is a single Swift Character, so splitting on the LF Character misses it.
+        // Keep CR on the line so joining with LF preserves every original line ending.
+        text.components(separatedBy: "\n").map { Substring($0) }
     }
 
     private static func containerTable(in lines: [Substring]) throws -> Table {
         var table = Table()
         var current: [String]? = []
+        var valueScan = ValueScan()
         for (index, line) in lines.enumerated() {
+            if valueScan.isOpen {
+                valueScan.consume(line)
+                continue
+            }
             switch kind(of: line) {
             case .header(let path):
                 if path == ["container"] {
@@ -150,6 +167,9 @@ public enum ContainerConfigFile {
                 }
                 current = path
             case .keyValue(let path):
+                if let equals = firstUnquoted("=", in: line) {
+                    valueScan.consume(line[line.index(after: equals)...])
+                }
                 if current == [], path.first == "container" {
                     throw EditError.unsupportedLayout(line: index + 1)
                 }
@@ -162,6 +182,52 @@ public enum ContainerConfigFile {
             }
         }
         return table
+    }
+
+    /// A value may span lines. Header-looking text in a string or a nested array is data,
+    /// never another table. Only this lexical state crosses lines; edits keep the original bytes.
+    private struct ValueScan {
+        var quote: [Unicode.Scalar] = []
+        var depth = 0
+        var isOpen: Bool { !quote.isEmpty || depth > 0 }
+
+        mutating func consume(_ line: Substring) {
+            let characters = Array(line.unicodeScalars)
+            var index = 0
+            while index < characters.count {
+                let character = characters[index]
+                if !quote.isEmpty {
+                    if character == "\\", quote.first == "\"" {
+                        index += 2
+                        continue
+                    }
+                    if characters[index...].starts(with: quote) {
+                        let closingQuote = quote[0]
+                        let multiline = quote.count == 3
+                        index += quote.count
+                        // TOML permits one or two quote characters immediately before the
+                        // closing triple delimiter. Consume the whole closing run.
+                        if multiline {
+                            while index < characters.count, characters[index] == closingQuote { index += 1 }
+                        }
+                        quote = []
+                        continue
+                    }
+                } else if character == "#" {
+                    return
+                } else if character == "\"" || character == "'" {
+                    let triple = Array(repeating: character, count: 3)
+                    quote = characters[index...].starts(with: triple) ? triple : [character]
+                    index += quote.count
+                    continue
+                } else if character == "[" || character == "{" {
+                    depth += 1
+                } else if character == "]" || character == "}" {
+                    depth -= 1
+                }
+                index += 1
+            }
+        }
     }
 
     private static func kind(of line: Substring) -> LineKind {
@@ -215,11 +281,11 @@ public enum ContainerConfigFile {
     private static func keyPath(_ text: Substring) -> [String]? {
         var parts: [String] = []
         var rest = text.drop(while: \.isWhitespace)
-        while let first = rest.first {
+        while let first = rest.unicodeScalars.first {
             if first == "\"" || first == "'" {
-                guard let close = rest.dropFirst().firstIndex(of: first) else { return nil }
-                parts.append(String(rest[rest.index(after: rest.startIndex)..<close]))
-                rest = rest[rest.index(after: close)...]
+                guard let (part, remaining) = quotedKey(rest) else { return nil }
+                parts.append(part)
+                rest = remaining
             } else {
                 let bare = rest.prefix { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
                 guard !bare.isEmpty else { return nil }
@@ -234,12 +300,46 @@ public enum ContainerConfigFile {
         return nil
     }
 
+    /// TOML basic quoted keys use the same escapes as basic strings. In particular, an escaped
+    /// quote does not end the key and Unicode escapes can spell `container` itself.
+    private static func quotedKey(_ text: Substring) -> (String, Substring)? {
+        guard let quote = text.unicodeScalars.first else { return nil }
+        var rest = text.unicodeScalars.dropFirst()
+        var value = ""
+        let escapes: [Unicode.Scalar: Unicode.Scalar] = [
+            "b": "\u{8}", "t": "\t", "n": "\n", "f": "\u{c}", "r": "\r", "\"": "\"", "\\": "\\",
+        ]
+        while let character = rest.first {
+            rest = rest.dropFirst()
+            if character == quote { return (value, Substring(String(rest))) }
+            guard character == "\\", quote == "\"" else {
+                value.unicodeScalars.append(character)
+                continue
+            }
+            guard let escaped = rest.first else { return nil }
+            rest = rest.dropFirst()
+            if escaped == "u" || escaped == "U" {
+                let count = escaped == "u" ? 4 : 8
+                let digits = rest.prefix(count)
+                guard digits.count == count, let code = UInt32(String(digits), radix: 16),
+                    let scalar = UnicodeScalar(code)
+                else { return nil }
+                value.unicodeScalars.append(scalar)
+                rest = rest.dropFirst(count)
+            } else {
+                guard let decoded = escapes[escaped] else { return nil }
+                value.unicodeScalars.append(decoded)
+            }
+        }
+        return nil
+    }
+
     /// The first `target` outside a basic or literal string.
-    private static func firstUnquoted(_ target: Character, in text: Substring) -> Substring.Index? {
-        var quote: Character?
+    private static func firstUnquoted(_ target: Unicode.Scalar, in text: Substring) -> Substring.Index? {
+        var quote: Unicode.Scalar?
         var escaped = false
-        for index in text.indices {
-            let character = text[index]
+        for index in text.unicodeScalars.indices {
+            let character = text.unicodeScalars[index]
             if let open = quote {
                 if escaped {
                     escaped = false

@@ -26,7 +26,7 @@ struct ContainerStackApp: App {
         }
 
         Settings {
-            SystemSettingsView(settings: resourceSettings)
+            SystemSettingsView(settings: resourceSettings, model: model)
         }
 
         MenuBarExtra {

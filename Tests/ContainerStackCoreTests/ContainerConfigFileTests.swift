@@ -106,6 +106,38 @@ struct ContainerConfigFileReadTests {
             try ContainerConfigFile.read(text)
         }
     }
+
+    @Test(arguments: ["'''", "''''", "'''''", "\"\"\"", "\"\"\"\"", "\"\"\"\"\""])
+    func ignoresTableAndKeyTextInsideMultilineStrings(ending: String) throws {
+        let opening = String(ending.prefix(3))
+        let text =
+            "description = \(opening)\n[container]\ncpus = 99\n\(ending)\n[container]\ncpus = 6\nmemory = \"4g\"\n"
+
+        #expect(try ContainerConfigFile.read(text) == ContainerResourceDefaults(cpus: 6, memoryBytes: 4 * gibibyte))
+        #expect(
+            try ContainerConfigFile.updating(text, cpus: 8, memoryGiB: nil)
+                == text.replacingOccurrences(of: "cpus = 6", with: "cpus = 8"))
+    }
+
+    @Test func ignoresMultilineStringsWithEscapedQuotedKeys() throws {
+        let text = "\"say \\\"hi\\\"\" = \"\"\"\n[container]\ncpus = 99\n\"\"\"\n"
+
+        #expect(try ContainerConfigFile.read(text) == ContainerResourceDefaults())
+        #expect(
+            try ContainerConfigFile.updating(text, cpus: 8, memoryGiB: 4)
+                == text + "\n[container]\ncpus = 8\nmemory = \"4g\"\n")
+    }
+
+    @Test(arguments: ["\u{301}", "\u{200D}", "\u{FE0F}"])
+    func aStringStartingWithAnExtendingScalarDoesNotHideLaterKeys(mark: String) throws {
+        let text =
+            "[container]\n\"\(mark)note\" = '''\ncpus = 99\n'''\nnote = \"\(mark)x\"\ncpus = 6\nmemory = \"4g\"\n"
+
+        #expect(try ContainerConfigFile.read(text) == ContainerResourceDefaults(cpus: 6, memoryBytes: 4 * gibibyte))
+        #expect(
+            try ContainerConfigFile.updating(text, cpus: 8, memoryGiB: nil)
+                == text.replacingOccurrences(of: "cpus = 6", with: "cpus = 8"))
+    }
 }
 
 @Suite("ContainerConfigFile paths")
@@ -139,6 +171,32 @@ struct ContainerConfigFilePathTests {
 
 @Suite("ContainerConfigFile editing")
 struct ContainerConfigFileEditTests {
+    @Test func extendsACRLFFileWithNoFinalNewline() throws {
+        let text = "[dns]\r\ndomain = \"x\"\r\n[container]"
+
+        #expect(
+            try ContainerConfigFile.updating(text, cpus: 8, memoryGiB: 4)
+                == text + "\r\ncpus = 8\r\nmemory = \"4g\"\r\n")
+    }
+
+    @Test func editsCRLFFilesWithoutChangingOtherBytes() throws {
+        let text = "[container]\r\ncpus = 4 # keep\r\nmemory = \"1g\"\r\n[dns]\r\ndomain = \"test\"\r\n"
+
+        #expect(try ContainerConfigFile.read(text).cpus == 4)
+        #expect(
+            try ContainerConfigFile.updating(text, cpus: 8, memoryGiB: 4)
+                == text.replacingOccurrences(of: "cpus = 4", with: "cpus = 8")
+                .replacingOccurrences(of: "\"1g\"", with: "\"4g\""))
+    }
+
+    @Test func preservesMultilineValuesWhileAddingMissingDefaults() throws {
+        let text = "[container]\nextra = [\n  \"value\",\n]\n"
+        let updated = try ContainerConfigFile.updating(text, cpus: 8, memoryGiB: 4)
+
+        #expect(updated.contains("extra = [\n  \"value\",\n]"))
+        #expect(try ContainerConfigFile.read(updated) == ContainerResourceDefaults(cpus: 8, memoryBytes: 4 * gibibyte))
+    }
+
     @Test func changesOnlyTheTwoValues() throws {
         let text = """
             # Apple Container settings
@@ -172,12 +230,12 @@ struct ContainerConfigFileEditTests {
         #expect(try ContainerConfigFile.updating(text, cpus: 8, memoryGiB: 4) == expected)
     }
 
-    @Test func addsAMissingKeyAfterTheLastKeyOfTheTable() throws {
+    @Test func addsAMissingKeyBelowTheTableHeader() throws {
         let text = "[container]\ncpus = 6\n\n# DNS\n[dns]\ndomain = \"test\"\n"
 
         #expect(
             try ContainerConfigFile.updating(text, cpus: nil, memoryGiB: 4)
-                == "[container]\ncpus = 6\nmemory = \"4g\"\n\n# DNS\n[dns]\ndomain = \"test\"\n"
+                == "[container]\nmemory = \"4g\"\ncpus = 6\n\n# DNS\n[dns]\ndomain = \"test\"\n"
         )
     }
 

@@ -27,6 +27,10 @@ sheet.
    sessions and runner jobs.
 3. The default for `memory` is a quarter of host memory in whole GiB, with a
    minimum of 2 GiB. The default for `cpus` is the number of host CPUs.
+4. A hand-edited memory value keeps its exact bytes. Settings shows, for example,
+   `1536m` as 1.5 GiB, and Run Container uses those same bytes. Only changing the
+   memory control writes a new memory value; CPU edits leave its spelling alone.
+   The memory control may write whole GiB when the user changes it.
 
 ## How it works
 

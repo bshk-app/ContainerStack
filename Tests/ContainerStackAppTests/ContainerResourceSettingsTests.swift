@@ -51,6 +51,73 @@ struct ContainerResourceSettingsTests {
         #expect(settings.memoryGiB == 6)
     }
 
+    @Test(arguments: [
+        ("1536m", "1.5"),
+        ("1025m", "1.0009765625"),
+        ("1073741825", "1.000000000931322574615478515625"),
+    ])
+    func preservesFractionalMemoryWhenOnlyCPUsChange(value: String, displayedGiB: String) throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let text = "[container]\ncpus = 6\nmemory = '\(value)' # keep this spelling\n"
+        try write(text, to: userFile)
+        let settings = makeSettings(defaults: defaults)
+
+        #expect(settings.memoryNote.hasPrefix("Each container without limits is a VM with \(displayedGiB) GiB,"))
+        #expect(try contents(of: userFile) == text)
+        settings.setCPUs(3)
+        #expect(try contents(of: userFile) == text.replacingOccurrences(of: "cpus = 6", with: "cpus = 3"))
+        #expect(settings.memoryNote.hasPrefix("Each container without limits is a VM with \(displayedGiB) GiB,"))
+        settings.setMemoryGiB(2)
+        #expect(settings.memoryBytes == 2 * Int64(Self.gibibyte))
+        #expect(
+            try contents(of: userFile)
+                == text.replacingOccurrences(of: "cpus = 6", with: "cpus = 3")
+                .replacingOccurrences(of: "'\(value)'", with: "\"2g\""))
+    }
+
+    @Test func runContainerKeepsTheExactMemoryUntilTheUserChangesIt() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let text = "[container]\ncpus = 6\nmemory = \"1536m\"\n"
+        try write(text, to: userFile)
+        let settings = makeSettings(defaults: defaults)
+        var selection = ContainerResourceSelection(settings: settings)
+
+        #expect(selection.memoryDescription == "1.5 GiB")
+        #expect(selection.limits.memoryInBytes == 1_610_612_736)
+        selection.cpus = 3
+        #expect(selection.limits.cpus == 3)
+        #expect(selection.limits.memoryInBytes == 1_610_612_736)
+        selection.memoryGiB = 2
+        #expect(selection.limits.memoryInBytes == 2 * Int64(Self.gibibyte))
+        #expect(try contents(of: userFile) == text)
+    }
+
+    @Test func settingTheSameMemoryLeavesItsSpellingAlone() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let text = "[container]\ncpus = 6\nmemory = '2048m' # keep\n"
+        try write(text, to: userFile)
+        let settings = makeSettings(defaults: defaults)
+
+        settings.setMemoryGiB(2)
+
+        #expect(try contents(of: userFile) == text)
+    }
+
+    @Test func runContainerReadsAHandEditMadeAfterSettingsLoaded() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let settings = makeSettings(defaults: defaults)
+        try write("[container]\ncpus = 3\nmemory = \"1536m\"\n", to: userFile)
+
+        let selection = ContainerResourceSelection.load(settings: settings)
+
+        #expect(selection.limits.cpus == 3)
+        #expect(selection.limits.memoryInBytes == 1_610_612_736)
+    }
+
     @Test func addsOnlyTheKeyTheFileDoesNotSet() throws {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { cleanUp(defaults) }

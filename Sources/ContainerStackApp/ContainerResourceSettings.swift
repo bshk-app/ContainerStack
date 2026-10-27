@@ -25,7 +25,9 @@ final class ContainerResourceSettings {
     /// failed migration instead of hiding its error behind a read of a still-missing file.
     private var pendingMigration: UserDefaults?
     private(set) var cpus: Int
-    private(set) var memoryGiB: Int
+    private(set) var memoryBytes: Int64
+    /// The whole-GiB control's position; display and Run use the exact bytes instead.
+    var memoryGiB: Int { Self.wholeGiB(memoryBytes) }
     /// Why ContainerStack cannot read or edit the file. nil when it can.
     private(set) var problem: String?
     /// The user file and Apple's copy differ, so the running bridge still uses the old values.
@@ -46,7 +48,7 @@ final class ContainerResourceSettings {
         defaultCPUs = maximumCPUs
         defaultMemoryGiB = max(2, maximumMemoryGiB / 4)
         cpus = defaultCPUs
-        memoryGiB = defaultMemoryGiB
+        memoryBytes = Int64(defaultMemoryGiB) * Self.bytesPerGiB
         pendingMigration = defaults
         reload()
     }
@@ -58,12 +60,12 @@ final class ContainerResourceSettings {
         do {
             let file = try ContainerConfigFile.load(from: userFile)
             cpus = file.cpus ?? defaultCPUs
-            memoryGiB = file.memoryBytes.map(Self.wholeGiB) ?? defaultMemoryGiB
+            memoryBytes = file.memoryBytes ?? Int64(defaultMemoryGiB) * Self.bytesPerGiB
             problem = seedFailure
             awaitsBridgeRestart = (try? ContainerConfigFile.load(from: appRootCopy)) != file
         } catch {
             cpus = defaultCPUs
-            memoryGiB = defaultMemoryGiB
+            memoryBytes = Int64(defaultMemoryGiB) * Self.bytesPerGiB
             problem = describe(error)
             awaitsBridgeRestart = false
         }
@@ -74,14 +76,31 @@ final class ContainerResourceSettings {
     }
 
     func setMemoryGiB(_ value: Int) {
-        write(cpus: nil, memoryGiB: Self.clamp(value, to: maximumMemoryGiB))
+        let clamped = Self.clamp(value, to: maximumMemoryGiB)
+        guard Int64(clamped) * Self.bytesPerGiB != memoryBytes else { return }
+        write(cpus: nil, memoryGiB: clamped)
     }
 
     var memoryNote: String {
-        let percent = Int((Double(Int64(memoryGiB) * Self.bytesPerGiB) / Double(hostMemoryBytes) * 100).rounded())
+        let percent = Int((Double(memoryBytes) / Double(hostMemoryBytes) * 100).rounded())
         let threshold = Int(MemoryCommitment.approachingFraction * 100)
-        return "Each container without limits is a VM with \(memoryGiB) GiB, \(percent)% of this Mac's memory."
+        return "Each container without limits is a VM with \(memoryDescription), \(percent)% of this Mac's memory."
             + " The Doctor warns when running containers together reach \(threshold)%."
+    }
+
+    var memoryDescription: String { Self.memoryDescription(bytes: memoryBytes) }
+
+    /// Division by 2^30 terminates in decimal; keep every digit without floating-point rounding.
+    static func memoryDescription(bytes: Int64) -> String {
+        let whole = bytes / bytesPerGiB
+        var remainder = bytes % bytesPerGiB
+        var fraction = ""
+        while remainder > 0 {
+            remainder *= 10
+            fraction += String(remainder / bytesPerGiB)
+            remainder %= bytesPerGiB
+        }
+        return "\(whole)\(fraction.isEmpty ? "" : "." + fraction) GiB"
     }
 
     var filePath: String {
@@ -130,11 +149,39 @@ final class ContainerResourceSettings {
         "Cannot edit \(userFile.path): \(error.localizedDescription)"
     }
 
-    private static func wholeGiB(_ bytes: Int64) -> Int {
+    static func wholeGiB(_ bytes: Int64) -> Int {
         max(1, Int((Double(bytes) / Double(bytesPerGiB)).rounded()))
     }
 
     private static func clamp(_ value: Int, to maximum: Int) -> Int {
         min(max(value, 1), maximum)
+    }
+}
+
+/// The Run Container sheet edits a snapshot; CPU edits leave its exact memory bytes alone.
+@MainActor
+struct ContainerResourceSelection {
+    var cpus: Int
+    private(set) var memoryBytes: Int64
+
+    init(settings: ContainerResourceSettings) {
+        cpus = settings.cpus
+        memoryBytes = settings.memoryBytes
+    }
+
+    static func load(settings: ContainerResourceSettings) -> Self {
+        settings.reload()
+        return Self(settings: settings)
+    }
+
+    var memoryGiB: Int {
+        get { ContainerResourceSettings.wholeGiB(memoryBytes) }
+        set { memoryBytes = ContainerResourceSettings.limits(cpus: cpus, memoryGiB: newValue).memoryInBytes }
+    }
+
+    var memoryDescription: String { ContainerResourceSettings.memoryDescription(bytes: memoryBytes) }
+
+    var limits: ContainerResourceLimits {
+        ContainerResourceLimits(cpus: cpus, memoryInBytes: memoryBytes)
     }
 }

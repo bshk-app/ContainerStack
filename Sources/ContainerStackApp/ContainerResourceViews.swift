@@ -4,6 +4,7 @@ import SwiftUI
 private struct ResourceLimitFields: View {
     @Binding var cpus: Int
     @Binding var memoryGiB: Int
+    let memoryDescription: String
     let maximumCPUs: Int
     let maximumMemoryGiB: Int
 
@@ -12,7 +13,7 @@ private struct ResourceLimitFields: View {
             LabeledContent("CPUs", value: cpus.formatted())
         }
         Stepper(value: $memoryGiB, in: 1...maximumMemoryGiB) {
-            LabeledContent("Memory", value: "\(memoryGiB) GiB")
+            LabeledContent("Memory", value: memoryDescription)
         }
     }
 }
@@ -29,6 +30,7 @@ struct SystemSettingsView: View {
                 ResourceLimitFields(
                     cpus: cpus,
                     memoryGiB: memoryGiB,
+                    memoryDescription: settings.memoryDescription,
                     maximumCPUs: settings.maximumCPUs,
                     maximumMemoryGiB: settings.maximumMemoryGiB
                 )
@@ -104,8 +106,7 @@ struct RunContainerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var image: String
-    @State private var cpus: Int
-    @State private var memoryGiB: Int
+    @State private var resources: ContainerResourceSelection
 
     init(
         images: [String],
@@ -116,8 +117,7 @@ struct RunContainerSheet: View {
         self.settings = settings
         self.onRun = onRun
         _image = State(initialValue: images.first ?? "")
-        _cpus = State(initialValue: settings.cpus)
-        _memoryGiB = State(initialValue: settings.memoryGiB)
+        _resources = State(initialValue: ContainerResourceSelection(settings: settings))
     }
 
     var body: some View {
@@ -145,8 +145,9 @@ struct RunContainerSheet: View {
                 }
                 Section("Resources") {
                     ResourceLimitFields(
-                        cpus: $cpus,
-                        memoryGiB: $memoryGiB,
+                        cpus: $resources.cpus,
+                        memoryGiB: $resources.memoryGiB,
+                        memoryDescription: resources.memoryDescription,
                         maximumCPUs: settings.maximumCPUs,
                         maximumMemoryGiB: settings.maximumMemoryGiB
                     )
@@ -159,7 +160,7 @@ struct RunContainerSheet: View {
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Run") {
-                    onRun(image, ContainerResourceSettings.limits(cpus: cpus, memoryGiB: memoryGiB))
+                    onRun(image, resources.limits)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -168,6 +169,7 @@ struct RunContainerSheet: View {
         }
         .padding(24)
         .frame(width: 460, height: images.count > 1 ? 400 : 340)
+        .onAppear { resources = ContainerResourceSelection.load(settings: settings) }
     }
 
     nonisolated static func canRun(_ image: String, from images: [String]) -> Bool {

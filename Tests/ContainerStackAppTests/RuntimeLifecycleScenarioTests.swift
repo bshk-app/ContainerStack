@@ -25,6 +25,20 @@ struct RuntimeLifecycleScenarioTests {
         #expect(!model.isRestarting)
     }
 
+    @Test("Restart Docker Bridge stops only the bridge, then launches the helper")
+    func bridgeRestartStopsOnlyTheBridge() async {
+        let (model, runtime) = makeModel()
+        runtime.onPing = { [unowned runtime] in runtime.socketAnswers = !runtime.spawned.isEmpty }
+
+        #expect(await settled(Task { await model.restartBridge() }) != nil)
+
+        #expect(
+            runtime.performed
+                == RuntimeRestartPlan.stopSteps(
+                    configuration: model.runtimeConfiguration(), replacingSibling: true))
+        #expect(runtime.spawned.count == 1)
+    }
+
     @Test("A Stop clicked during Start's ping launches nothing (#70)")
     func stopDuringStartupPingLaunchesNothing() async {
         let (model, runtime) = makeModel()

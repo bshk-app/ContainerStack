@@ -177,7 +177,7 @@ extension DiagnosticRunner {
         }
 
         let summary =
-            "\(ByteSize.formatted(commitment.configuredBytes)) in explicit container limits"
+            "\(ByteSize.formatted(commitment.configuredBytes)) in configured container limits"
             + " vs \(ByteSize.formatted(commitment.hostBytes)) host memory"
         var lines = trailing
         var text: String
@@ -214,7 +214,7 @@ extension DiagnosticRunner {
         var lines: [String] = []
         if commitment.containersWithoutLimit > 0 {
             lines.append(
-                "\(commitment.containersWithoutLimit) running container(s) have no explicit memory limit"
+                "\(commitment.containersWithoutLimit) running container(s) have no reported memory limit"
                     + " and are excluded from that total."
             )
         }

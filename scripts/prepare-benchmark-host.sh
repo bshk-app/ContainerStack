@@ -9,8 +9,12 @@ set -euo pipefail
 # The install step needs sudo, so run this yourself — it is the only interactive part.
 # ContainerStack itself ships socktainer inside the app bundle, so nothing is built here.
 
-readonly CONTAINER_VERSION="1.3.1"
-readonly PKG_URL="https://github.com/apple/container/releases/download/${CONTAINER_VERSION}/container-${CONTAINER_VERSION}-installer-signed.pkg"
+readonly CONTAINER_VERSION="1.6.0"
+# The fork build that ContainerStack pins. prepare-v1-runtime.sh says why.
+# Apple's 1.6.0 reports the same version, so only the commit identifies the fork.
+readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.2"
+readonly CONTAINER_COMMIT="208a7eb"
+readonly PKG_URL="https://github.com/beshkenadze/container/releases/download/${CONTAINER_TAG}/container-${CONTAINER_TAG}-installer-signed.pkg"
 readonly APP_SOURCE="${APP_SOURCE:-/tmp/ContainerStack.app}"
 
 require_command() {
@@ -24,8 +28,8 @@ require_command curl
 require_command installer
 require_command pkgutil
 
-if container --version 2>/dev/null | grep -q "$CONTAINER_VERSION"; then
-    printf 'Apple Container %s already installed.\n' "$CONTAINER_VERSION"
+if container --version 2>/dev/null | grep -qF "${CONTAINER_VERSION} (build: release, commit: ${CONTAINER_COMMIT})"; then
+    printf 'Apple Container %s already installed.\n' "$CONTAINER_TAG"
 else
     workdir="$(mktemp -d)"
     trap 'rm -rf "$workdir"' EXIT

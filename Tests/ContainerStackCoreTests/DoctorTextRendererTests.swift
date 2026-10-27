@@ -149,7 +149,7 @@ struct DoctorTextRendererTests {
                 Images: 0
                 Runtime storage: \(root.path)
                 Container routes: no running container publishes ports
-                Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory
+                Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory
                 """
         )
     }
@@ -197,7 +197,7 @@ struct DoctorTextRendererTests {
                 Container routes: NO ROUTE to compose_default (192.168.64.0/24)
                 Published ports accept connections and then hang.
                 Restarting the containers does not fix it. Run: cstack runtime restart
-                Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory
+                Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory
                 """
         )
     }
@@ -389,7 +389,7 @@ struct DoctorTextRendererTests {
                 Images: 1
                 Container routes: reachable (compose_default (192.168.64.0/24))
                 Container routes: cannot check legacy_default — no subnet reported
-                Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory
+                Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory
                 """
         )
     }
@@ -470,7 +470,7 @@ struct DoctorTextRendererTests {
                 Containers: 2
                 Images: 0
                 Container routes: no running container publishes ports
-                Container memory limits: HIGH — 14.0 GB in explicit container limits vs 16.0 GB host memory
+                Container memory limits: HIGH — 14.0 GB in configured container limits vs 16.0 GB host memory
                 Guests do not reserve every byte immediately, but host use can grow toward these limits.
                 \(advice)
                 1 running container(s) could not be inspected, so the total is incomplete.

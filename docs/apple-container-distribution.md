@@ -4,12 +4,18 @@ ContainerStack supervises Apple Container; it does not install it. That leaves a
 question every distribution channel has to answer separately: **how does the
 user end up with the version this build was tested against?**
 
-The pin lives in two places that must agree:
+The pin lives in these places, and they must agree:
 
 | | |
 |---|---|
 | `scripts/prepare-v1-runtime.sh` | `SOCKTAINER_REV` — the bridge |
-| `RuntimeProcessConfiguration.pinnedContainerVersion` | Apple Container, currently `1.3.1` |
+| `RuntimeProcessConfiguration.pinnedContainerVersion` | Apple Container, currently `1.6.0` |
+| `scripts/prepare-container-runtime.sh`, `scripts/prepare-v1-runtime.sh`, `scripts/prepare-benchmark-host.sh`, the `container@1.6.0` formula | the fork release tag, currently `1.6.0-bshk.2` |
+
+Each fork build reports `1.6.0`, so `pinnedContainerVersion` cannot tell two of
+them apart, and no check here compares the tag. Change the tag in all four files
+together, with the sha256 in `prepare-container-runtime.sh` and in the formula,
+and the commit in `prepare-benchmark-host.sh`.
 
 ## Why a plain Homebrew dependency is not enough
 
@@ -26,13 +32,23 @@ There are exactly two ways to make the pin reach a user.
 ## Channel 1 — Homebrew, via a versioned formula (current default)
 
 Homebrew's own answer to pinning is to put the version in the formula's **name**:
-`node@20`, `postgresql@16`. So the tap carries `container@1.3.1`.
+`node@20`, `postgresql@16`. So the tap carries `container@1.6.0`.
 
-The formula lives in `bshk-app/homebrew-tap` as `Formula/container@1.3.1.rb` and
+The formula installs a fork build, not Apple's release: `beshkenadze/container`,
+release `1.6.0-bshk.2`. The fork changes only dependencies: containerization
+0.52.1 with a ReadStream fix and a bearer token reuse fix, and async-http-client
+with four early-response fixes. Without them, the memory of
+`container-core-images` grows with each image push, and each blob upload sends
+its body two times. The fork has the same XPC API as Apple's 1.6.0. Move back to
+Apple's release when an Apple Container release contains these fixes.
+
+The formula lives in `beshkenadze/homebrew-tap` as `Formula/container@1.6.0.rb` and
 **only** there — a second copy in this repo would be one more pin to drift out of
 sync, which is the failure this whole page exists to prevent. The link back to
 the source is `RuntimeProcessConfiguration.pinnedContainerVersion`, which must
-name the same version.
+name the same version. The formula is in the same account as the fork build that
+it installs, not in `bshk-app/homebrew-tap`. The cask stays in
+`bshk-app/homebrew-tap`.
 
 Note what is and is not generated. `zamokctl cask` renders and pushes the **cask**
 from `Packaging/Homebrew/cask-containerstack.json`, which `scripts/publish-cask.sh`
@@ -42,17 +58,18 @@ by hand. Two properties of it matter:
 
 - **`keg_only :versioned_formula`** keeps it out of `PATH`, so it never shadows
   or conflicts with a homebrew-core `container`. Both can be installed at once.
-- It installs **Apple's signed release package**, not a source build.
+- It installs the **signed and notarized release package** of the fork, not a
+  source build.
   homebrew-core's formula runs `swift build` with Xcode 26 as a build
   dependency — minutes on a user's machine, and a toolchain most users of a GUI
   app do not have.
 
 The dependency is declared on the Zamok product, not in a file here: set
 `dependsOnFormulae` in `Packaging/Homebrew/cask-containerstack.json` to
-`["bshk-app/tap/container@1.3.1"]` and the
+`["beshkenadze/tap/container@#{container}"]` and the
 generated cask carries `depends_on formula:` on the next regeneration. The app
 finds the formula at the stable
-`/opt/homebrew/opt/container@1.3.1/bin/container`, which is first in
+`/opt/homebrew/opt/container@1.6.0/bin/container`, which is first in
 `RuntimeProcessConfiguration.containerSearchPaths`.
 
 Bumping the version means a new formula file, a new `pinnedContainerVersion`, and
@@ -72,7 +89,7 @@ copy. Turn it on with an environment variable:
 VENDOR_CONTAINER_RUNTIME=1 task build:signed    # stage it into the bundle
 ```
 
-`prepare-container-runtime.sh` downloads Apple's signed pkg, checks it against a
+`prepare-container-runtime.sh` downloads the signed pkg of the fork, checks it against a
 pinned sha256, expands it into a cache, and adds `LICENSE` and `NOTICE.md`.
 `stage-containerstack-app.sh` then copies that tree into the bundle and re-signs
 it.
@@ -104,8 +121,9 @@ certificate can sign it with no provisioning profile — verified on a real sign
 build. Nothing else in the tree asks for anything, and the entitlements plist
 must carry no XML comments or AMFI rejects it.
 
-**Re-sign deepest-first.** The tree arrives signed by "Apple Inc. -
-Containerization". Nested code under a different team identifier does not
+**Re-sign deepest-first.** The tree arrives signed by its publisher: the
+Developer ID of the fork (team `Q8H6GWJ658`), or "Apple Inc. - Containerization"
+for Apple's release. Nested code under a different team identifier does not
 inherit our bundle's designated requirement, so every Mach-O is re-signed with
 ours — innermost first, because signing a directory seals what is already inside
 it.

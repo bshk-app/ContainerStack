@@ -12,6 +12,22 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.8.1](https://github.com/bshk-app/ContainerStack/compare/v0.8.0...v0.8.1) (2026-10-28)
+
+Runtime restarts now wait for the previous Docker bridge to exit before continuing.
+Doctor shows which restart step is running and clears an old repair warning after a
+fresh report confirms that every check passed.
+
+### Fixed
+
+- Stop and Restart wait for the Docker bridge to exit. If it ignores the stop signal,
+  ContainerStack ends it after a short grace period. A failed stop is reported instead
+  of being treated as successful. The app and `cstack` use the same behavior.
+- Doctor shows the current restart step and the runtime's error message when available.
+- A fully healthy Doctor report clears a warning from an earlier failed repair, including
+  after the runtime was restored outside the app. Incomplete checks and timeouts keep the
+  warning visible.
+
 ## [0.8.0](https://github.com/bshk-app/ContainerStack/compare/v0.7.0...v0.8.0) (2026-10-26)
 
 ContainerStack now uses native macOS lists and a separate inspector column. You can move

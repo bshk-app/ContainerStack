@@ -405,6 +405,38 @@ struct DoctorRepairTests {
 @MainActor
 @Suite("The production Doctor repairs through the app")
 struct DoctorRepairWiringTests {
+    @Test("a failed runtime restart releases Doctor and produces a fresh report")
+    func failedRuntimeRestartSettlesDoctor() async {
+        let runtime = RuntimeViewModel(
+            socketPath: "/tmp/containerstack-doctor-\(UUID().uuidString).sock", startsRuntime: false)
+        let fake = FakeRuntime()
+        runtime.steps = fake.steps()
+        // The helper rejected the bridge and exited without leaving a serving socket.
+        runtime.steps.spawnHelper = {
+            LaunchedHelper(process: Process(), log: .nullDevice, logPath: "/dev/null")
+        }
+        let runs = GatedSystemProbe(result: .output(""))
+        await runs.open()
+        let doctor = watchedModel(of: runtime, runs: runs)
+        doctor.appeared()
+        await doctor.inFlight?.value
+
+        await fake.gates.hold("system stop")
+        let repair = Task { await doctor.perform(.restartRuntime) }
+        await fake.gates.waitUntilEntered("system stop")
+        #expect(doctor.repairProgressDetail == "Stopping Apple Container…")
+        await fake.gates.release("system stop")
+        #expect(await settled(repair, within: .seconds(2)) != nil)
+        await doctor.inFlight?.value
+
+        #expect(runtime.runtimeFailure == "Runtime helper exited. Check /dev/null.")
+        #expect(!runtime.isRestarting)
+        #expect(doctor.repairInProgress == nil)
+        #expect(doctor.repairFailure == runtime.runtimeFailure)
+        #expect(await runs.callCount == 2)
+        #expect(doctor.report != nil)
+    }
+
     @Test("restart availability and progress come from the app's own restart state")
     func restartStateIsTheApps() {
         let runtime = RuntimeViewModel(socketPath: "/tmp/containerstack-doctor.sock", startsRuntime: false)

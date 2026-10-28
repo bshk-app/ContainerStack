@@ -68,6 +68,11 @@ final class DoctorViewModel {
         repairing ?? (repairs.isRuntimeRestarting() ? .restartRuntime : nil)
     }
 
+    /// The lifecycle step can spend its own timeout here; keep it visible while the report is hidden.
+    var repairProgressDetail: String? {
+        repairInProgress == .restartRuntime ? repairs.runtimeMessage() : nil
+    }
+
     var restartLook: Task<Void, Never>? {
         pendingLook.withLock { $0 }
     }
@@ -151,7 +156,10 @@ final class DoctorViewModel {
         await restartLook?.value
         repairing = nil
         if !repaired {
-            repairFailure = action.failureMessage
+            repairFailure =
+                action == .restartRuntime
+                ? repairs.runtimeFailure() ?? action.failureMessage
+                : action.failureMessage
         }
         // Left mid-repair: the re-run is owed to the next visit rather than run unseen (§7).
         if isShown {
@@ -266,6 +274,8 @@ struct DoctorRepairs {
     /// True while the runtime restarts or stops, whoever started it. Read inside observation
     /// tracking, so an observable source makes the model notice every change.
     var isRuntimeRestarting: @MainActor () -> Bool
+    var runtimeMessage: @MainActor () -> String? = { nil }
+    var runtimeFailure: @MainActor () -> String? = { nil }
 
     /// For a model with nothing to repair through: every remedy is unavailable.
     static var unavailable: DoctorRepairs {
@@ -285,7 +295,9 @@ extension DoctorRepairs {
             restartRuntime: { [weak runtime] in await runtime?.restartRuntime(replacingSibling: true) ?? false },
             repairDockerContext: { [weak runtime] in await runtime?.repairDockerContextRecord() ?? false },
             canRestartRuntime: { [weak runtime] in runtime?.canRestartRuntime ?? false },
-            isRuntimeRestarting: { [weak runtime] in runtime?.isRestarting ?? false }
+            isRuntimeRestarting: { [weak runtime] in runtime?.isRestarting ?? false },
+            runtimeMessage: { [weak runtime] in runtime?.runtimeMessage },
+            runtimeFailure: { [weak runtime] in runtime?.runtimeFailure }
         )
     }
 }

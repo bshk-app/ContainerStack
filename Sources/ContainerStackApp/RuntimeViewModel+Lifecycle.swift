@@ -214,7 +214,13 @@ extension RuntimeViewModel {
             replacingSibling: replacingSibling
         )
         for step in steps {
-            try? await self.steps.control(step)
+            do {
+                try await self.steps.control(step)
+            } catch {
+                guard lifecycle.isCurrent(token) else { return false }
+                failRuntime("Stop failed at \(message(for: step)): \(error)")
+                return false
+            }
             guard lifecycle.isCurrent(token) else { return false }
         }
         clearInventoryForStop()

@@ -159,8 +159,8 @@ enum RuntimeShell {
     static func perform(_ step: RuntimeControlStep) async throws {
         switch step {
         case .stopBridge(let executablePath, let socketPath):
-            await Task.detached {
-                RuntimeShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
+            try await Task.detached {
+                try RuntimeShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
             }.value
         case .stopContainers(let executablePath, let graceSeconds):
             // `try?`, not `try`: `restartRuntime` abandons the sequence on a throw, and this step
@@ -225,15 +225,13 @@ enum RuntimeShell {
     }
 
     /// F-014: this build's bridge, and another ContainerStack copy's when it holds the socket.
-    static func terminateBridge(executablePath: String, socketPath: String?) {
+    static func terminateBridge(executablePath: String, socketPath: String?) throws {
         let pids = BridgeOwnership.pidsToStop(
             bridgePath: executablePath,
             lsofOutput: socketPath.map { output(executablePath: "/usr/sbin/lsof", arguments: ["-Fpcn", "--", $0]) }
                 ?? "",
             listing: output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
         )
-        for pid in pids {
-            kill(pid, SIGTERM)
-        }
+        try BridgeTermination.stop(pids)
     }
 }

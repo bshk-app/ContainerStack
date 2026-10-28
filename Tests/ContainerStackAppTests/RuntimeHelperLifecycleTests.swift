@@ -9,6 +9,29 @@ import Testing
 @Suite("Runtime helper lifecycle")
 @MainActor
 struct RuntimeHelperLifecycleTests {
+    @Test("Stopping the bridge waits for exit, even if SIGTERM is ignored", arguments: [false, true])
+    func stoppingBridgeWaitsForExit(ignoresTermination: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "bridge-stop-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bridge = directory.appending(path: "socktainer")
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/sleep"), to: bridge)
+        let command = (ignoresTermination ? "trap '' TERM; " : "") + "exec \"$1\" 60"
+        let process = try Self.spawn("/bin/sh", "-c", command, "bridge", bridge.path)
+        defer { if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
+        try #require(
+            await Self.eventually {
+                ProcessTable.pids(
+                    forExecutable: bridge.path,
+                    in: RuntimeShell.output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
+                ).contains(process.processIdentifier)
+            })
+
+        try await RuntimeShell.perform(.stopBridge(executablePath: bridge.path, socketPath: nil))
+
+        #expect(!process.isRunning, "Restart must not launch its replacement while the old bridge can still answer")
+    }
+
     /// Codex reproduced this: a stop begun before Stop failed after it with the connection gone,
     /// and the recovery it asked for started the runtime the user had just stopped.
     @Test("An action that fails after a Stop asks for no recovery (#70)")

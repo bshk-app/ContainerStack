@@ -128,6 +128,33 @@ struct DoctorRepairTests {
         #expect(doctor.repairFailure == nil)
     }
 
+    @Test(
+        "a fresh report clears the old repair failure only when every UI check passed",
+        arguments: [Verdict.ok, .warning, .failure, .skipped, .indeterminate, nil] as [Verdict?]
+    )
+    func freshReportResolvesPastRepairFailure(socketVerdict: Verdict?) async {
+        await repairGate.open()
+        app.restartSucceeds = false
+        let checks = CheckID.uiSet.compactMap { id -> DiagnosticCheck? in
+            let verdict = id == .socket ? socketVerdict : .ok
+            guard let verdict else { return nil }
+            return DiagnosticCheck(
+                id: id, verdict: verdict, summary: id.title, detail: nil, remedy: nil, duration: .zero)
+        }
+        let recovered = DiagnosticReport(checks: checks, ranAt: Date(timeIntervalSince1970: 2))
+        let doctor = model(run: { recovered })
+
+        await doctor.perform(.restartRuntime)
+        #expect(doctor.repairFailure != nil)
+        // The next visit measures the runtime after it was restored outside Doctor.
+        doctor.appeared()
+        await doctor.inFlight?.value
+
+        #expect(doctor.report == recovered)
+        #expect((doctor.repairFailure == nil) == (socketVerdict == .ok))
+        #expect(await repairGate.callCount == 1, "clearing the warning must not require another repair")
+    }
+
     @Test("restart follows the app's own permission; the context repair does not need it")
     func restartIsBoundToCanRestartRuntime() async {
         await runs.open()

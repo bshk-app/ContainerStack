@@ -18,7 +18,7 @@ final class DoctorViewModel {
     private(set) var isRunning = false
     /// The repair this section started, until it settles (F-008).
     private(set) var repairing: DoctorAction?
-    /// Why the last repair this section started did not succeed; the next repair clears it.
+    /// Cleared by another repair or a fresh report that proves every UI check healthy.
     private(set) var repairFailure: String?
     /// The run in flight. Read by tests, which await it instead of sleeping.
     @ObservationIgnored private(set) var inFlight: Task<Void, Never>?
@@ -224,6 +224,9 @@ final class DoctorViewModel {
         }
         guard inFlightGeneration == generation else { return }
         self.report = report
+        if CheckID.uiSet.allSatisfy({ report.check($0)?.verdict == .ok }) {
+            repairFailure = nil
+        }
     }
 }
 
@@ -257,7 +260,7 @@ enum DoctorAction: Equatable, Sendable {
     var failureMessage: String {
         switch self {
         case .restartRuntime:
-            "The runtime did not restart. The runtime panel in the sidebar says why."
+            "The last runtime restart did not complete successfully. The report below shows the current state."
         case .repairDockerContext:
             "The Docker context record was not repaired. The report below shows what it points at now."
         }

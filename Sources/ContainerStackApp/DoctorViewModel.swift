@@ -18,7 +18,7 @@ final class DoctorViewModel {
     private(set) var isRunning = false
     /// The repair this section started, until it settles (F-008).
     private(set) var repairing: DoctorAction?
-    /// Why the last repair this section started did not succeed; the next repair clears it.
+    /// Cleared by another repair or a fresh report that proves every UI check healthy.
     private(set) var repairFailure: String?
     /// The run in flight. Read by tests, which await it instead of sleeping.
     @ObservationIgnored private(set) var inFlight: Task<Void, Never>?
@@ -66,6 +66,11 @@ final class DoctorViewModel {
     /// restart started from the sidebar counts too, since it leaves every row just as stale.
     var repairInProgress: DoctorAction? {
         repairing ?? (repairs.isRuntimeRestarting() ? .restartRuntime : nil)
+    }
+
+    /// The lifecycle step can spend its own timeout here; keep it visible while the report is hidden.
+    var repairProgressDetail: String? {
+        repairInProgress == .restartRuntime ? repairs.runtimeMessage() : nil
     }
 
     var restartLook: Task<Void, Never>? {
@@ -151,7 +156,10 @@ final class DoctorViewModel {
         await restartLook?.value
         repairing = nil
         if !repaired {
-            repairFailure = action.failureMessage
+            repairFailure =
+                action == .restartRuntime
+                ? repairs.runtimeFailure() ?? action.failureMessage
+                : action.failureMessage
         }
         // Left mid-repair: the re-run is owed to the next visit rather than run unseen (§7).
         if isShown {
@@ -216,6 +224,9 @@ final class DoctorViewModel {
         }
         guard inFlightGeneration == generation else { return }
         self.report = report
+        if CheckID.uiSet.allSatisfy({ report.check($0)?.verdict == .ok }) {
+            repairFailure = nil
+        }
     }
 }
 
@@ -249,7 +260,7 @@ enum DoctorAction: Equatable, Sendable {
     var failureMessage: String {
         switch self {
         case .restartRuntime:
-            "The runtime did not restart. The runtime panel in the sidebar says why."
+            "The last runtime restart did not complete successfully. The report below shows the current state."
         case .repairDockerContext:
             "The Docker context record was not repaired. The report below shows what it points at now."
         }
@@ -266,6 +277,8 @@ struct DoctorRepairs {
     /// True while the runtime restarts or stops, whoever started it. Read inside observation
     /// tracking, so an observable source makes the model notice every change.
     var isRuntimeRestarting: @MainActor () -> Bool
+    var runtimeMessage: @MainActor () -> String? = { nil }
+    var runtimeFailure: @MainActor () -> String? = { nil }
 
     /// For a model with nothing to repair through: every remedy is unavailable.
     static var unavailable: DoctorRepairs {
@@ -285,7 +298,9 @@ extension DoctorRepairs {
             restartRuntime: { [weak runtime] in await runtime?.restartRuntime(replacingSibling: true) ?? false },
             repairDockerContext: { [weak runtime] in await runtime?.repairDockerContextRecord() ?? false },
             canRestartRuntime: { [weak runtime] in runtime?.canRestartRuntime ?? false },
-            isRuntimeRestarting: { [weak runtime] in runtime?.isRestarting ?? false }
+            isRuntimeRestarting: { [weak runtime] in runtime?.isRestarting ?? false },
+            runtimeMessage: { [weak runtime] in runtime?.runtimeMessage },
+            runtimeFailure: { [weak runtime] in runtime?.runtimeFailure }
         )
     }
 }

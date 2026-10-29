@@ -10,6 +10,18 @@ import Testing
 @Suite("Runtime lifecycle scenarios")
 @MainActor
 struct RuntimeLifecycleScenarioTests {
+    @Test("A failed bridge stop is reported instead of claiming the bridge stopped")
+    func failedStopIsReported() async {
+        let (model, _) = makeModel()
+        model.steps.control = { _ in throw CocoaError(.fileWriteNoPermission) }
+
+        #expect(await model.run(.stop(replacingSibling: false), origin: .user) == .completed(false))
+
+        #expect(model.runtimeFailure?.hasPrefix("Stop failed at Stopping Docker bridge…") == true)
+        #expect(model.runtimeMessage != "Docker bridge stopped.")
+        #expect(!model.isRestarting)
+    }
+
     @Test("Stop runs every stop step on the substituted steps and reports the bridge stopped")
     func stopRunsWhole() async {
         let (model, runtime) = makeModel()

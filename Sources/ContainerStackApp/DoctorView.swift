@@ -45,7 +45,7 @@ struct DoctorView: View {
                 ProgressView()
                 Text(repair.progressTitle)
                     .font(.title3.weight(.semibold))
-                Text("The report runs again when it finishes.")
+                Text(doctor.repairProgressDetail ?? "The report runs again when it finishes.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

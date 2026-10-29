@@ -3,6 +3,28 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.8.1</title>
+            <pubDate>Wed, 28 Oct 2026 19:06:26 +0200</pubDate>
+            <sparkle:version>442</sparkle:version>
+            <sparkle:shortVersionString>0.8.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>Runtime restarts now wait for the previous Docker bridge to exit before continuing.<br>
+Doctor shows which restart step is running and clears an old repair warning after a<br>
+fresh report confirms that every check passed.</p>
+<h3>Fixed</h3>
+<ul>
+<li>Stop and Restart wait for the Docker bridge to exit. If it ignores the stop signal,<br>
+ContainerStack ends it after a short grace period. A failed stop is reported instead<br>
+of being treated as successful. The app and <code class="notranslate">cstack</code> use the same behavior.</li>
+<li>Doctor shows the current restart step and the runtime's error message when available.</li>
+<li>A fully healthy Doctor report clears a warning from an earlier failed repair, including<br>
+after the runtime was restored outside the app. Incomplete checks and timeouts keep the<br>
+warning visible.</li>
+</ul>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.8.1/ContainerStack-0.8.1.dmg" length="22779003" type="application/octet-stream" sparkle:edSignature="HUY5mya+FIgcggo69E36xRcwWVf01YxCk2XmyMml3SunMbjewH3XOKburriAJ8CDrTbWugiQE8E2vOksiBGPCQ=="/>
+        </item>
+        <item>
             <title>0.8.0</title>
             <pubDate>Mon, 26 Oct 2026 20:01:31 +0000</pubDate>
             <sparkle:version>439</sparkle:version>
@@ -384,32 +406,6 @@ vmnet helper dies; restarting only the containers does not repair the host route
 The per-container micro-VM architecture also remains slower than OrbStack on the<br>
 measured M1 system (4.6x container round trip, 3.6x bind-mount writes).</p>]]></description>
             <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.4.0/ContainerStack-0.4.0.dmg" length="22415085" type="application/octet-stream" sparkle:edSignature="ih5JMvLf/p66bzE6RQAZgP+irE76kQDLxwBQJhms357caHsfgs+SVgR9OKrJxV4WyTNyQ/apEO3IYzmJ+AcoAw=="/>
-        </item>
-        <item>
-            <title>0.2.0</title>
-            <pubDate>Sun, 23 Aug 2026 20:00:23 +0000</pubDate>
-            <sparkle:version>83</sparkle:version>
-            <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<p>Updates now come from GitHub. Nothing in the app itself changed: no file under<br>
-<code class="notranslate">Sources/</code> differs from 0.1.0, and the only edit to the shipped bundle is the<br>
-update feed it points at.</p>
-<h3>Changed</h3>
-<ul>
-<li>Updates are served from a signed feed on GitHub Pages, and the DMG is a GitHub<br>
-Release asset. Both used to come from a server that had to be reachable for an<br>
-update to be found at all; now the artifact lives where the source does.</li>
-<li>The update signing key was rotated as part of the move, so this build trusts a<br>
-different key than 0.1.0 did.</li>
-</ul>
-<h3>Known limitations</h3>
-<p>Unchanged from 0.1.0, and still the two worth knowing before installing:<br>
-published ports stop working until the runtime is restarted when a<br>
-bridge-created network's vmnet helper dies, and ContainerStack is slower than<br>
-OrbStack on an idle M1/16 GiB — container round trip 4.6x, bind mount writes<br>
-3.6x, because Apple Container boots one micro-VM per container.</p>]]></description>
-            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.2.0/ContainerStack-0.2.0.dmg" length="21221165" type="application/octet-stream" sparkle:edSignature="C1UgwKLoId3tPFZXF/oQz/9RIzeV8IEOqlEhuEtCCVjLFCUQrLbUPV7S2fQUgvMGrAvXUyhxO0CS+W2/8c6jAw=="/>
         </item>
     </channel>
 </rss>

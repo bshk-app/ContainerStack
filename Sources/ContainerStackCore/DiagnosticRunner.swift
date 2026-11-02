@@ -299,7 +299,8 @@ public struct DiagnosticRunner: Sendable {
         case notAsked
         case nothingRunning
         case noneInspected(failures: Int)
-        case inspected(MemoryCommitment, failures: Int)
+        /// `builderUnlisted`: the builder listing failed, so a running builder may be missing.
+        case inspected(MemoryCommitment, failures: Int, builderUnlisted: Bool)
         case unmeasurable(reason: String)
     }
 
@@ -633,21 +634,33 @@ public struct DiagnosticRunner: Sendable {
         case .listed(let listed):
             running = listed.filter(\.isRunning)
         }
-        guard !running.isEmpty else { return .nothingRunning }
+        let builders = try? await client.runningBuilderIDs()
+        if running.isEmpty, builders == nil { return .unmeasurable(reason: "The image builder could not be listed.") }
+        guard !running.isEmpty || !(builders ?? []).isEmpty else { return .nothingRunning }
 
-        var limits: [Int64?] = []
         var failures = 0
-        for container in running {
+        let limits = await memoryLimits(of: running.map(\.id), failures: &failures)
+        let builderLimits = await memoryLimits(of: builders ?? [], failures: &failures)
+        guard !limits.isEmpty || !builderLimits.isEmpty else { return .noneInspected(failures: failures) }
+        // 0 is `HostMemory`'s own "could not read", and the one value `fraction` refuses to divide by.
+        let commitment = MemoryCommitment.measure(
+            limits: limits,
+            builderLimits: builderLimits,
+            hostBytes: hostMemoryBytes() ?? 0
+        )
+        return .inspected(commitment, failures: failures, builderUnlisted: builders == nil)
+    }
+
+    private func memoryLimits(of ids: [String], failures: inout Int) async -> [Int64?] {
+        var limits: [Int64?] = []
+        for id in ids {
             do {
-                limits.append(try await client.memoryLimitBytes(containerID: container.id))
+                limits.append(try await client.memoryLimitBytes(containerID: id))
             } catch {
                 failures += 1
             }
         }
-        guard !limits.isEmpty else { return .noneInspected(failures: failures) }
-        // 0 is `HostMemory`'s own "could not read", and the one value `fraction` refuses to divide by.
-        let commitment = MemoryCommitment.measure(limits: limits, hostBytes: hostMemoryBytes() ?? 0)
-        return .inspected(commitment, failures: failures)
+        return limits
     }
 
     /// An unheld socket is not a foreign one: with no holder there is nothing to outrank

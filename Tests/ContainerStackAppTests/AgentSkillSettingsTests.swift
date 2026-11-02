@@ -100,6 +100,46 @@ struct AgentSkillSettingsTests {
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: claudeLink.path) == moved.source.path)
     }
 
+    /// A first install that linked only one agent still records that link, so the link follows
+    /// the app when it moves.
+    @Test func aPartialFirstInstallStillOwnsItsLink() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let claudeSkills = claudeLink.deletingLastPathComponent()
+        let codexLink = home.appending(path: ".agents/skills/containerstack")
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claudeSkills.path)
+            cleanUp(defaults)
+        }
+        try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: claudeSkills, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: claudeSkills.path)
+        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).apply()
+        let moved = try links()
+
+        AgentSkillSettings(defaults: defaults, links: moved).apply()
+
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: codexLink.path) == moved.source.path)
+    }
+
+    /// A link that cannot be read is not a link that is gone: its record stays.
+    @Test func anUnreadableLinkKeepsItsRecord() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let claudeSkills = claudeLink.deletingLastPathComponent()
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claudeSkills.path)
+            cleanUp(defaults)
+        }
+        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).apply()
+        let moved = AgentSkillSettings(defaults: defaults, links: try links())
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: claudeSkills.path)
+
+        moved.isEnabled = false
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claudeSkills.path)
+        moved.apply()
+
+        #expect(!isLinked())
+    }
+
     /// `swift run` builds have no bundle, so there is no skill to link.
     @Test func aBuildWithoutTheSkillLinksNothing() throws {
         let defaults = try #require(UserDefaults(suiteName: suiteName))

@@ -77,7 +77,7 @@ struct AgentSkillLinksTests {
         _ = AgentSkillLinks(source: old, home: home).install()
         try FileManager.default.removeItem(at: old.deletingLastPathComponent().deletingLastPathComponent())
 
-        let moved = AgentSkillLinks(source: skill, home: home, previousSource: old.path)
+        let moved = AgentSkillLinks(source: skill, home: home, ownedSources: [old.path])
         #expect(outcomes(moved.install())["Claude Code"] == .linked)
         #expect(destination(of: claudeLink) == skill.path)
     }

@@ -10,8 +10,9 @@ import Observation
 @Observable
 final class AgentSkillSettings {
     static let key = "linksAgentSkill"
-    /// The source that the app linked last. A link to it is the app's own, also after the app moved.
-    static let linkedSourceKey = "agentSkillLinkedSource"
+    /// The sources that the app's links point at. A link to one of them is the app's own, also
+    /// after the app moved or after a link failed to change.
+    static let linkedSourcesKey = "agentSkillLinkedSources"
 
     private let defaults: UserDefaults
     private let links: AgentSkillLinks?
@@ -38,18 +39,10 @@ final class AgentSkillSettings {
         let recorded = AgentSkillLinks(
             source: links.source,
             home: links.home,
-            previousSource: defaults.string(forKey: Self.linkedSourceKey)
+            ownedSources: Set(defaults.stringArray(forKey: Self.linkedSourcesKey) ?? [])
         )
-        guard isEnabled else {
-            results = recorded.remove()
-            return
-        }
-        results = recorded.install()
-        // A link that failed to move still points at the old source, so keep that record for it.
-        let linked = results.contains { $0.outcome == .linked || $0.outcome == .current }
-        if linked, !results.contains(where: \.outcome.isFailure) {
-            defaults.set(links.source.path, forKey: Self.linkedSourceKey)
-        }
+        results = isEnabled ? recorded.install() : recorded.remove()
+        defaults.set(recorded.linkedSources().sorted(), forKey: Self.linkedSourcesKey)
     }
 
     static func describe(_ result: AgentSkillLinks.Result) -> String {

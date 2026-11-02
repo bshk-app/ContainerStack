@@ -18,6 +18,7 @@ let appBundleSupportScript = """
     mkdir -p "$helpers" "$agents"
     cp "$BUILT_PRODUCTS_DIR/ContainerStackRuntime" "$helpers/ContainerStackRuntime"
     cp "$SRCROOT/Packaging/com.containerstack.runtime.plist.in" "$agents/com.containerstack.runtime.plist"
+    ditto "$SRCROOT/Packaging/AgentSkills" "$TARGET_BUILD_DIR/$WRAPPER_NAME/Contents/Resources/AgentSkills"
     if [ -n "${CONTAINERSTACK_SOCKTAINER_BINARY:-}" ]; then
         cp "$CONTAINERSTACK_SOCKTAINER_BINARY" "$helpers/socktainer"
     elif [ -x "$HOME/.local/bin/socktainer" ]; then

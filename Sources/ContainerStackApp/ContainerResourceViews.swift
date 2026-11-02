@@ -21,6 +21,7 @@ private struct ResourceLimitFields: View {
 struct SystemSettingsView: View {
     let settings: ContainerResourceSettings
     let builderSettings: ContainerResourceSettings
+    let agentSkill: AgentSkillSettings
     let model: RuntimeViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var restartProblem: String?
@@ -86,6 +87,26 @@ struct SystemSettingsView: View {
                             + " next build starts them again.")
                 }
             }
+            Section {
+                Toggle("Link the ContainerStack skill for coding agents", isOn: agentSkillEnabled)
+                    .disabled(!agentSkill.isAvailable)
+                if !agentSkill.isAvailable {
+                    Text("This build of ContainerStack has no skill to link.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(agentSkill.results, id: \.agent) { result in
+                    Text(AgentSkillSettings.describe(result))
+                        .foregroundStyle(result.outcome.isFailure ? .red : .secondary)
+                        .textSelection(.enabled)
+                }
+            } header: {
+                Text("Coding Agents")
+            } footer: {
+                Text(
+                    "The skill tells Codex and Claude Code to build and run containers with docker and cstack"
+                        + " through ContainerStack, not with the container CLI. It links to this app, so it"
+                        + " changes when the app updates.")
+            }
             if awaitsBridgeRestart {
                 Section {
                     Text("Saved. New Docker API containers and builds use these values after a Docker bridge restart.")
@@ -112,7 +133,7 @@ struct SystemSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 640)
+        .frame(width: 520, height: 700)
         .onAppear { reload() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { reload() }
@@ -132,6 +153,7 @@ struct SystemSettingsView: View {
     private func reload() {
         settings.reload()
         builderSettings.reload()
+        agentSkill.apply()
     }
 
     private var cpus: Binding<Int> {
@@ -140,6 +162,10 @@ struct SystemSettingsView: View {
 
     private var memoryGiB: Binding<Int> {
         Binding(get: { settings.memoryGiB }, set: { settings.setMemoryGiB($0) })
+    }
+
+    private var agentSkillEnabled: Binding<Bool> {
+        Binding(get: { agentSkill.isEnabled }, set: { agentSkill.isEnabled = $0 })
     }
 
     private var builderCPUs: Binding<Int> {

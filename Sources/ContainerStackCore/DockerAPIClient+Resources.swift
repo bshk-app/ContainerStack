@@ -259,6 +259,11 @@ extension DockerAPIClient {
     static let runningBuildersPath =
         "/containers/json?filters=" + queryEncoded(#"{"label":["com.apple.container.plugin=builder"]}"#)
 
+    func builderActivity(id: String) async throws -> BuilderActivity {
+        let response = try await requestRetryingImmediateFailures(path: "/containers/\(id)/stats?stream=false")
+        return try await decode(DockerStatsSample.self, response: response).activity
+    }
+
     func runningBuilderIDs() async throws -> [String] {
         let response = try await requestRetryingImmediateFailures(path: Self.runningBuildersPath)
         return try await decode([DockerContainerSummary].self, response: response).map(\.id)

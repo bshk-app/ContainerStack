@@ -24,6 +24,7 @@ struct SystemSettingsView: View {
     let model: RuntimeViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var restartProblem: String?
+    @AppStorage(BuilderIdleStop.minutesKey) private var builderIdleMinutes = BuilderIdleStop.defaultMinutes
 
     var body: some View {
         Form {
@@ -60,6 +61,11 @@ struct SystemSettingsView: View {
                     maximumMemoryGiB: builderSettings.maximumMemoryGiB
                 )
                 .disabled(builderSettings.problem != nil)
+                Picker("Stop when idle for", selection: $builderIdleMinutes) {
+                    ForEach(BuilderIdleStop.choices, id: \.self) { minutes in
+                        Text(minutes == 0 ? "Never" : "\(minutes) minutes").tag(minutes)
+                    }
+                }
                 if let problem = builderSettings.problem {
                     Text(problem)
                         .foregroundStyle(.red)
@@ -70,9 +76,14 @@ struct SystemSettingsView: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(
-                        "Used by docker build and container build. The builder is one VM, and it keeps"
-                            + " the memory it has used until it stops.")
+                        "CPUs and memory are for the image builder that container build and Docker API builds"
+                            + " use. A docker build through buildx runs in a builder container, which gets the"
+                            + " default container resources when buildx makes it.")
                     Text("A running builder keeps its size. New values apply the next time it starts.")
+                    Text(
+                        "A builder VM keeps the memory it has used until it stops. ContainerStack stops the image"
+                            + " builder and buildx builder containers that do no work for the time above. The"
+                            + " next build starts them again.")
                 }
             }
             if awaitsBridgeRestart {

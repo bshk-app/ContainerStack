@@ -298,12 +298,57 @@ struct ContainerResourceSettingsTests {
         #expect(settings.cpus == 6)
     }
 
+    // MARK: - Image builder
+
+    /// Apple's own `[build]` defaults show until the user changes one, and nothing is written:
+    /// `container build` and socktainer read the same defaults from a file that sets none.
+    @Test func builderShowsAppleDefaultsAndWritesNothing() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        try write("[container]\ncpus = 6\n", to: userFile)
+
+        let settings = makeSettings(defaults: defaults, table: .build)
+
+        #expect(settings.cpus == 2)
+        #expect(settings.memoryGiB == 2)
+        #expect(try contents(of: userFile) == "[container]\ncpus = 6\n")
+    }
+
+    @Test func builderChangeGoesIntoTheBuildTable() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        try write("[container]\ncpus = 6\n", to: userFile)
+        let settings = makeSettings(defaults: defaults, table: .build)
+
+        settings.setMemoryGiB(8)
+        settings.setCPUs(4)
+
+        #expect(try contents(of: userFile) == "[container]\ncpus = 6\n\n[build]\ncpus = 4\nmemory = \"8g\"\n")
+        #expect(settings.cpus == 4)
+        #expect(settings.memoryGiB == 8)
+    }
+
+    @Test func builderAwaitsABridgeRestartOnlyForTheBuildTable() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        try write("[build]\nmemory = \"4g\"\n", to: userFile)
+        try write("[build]\nmemory = \"4g\"\n\n[container]\ncpus = 6\n", to: appRootCopy)
+
+        let settings = makeSettings(defaults: defaults, table: .build)
+        #expect(!settings.awaitsBridgeRestart)
+
+        settings.setMemoryGiB(6)
+        #expect(settings.awaitsBridgeRestart)
+    }
+
     private func makeSettings(
         defaults: UserDefaults,
+        table: ContainerConfigFile.Table = .container,
         processorCount: Int = 8,
         memoryGiB: UInt64 = 16
     ) -> ContainerResourceSettings {
         ContainerResourceSettings(
+            table: table,
             defaults: defaults,
             userFile: userFile,
             appRootCopy: appRootCopy,

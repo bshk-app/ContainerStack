@@ -11,6 +11,7 @@ struct ContainerStackApp: App {
     )
     @State private var updates = AppUpdates()
     @State private var resourceSettings = ContainerResourceSettings()
+    @State private var builderSettings = ContainerResourceSettings(table: .build)
 
     var body: some Scene {
         Window("ContainerStack", id: "dashboard") {
@@ -26,7 +27,7 @@ struct ContainerStackApp: App {
         }
 
         Settings {
-            SystemSettingsView(settings: resourceSettings, model: model)
+            SystemSettingsView(settings: resourceSettings, builderSettings: builderSettings, model: model)
         }
 
         MenuBarExtra {

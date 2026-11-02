@@ -20,6 +20,7 @@ private struct ResourceLimitFields: View {
 
 struct SystemSettingsView: View {
     let settings: ContainerResourceSettings
+    let builderSettings: ContainerResourceSettings
     let model: RuntimeViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var restartProblem: String?
@@ -50,9 +51,33 @@ struct SystemSettingsView: View {
                         .textSelection(.enabled)
                 }
             }
-            if settings.awaitsBridgeRestart {
+            Section {
+                ResourceLimitFields(
+                    cpus: builderCPUs,
+                    memoryGiB: builderMemoryGiB,
+                    memoryDescription: builderSettings.memoryDescription,
+                    maximumCPUs: builderSettings.maximumCPUs,
+                    maximumMemoryGiB: builderSettings.maximumMemoryGiB
+                )
+                .disabled(builderSettings.problem != nil)
+                if let problem = builderSettings.problem {
+                    Text(problem)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
+            } header: {
+                Text("Image Builder")
+            } footer: {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(
+                        "Used by docker build and container build. The builder is one VM, and it keeps"
+                            + " the memory it has used until it stops.")
+                    Text("A running builder keeps its size. New values apply the next time it starts.")
+                }
+            }
+            if awaitsBridgeRestart {
                 Section {
-                    Text("Saved. New Docker API containers use these defaults after a Docker bridge restart.")
+                    Text("Saved. New Docker API containers and builds use these values after a Docker bridge restart.")
                     Text(
                         "Restarting interrupts open builds, exec sessions and runner jobs."
                             + " Running containers keep their size and continue running.")
@@ -60,13 +85,13 @@ struct SystemSettingsView: View {
                         Task {
                             restartProblem = nil
                             if await model.restartBridge() {
-                                settings.reload()
+                                reload()
                             } else {
                                 restartProblem = model.runtimeFailure ?? "Docker bridge restart did not complete."
                             }
                         }
                     }
-                    .disabled(!model.canRestartRuntime || settings.problem != nil)
+                    .disabled(!model.canRestartRuntime || settings.problem != nil || builderSettings.problem != nil)
                     if let restartProblem {
                         Text(restartProblem)
                             .foregroundStyle(.red)
@@ -76,17 +101,26 @@ struct SystemSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520, height: 500)
-        .onAppear { settings.reload() }
+        .frame(width: 520, height: 640)
+        .onAppear { reload() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { settings.reload() }
+            if phase == .active { reload() }
         }
         .onChange(of: model.isRestarting) { _, restarting in
-            if !restarting { settings.reload() }
+            if !restarting { reload() }
         }
-        .onChange(of: settings.awaitsBridgeRestart) { _, awaitsRestart in
+        .onChange(of: awaitsBridgeRestart) { _, awaitsRestart in
             if !awaitsRestart { restartProblem = nil }
         }
+    }
+
+    private var awaitsBridgeRestart: Bool {
+        settings.awaitsBridgeRestart || builderSettings.awaitsBridgeRestart
+    }
+
+    private func reload() {
+        settings.reload()
+        builderSettings.reload()
     }
 
     private var cpus: Binding<Int> {
@@ -95,6 +129,14 @@ struct SystemSettingsView: View {
 
     private var memoryGiB: Binding<Int> {
         Binding(get: { settings.memoryGiB }, set: { settings.setMemoryGiB($0) })
+    }
+
+    private var builderCPUs: Binding<Int> {
+        Binding(get: { builderSettings.cpus }, set: { builderSettings.setCPUs($0) })
+    }
+
+    private var builderMemoryGiB: Binding<Int> {
+        Binding(get: { builderSettings.memoryGiB }, set: { builderSettings.setMemoryGiB($0) })
     }
 }
 

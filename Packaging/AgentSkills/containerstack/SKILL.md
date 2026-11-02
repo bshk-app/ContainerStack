@@ -34,7 +34,7 @@ docker buildx inspect   # the endpoint of the node is: containerstack
 - If the context is another one, add `--context containerstack` to each `docker` command.
 - If the builder is on another endpoint, run builds with `BUILDX_BUILDER=containerstack`, or
   give `--builder containerstack` to `docker build` and `docker compose build`. A builder that
-  `docker buildx use` selected stays selected when the context changes.
+  `docker buildx use --global` selected stays selected in every context.
 - Do not change the user's current context or builder.
 
 Check the runtime with the `cstack` CLI from the same ContainerStack.app as this skill:

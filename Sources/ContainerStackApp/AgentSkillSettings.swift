@@ -45,7 +45,9 @@ final class AgentSkillSettings {
             return
         }
         results = recorded.install()
-        if results.contains(where: { $0.outcome == .linked || $0.outcome == .current }) {
+        // A link that failed to move still points at the old source, so keep that record for it.
+        let linked = results.contains { $0.outcome == .linked || $0.outcome == .current }
+        if linked, !results.contains(where: \.outcome.isFailure) {
             defaults.set(links.source.path, forKey: Self.linkedSourceKey)
         }
     }

@@ -60,9 +60,14 @@ struct BuilderIdleStopTests {
     // MARK: - Monitor
 
     private func idleRuntime(minute: Int, builders: [String], others: [String] = []) -> StubDockerTransport {
-        let containers = (builders.filter { $0.hasPrefix("buildx_") } + others).map {
-            #"{"Id":"\#($0)","Names":["/\#($0)"],"State":"running"}"#
+        let buildx = builders.filter { $0.hasPrefix("buildx_") }.map {
+            #"{"Id":"\#($0)","Names":["/\#($0)"],"Command":"/usr/bin/buildkitd-entrypoint","State":"running"}"#
         }
+        let containers =
+            buildx
+            + others.map {
+                #"{"Id":"\#($0)","Names":["/\#($0)"],"Command":"nginx -g 'daemon off;'","State":"running"}"#
+            }
         let apple = builders.filter { !$0.hasPrefix("buildx_") }.map {
             #"{"Id":"\#($0)","Names":["/\#($0)"],"State":"running"}"#
         }
@@ -92,7 +97,7 @@ struct BuilderIdleStopTests {
             let transport = idleRuntime(
                 minute: minute,
                 builders: ["buildkit", "buildx_buildkit_containerstack"],
-                others: ["web"]
+                others: ["web", "buildx_buildkit_web"]
             )
             stopped.append(
                 await monitor.tick(client: client(transport), at: at(minutes: minute), idleLimit: tenMinutes))

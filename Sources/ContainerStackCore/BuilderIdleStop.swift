@@ -162,8 +162,10 @@ public struct BuilderIdleMonitor: Sendable {
 
     private static func runningBuilders(client: DockerAPIClient) async -> [String] {
         let apple = (try? await client.runningBuilderIDs()) ?? []
+        // buildx sets no label, so the name and the BuildKit daemon command identify its builders.
         let buildx = ((try? await client.listContainers(all: false)) ?? [])
             .filter { $0.names?.contains { $0.hasPrefix(buildxNamePrefix) } == true }
+            .filter { $0.command?.contains("buildkitd") == true }
             .map(\.id)
         return apple + buildx
     }

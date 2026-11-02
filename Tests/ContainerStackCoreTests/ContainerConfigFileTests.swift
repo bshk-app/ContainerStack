@@ -324,3 +324,62 @@ struct ContainerConfigFileDiskTests {
         #expect(permissions == 0o600)
     }
 }
+
+/// `[build]` holds the same two keys for the image builder VM that `container build` and
+/// socktainer start.
+@Suite("ContainerConfigFile build table")
+struct ContainerConfigFileBuildTableTests {
+    private let both = """
+        [build]
+        cpus = 2
+        memory = "2048mb"
+
+        [container]
+        cpus = 6
+        memory = "6g"
+
+        """
+
+    @Test func readsOnlyTheNamedTable() throws {
+        #expect(
+            try ContainerConfigFile.read(both, table: .build)
+                == ContainerResourceDefaults(cpus: 2, memoryBytes: 2 * gibibyte))
+        #expect(
+            try ContainerConfigFile.read(both, table: .container)
+                == ContainerResourceDefaults(cpus: 6, memoryBytes: 6 * gibibyte))
+    }
+
+    @Test func editsTheBuildTableAndLeavesTheContainerTable() throws {
+        let expected = both.replacingOccurrences(of: "cpus = 2\nmemory = \"2048mb\"", with: "cpus = 4\nmemory = \"8g\"")
+
+        #expect(try ContainerConfigFile.updating(both, table: .build, cpus: 4, memoryGiB: 8) == expected)
+    }
+
+    @Test func appendsABuildTableWhenTheFileHasNone() throws {
+        #expect(
+            try ContainerConfigFile.updating("[container]\ncpus = 6\n", table: .build, cpus: nil, memoryGiB: 4)
+                == "[container]\ncpus = 6\n\n[build]\nmemory = \"4g\"\n"
+        )
+    }
+
+    @Test func refusesABuildTableDefinedAtTheTop() {
+        #expect(throws: ContainerConfigFile.EditError.unsupportedLayout(line: 1)) {
+            try ContainerConfigFile.read("build.memory = \"4g\"\n", table: .build)
+        }
+    }
+
+    @Test func savesAndLoadsTheBuildTable() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "cstack-config-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appending(path: "config.toml")
+
+        try ContainerConfigFile.save(cpus: 8, memoryGiB: 4, to: url)
+        try ContainerConfigFile.save(table: .build, cpus: 3, memoryGiB: 6, to: url)
+
+        #expect(
+            try ContainerConfigFile.load(from: url, table: .build)
+                == ContainerResourceDefaults(cpus: 3, memoryBytes: 6 * gibibyte))
+        #expect(
+            try ContainerConfigFile.load(from: url) == ContainerResourceDefaults(cpus: 8, memoryBytes: 4 * gibibyte))
+    }
+}

@@ -217,6 +217,23 @@ struct RuntimeRestartPlanTests {
                 == [.stopBridge(executablePath: bridge, socketPath: nil)])
     }
 
+    /// The new helper runs `container system start`, which copies config.toml again while the API
+    /// server and its containers keep running.
+    @Test
+    func bridgeRestartLeavesAppleContainerAndContainersRunning() {
+        let bridge = "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
+
+        #expect(
+            RuntimeRestartPlan.bridgeSteps(configuration: configuration, agentRegistered: false, replacingSibling: true)
+                == [.stopBridge(executablePath: bridge, socketPath: configuration.socketPath), .startBridge])
+        #expect(
+            RuntimeRestartPlan.bridgeSteps(configuration: configuration, agentRegistered: true)
+                == [
+                    .stopBridge(executablePath: bridge, socketPath: nil),
+                    .kickstartAgent(label: RuntimeRestartPlan.agentLabel),
+                ])
+    }
+
     @Test
     func stopLeavesAppleContainerRunning() {
         let steps = RuntimeRestartPlan.stopSteps(configuration: configuration)

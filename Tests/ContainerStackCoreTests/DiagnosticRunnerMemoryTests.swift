@@ -24,13 +24,15 @@ struct DiagnosticRunnerMemoryTests {
     private func runtime(
         containers: [String],
         inspects: [String: Result<Data, any Error>] = [:],
-        containerListing: Result<Data, any Error>? = nil
+        containerListing: Result<Data, any Error>? = nil,
+        builders: Result<Data, any Error> = .success(jsonResponse("[]"))
     ) -> StubDockerTransport {
         var byPath: [String: Result<Data, any Error>] = [
             "/_ping": .success(jsonResponse("OK")),
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(#"{"Containers":\#(containers.count),"Images":0}"#)),
             "/containers/json": containerListing ?? .success(jsonResponse(containerList(containers))),
+            DockerAPIClient.runningBuildersPath: builders,
             "/networks": .success(jsonResponse("[]")),
         ]
         for (id, result) in inspects {
@@ -93,7 +95,8 @@ struct DiagnosticRunnerMemoryTests {
     func limitsWithinHostMemoryPass() async {
         let check = await memoryCheck(limits: [4_000_000_000])
         #expect(check?.verdict == .ok)
-        #expect(check?.summary == "Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory")
+        #expect(
+            check?.summary == "Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory")
         #expect(check?.detail == nil)
         #expect(check?.remedy == nil)
     }
@@ -104,7 +107,7 @@ struct DiagnosticRunnerMemoryTests {
         let check = await memoryCheck(limits: [10_000_000_000])
         #expect(check?.verdict == .warning)
         #expect(
-            check?.summary == "Container memory limits: 10.0 GB in explicit container limits vs 16.0 GB host memory"
+            check?.summary == "Container memory limits: 10.0 GB in configured container limits vs 16.0 GB host memory"
                 + " — guests approaching their limits may pressure other applications"
         )
         #expect(check?.remedy == nil)
@@ -120,7 +123,7 @@ struct DiagnosticRunnerMemoryTests {
         #expect(check?.verdict != .failure)
         #expect(
             check?.summary
-                == "Container memory limits: HIGH — 14.0 GB in explicit container limits vs 16.0 GB host memory"
+                == "Container memory limits: HIGH — 14.0 GB in configured container limits vs 16.0 GB host memory"
         )
         #expect(
             check?.detail
@@ -186,7 +189,7 @@ struct DiagnosticRunnerMemoryTests {
                 .check(.memoryCommitment)
             #expect(check?.verdict == .indeterminate)
             #expect(check?.verdict != .ok)
-            let measured = "Container memory limits: \(ByteSize.formatted(limit)) in explicit"
+            let measured = "Container memory limits: \(ByteSize.formatted(limit)) in configured"
             #expect(check?.summary.hasPrefix(measured) == true)
             #expect(check?.summary.hasPrefix("Container memory limits: HIGH") == false)
             #expect(
@@ -213,7 +216,7 @@ struct DiagnosticRunnerMemoryTests {
         #expect(check?.verdict != .indeterminate)
         #expect(
             check?.summary
-                == "Container memory limits: HIGH — 14.0 GB in explicit container limits vs 16.0 GB host memory"
+                == "Container memory limits: HIGH — 14.0 GB in configured container limits vs 16.0 GB host memory"
         )
         #expect(
             check?.detail
@@ -260,10 +263,11 @@ struct DiagnosticRunnerMemoryTests {
     func containersWithoutALimitAreNamed() async {
         let check = await memoryCheck(limits: [4_000_000_000, nil])
         #expect(check?.verdict == .ok)
-        #expect(check?.summary == "Container memory limits: 4.0 GB in explicit container limits vs 16.0 GB host memory")
+        #expect(
+            check?.summary == "Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory")
         #expect(
             check?.detail
-                == "1 running container(s) have no explicit memory limit and are excluded from that total."
+                == "1 running container(s) have no reported memory limit and are excluded from that total."
         )
     }
 
@@ -355,5 +359,86 @@ struct DiagnosticRunnerMemoryTests {
         #expect(report.check(.routes)?.verdict == .failure)
         #expect(report.verdict == .failure)
         #expect(report.verdict != .warning)
+    }
+
+    // MARK: - Image builder
+
+    private func builderList(_ ids: [String]) -> Data {
+        let items = ids.map {
+            #"{"Id":"\#($0)","Names":["/\#($0)"],"State":"running","Labels":{"com.apple.container.plugin":"builder"}}"#
+        }
+        return jsonResponse("[\(items.joined(separator: ","))]")
+    }
+
+    private func builderLine(_ size: String) -> String {
+        "\(size) of that is the image builder. It keeps the memory it has used until it stops."
+    }
+
+    // socktainer leaves plugin containers out of a plain listing, and the builder is one: an
+    // 8 GB builder used to be missing from this total.
+    @Test("a running image builder adds its VM size to the total and is named")
+    func theBuilderCountsTowardTheTotal() async {
+        let transport = runtime(
+            containers: ["c0"],
+            inspects: [
+                "c0": .success(inspectResponse(id: "c0", memory: 1_000_000_000)),
+                "buildkit": .success(inspectResponse(id: "buildkit", memory: 8_000_000_000)),
+            ],
+            builders: .success(builderList(["buildkit"]))
+        )
+        let check = await makeRunner(transport: transport, hostMemoryBytes: hostBytes)
+            .run(checks: CheckID.cliSet)
+            .check(.memoryCommitment)
+        #expect(check?.verdict == .warning)
+        #expect(
+            check?.summary == "Container memory limits: 9.0 GB in configured container limits vs 16.0 GB host memory"
+                + " — guests approaching their limits may pressure other applications"
+        )
+        #expect(check?.detail == builderLine("8.0 GB"))
+    }
+
+    @Test("an image builder running alone is measured, not reported as nothing running")
+    func aBuilderRunningAloneIsMeasured() async {
+        let transport = runtime(
+            containers: [],
+            inspects: ["buildkit": .success(inspectResponse(id: "buildkit", memory: 2_000_000_000))],
+            builders: .success(builderList(["buildkit"]))
+        )
+        let check = await makeRunner(transport: transport, hostMemoryBytes: hostBytes)
+            .run(checks: CheckID.cliSet)
+            .check(.memoryCommitment)
+        #expect(check?.verdict == .ok)
+        #expect(
+            check?.summary == "Container memory limits: 2.0 GB in configured container limits vs 16.0 GB host memory")
+        #expect(check?.detail == builderLine("2.0 GB"))
+    }
+
+    // Decision 6: a builder nobody could list may be running, so a total that it could still
+    // push into another band is not a measured one.
+    @Test("a builder listing that failed leaves a within-band total unknown and says so")
+    func aFailedBuilderListingIsIndeterminate() async {
+        let transport = runtime(
+            containers: ["c0"],
+            inspects: ["c0": .success(inspectResponse(id: "c0", memory: 4_000_000_000))],
+            builders: .failure(UnixSocketError.timedOut)
+        )
+        let check = await makeRunner(transport: transport, hostMemoryBytes: hostBytes)
+            .run(checks: CheckID.cliSet)
+            .check(.memoryCommitment)
+        #expect(check?.verdict == .indeterminate)
+        #expect(check?.detail == "The image builder could not be listed, so the total may be incomplete.")
+    }
+
+    /// With no other container running, "nothing running" would be a guess: the builder that
+    /// could not be listed may hold gigabytes.
+    @Test("a failed builder listing with nothing else running is unknown, not empty")
+    func aFailedBuilderListingWithNothingElseRunningIsIndeterminate() async {
+        let transport = runtime(containers: [], builders: .failure(UnixSocketError.timedOut))
+        let check = await makeRunner(transport: transport, hostMemoryBytes: hostBytes)
+            .run(checks: CheckID.cliSet)
+            .check(.memoryCommitment)
+        #expect(check?.verdict == .indeterminate)
+        #expect(check?.summary != "Container memory limits: no running containers to check")
+        #expect(check?.detail == "The image builder could not be listed.")
     }
 }

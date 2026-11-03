@@ -160,8 +160,23 @@ public enum RuntimeRestartPlan {
             ),
             .run(executablePath: configuration.containerPath, arguments: ["system", "stop"]),
             .run(executablePath: configuration.containerPath, arguments: configuration.containerStartArguments),
-            agentRegistered ? .kickstartAgent(label: agentLabel) : .startBridge,
+            bridgeStart(agentRegistered: agentRegistered),
         ]
+    }
+
+    /// Restarts only the bridge, so a new socktainer reads config.toml again. The new helper runs
+    /// `container system start`, which copies the file while the containers keep running.
+    public static func bridgeSteps(
+        configuration: RuntimeProcessConfiguration,
+        agentRegistered: Bool,
+        replacingSibling: Bool = false
+    ) -> [RuntimeControlStep] {
+        stopSteps(configuration: configuration, replacingSibling: replacingSibling)
+            + [bridgeStart(agentRegistered: agentRegistered)]
+    }
+
+    private static func bridgeStart(agentRegistered: Bool) -> RuntimeControlStep {
+        agentRegistered ? .kickstartAgent(label: agentLabel) : .startBridge
     }
 
     public static func stopSteps(

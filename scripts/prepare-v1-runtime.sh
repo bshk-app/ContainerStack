@@ -5,8 +5,16 @@ set -euo pipefail
 # This script deliberately stops the existing Apple Container service and moves
 # its data directory aside. It never deletes data or starts a daemon for you.
 
-readonly TARGET_CONTAINER_VERSION="1.3.1"
-readonly TARGET_RELEASE_URL="https://github.com/apple/container/releases/tag/${TARGET_CONTAINER_VERSION}"
+readonly TARGET_CONTAINER_VERSION="1.6.0"
+# A fork build of Apple Container 1.6.0, not Apple's release. The fork changes only dependencies:
+# containerization 0.52.1 with a ReadStream fix and a bearer token reuse fix, and async-http-client
+# with four early-response fixes. Without them, the memory of container-core-images grows with each
+# image push, and each blob upload sends its body two times. The fork has the same XPC API as
+# Apple's 1.6.0, so socktainer builds against Apple's packages. Move back to Apple's release when a
+# release of Apple Container contains these fixes.
+readonly TARGET_RELEASE_REPOSITORY="beshkenadze/container"
+readonly TARGET_RELEASE_TAG="${TARGET_CONTAINER_VERSION}-bshk.2"
+readonly TARGET_RELEASE_URL="https://github.com/${TARGET_RELEASE_REPOSITORY}/releases/tag/${TARGET_RELEASE_TAG}"
 # Apple Container reports its own data directory as `appRoot`, and the path has moved between
 # versions — 1.2.2 and later use com.apple.container, while com.apple.containerization is a
 # leftover from earlier builds. Asking the runtime instead of hardcoding is what keeps "moved the
@@ -20,11 +28,9 @@ readonly DATA_ROOT_FALLBACK="${HOME}/Library/Application Support/com.apple.conta
 #     app's ports/volumes editing cannot be applied;
 #   * a fix for an inspect trap that killed the daemon when two host ports publish one container
 #     port — exactly what adding a second port produces.
-#   * the port to Apple Container 1.3.1 / Containerization 0.42.0, which upstream has not made.
-# Each was exercised against a live 1.3.1 runtime before this pin moved.
 # Unpin only once every one of them is upstream.
 readonly SOCKTAINER_REPO_URL="https://github.com/beshkenadze/socktainer.git"
-readonly SOCKTAINER_REV="6cedf5e45f745c7f945babdb1f8a00a5de8d696e"
+readonly SOCKTAINER_REV="4ad9f06813836a5b514e8dade85ff28e54993648"
 readonly SOCKTAINER_SOURCE_ROOT="${HOME}/Library/Application Support/ContainerStack/socktainer"
 readonly SOCKTAINER_BIN_DIR="${HOME}/.local/bin"
 readonly SOCKTAINER_BIN="${SOCKTAINER_BIN_DIR}/socktainer"
@@ -43,7 +49,7 @@ resolve_data_root() {
     local reported
     # Everything after the field name: the path contains a space ("Application Support"), so $2
     # alone truncates it to /Users/<you>/Library/Application.
-    reported="$(container system status 2>/dev/null | awk '$1 == "appRoot" { $1 = ""; sub(/^[ \t]+/, ""); print }')"
+    reported="$(container system status 2>/dev/null | awk '$1 == "appRoot" || $1 == "paths.appRoot" { $1 = ""; sub(/^[ \t]+/, ""); print }')"
     reported="${reported%/}"
     if [[ -n "$reported" ]]; then
         printf '%s\n' "$reported"
@@ -63,12 +69,12 @@ Usage:
   ./scripts/prepare-v1-runtime.sh pin              # print SOCKTAINER_REV
 
 prepare:
-  - downloads the signed Apple Container 1.3.1 installer
+  - downloads the signed installer of the Apple Container 1.6.0 fork build
   - verifies its SHA-256 digest and package signature
   - stops the old runtime before changing its files
   - installs Apple Container and moves the old data directory aside
   - clones pinned Socktainer source
-- rebuilds Socktainer against Container 1.3.1 / Containerization 0.42.0
+  - rebuilds Socktainer against Container 1.6.0 / Containerization 0.52.1
   - installs Socktainer at ~/.local/bin/socktainer
   - does NOT start either daemon
 
@@ -105,7 +111,7 @@ install_socktainer() {
     git -C "$SOCKTAINER_SOURCE_ROOT" fetch --depth 1 origin "$SOCKTAINER_REV"
     git -C "$SOCKTAINER_SOURCE_ROOT" checkout --detach "$SOCKTAINER_REV"
 
-    # The pinned revision declares Container 1.3.1 and Containerization 0.42.0 itself, and
+    # The pinned revision declares Container 1.6.0 and Containerization 0.52.1 itself, and
     # carries the `ssh` field Builder.BuildConfig gained. Both used to be patched in here; a
     # rewrite that silently matches nothing is worse than no rewrite, so the resolution check
     # below is what guards the versions now.
@@ -114,7 +120,7 @@ install_socktainer() {
     local resolved_container resolved_containerization
     resolved_container="$(jq -r '.pins[] | select(.identity == "container") | .state.version' "$SOCKTAINER_SOURCE_ROOT/Package.resolved")"
     resolved_containerization="$(jq -r '.pins[] | select(.identity == "containerization") | .state.version' "$SOCKTAINER_SOURCE_ROOT/Package.resolved")"
-    [[ "$resolved_container" == "1.3.1" && "$resolved_containerization" == "0.42.0" ]] || {
+    [[ "$resolved_container" == "1.6.0" && "$resolved_containerization" == "0.52.1" ]] || {
         printf 'Unexpected Socktainer dependency resolution: container=%s containerization=%s\n' \
             "$resolved_container" "$resolved_containerization" >&2
         exit 1
@@ -151,7 +157,7 @@ prepare() {
     tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/containerstack-v1.XXXXXX")"
     release_json="${tmp_dir}/release.json"
     curl --fail --silent --show-error --location \
-        "https://api.github.com/repos/apple/container/releases/tags/${TARGET_CONTAINER_VERSION}" \
+        "https://api.github.com/repos/${TARGET_RELEASE_REPOSITORY}/releases/tags/${TARGET_RELEASE_TAG}" \
         --output "$release_json"
 
     pkg_url="$(jq -r '[.assets[] | select(.name | endswith("-installer-signed.pkg")) | .browser_download_url] | if length == 1 then .[0] else empty end' "$release_json")"

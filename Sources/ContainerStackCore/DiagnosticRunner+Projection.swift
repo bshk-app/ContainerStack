@@ -153,8 +153,8 @@ extension DiagnosticRunner {
                 detail: nil,
                 took: took
             )
-        case .inspected(let commitment, let failures):
-            return commitmentCheck(commitment, failures: failures, took: took)
+        case .inspected(let commitment, let failures, let builderUnlisted):
+            return commitmentCheck(commitment, failures: failures, builderUnlisted: builderUnlisted, took: took)
         }
     }
 
@@ -163,9 +163,10 @@ extension DiagnosticRunner {
     private static func commitmentCheck(
         _ commitment: MemoryCommitment,
         failures: Int,
+        builderUnlisted: Bool,
         took: Duration
     ) -> DiagnosticCheck {
-        let trailing = trailingLines(commitment, failures: failures)
+        let trailing = trailingLines(commitment, failures: failures, builderUnlisted: builderUnlisted)
         guard commitment.hostBytes > 0 else {
             return indeterminate(
                 .memoryCommitment,
@@ -177,7 +178,7 @@ extension DiagnosticRunner {
         }
 
         let summary =
-            "\(ByteSize.formatted(commitment.configuredBytes)) in explicit container limits"
+            "\(ByteSize.formatted(commitment.configuredBytes)) in configured container limits"
             + " vs \(ByteSize.formatted(commitment.hostBytes)) host memory"
         var lines = trailing
         var text: String
@@ -199,7 +200,7 @@ extension DiagnosticRunner {
         let detail = lines.isEmpty ? nil : lines.joined(separator: "\n")
         // Decision 6's exception: an uninspected limit only adds, so nothing unmeasured can
         // un-exceed a total that already does. The other two verdicts a missing sample can flip.
-        guard failures == 0 || commitment.verdict == .exceeding else {
+        guard (failures == 0 && !builderUnlisted) || commitment.verdict == .exceeding else {
             return indeterminate(.memoryCommitment, summary: text, detail: detail, took: took)
         }
         guard commitment.verdict == .within else {
@@ -210,16 +211,29 @@ extension DiagnosticRunner {
 
     /// The two lines the CLI appends after its verdict, each only when it has something to
     /// say: an excluded container and an uninspected one are different admissions.
-    private static func trailingLines(_ commitment: MemoryCommitment, failures: Int) -> [String] {
+    private static func trailingLines(
+        _ commitment: MemoryCommitment,
+        failures: Int,
+        builderUnlisted: Bool
+    ) -> [String] {
         var lines: [String] = []
+        if commitment.builderBytes > 0 {
+            lines.append(
+                "\(ByteSize.formatted(commitment.builderBytes)) of that is the image builder."
+                    + " It keeps the memory it has used until it stops."
+            )
+        }
         if commitment.containersWithoutLimit > 0 {
             lines.append(
-                "\(commitment.containersWithoutLimit) running container(s) have no explicit memory limit"
+                "\(commitment.containersWithoutLimit) running container(s) have no reported memory limit"
                     + " and are excluded from that total."
             )
         }
         if failures > 0 {
             lines.append("\(failures) running container(s) could not be inspected, so the total is incomplete.")
+        }
+        if builderUnlisted {
+            lines.append("The image builder could not be listed, so the total may be incomplete.")
         }
         return lines
     }

@@ -37,6 +37,23 @@ struct DetachedRuntimeTests {
     func doesNotMatchALongerFieldName() {
         #expect(RuntimeStatusParser.appRoot("appRootUsage       17") == nil)
         #expect(RuntimeStatusParser.appRoot("installRoot        /usr/local/") == nil)
+        #expect(RuntimeStatusParser.appRoot("paths.appRootUsage  17") == nil)
+        #expect(RuntimeStatusParser.appRoot("paths.installRoot   /usr/local/") == nil)
+    }
+
+    @Test("the root is read from the paths.appRoot row that Apple Container 1.4.1 and later print")
+    func parsesThePathsRow() {
+        let current = """
+            FIELD               VALUE
+            status              running
+            client.version      1.6.0
+            server.version      container-apiserver version 1.6.0 (build: release, commit: 208a7eb)
+            paths.appRoot       /Users/a/Library/Application Support/com.apple.container/
+            paths.installRoot   /opt/homebrew/opt/container@1.6.0
+            """
+        let root = "/Users/a/Library/Application Support/com.apple.container"
+        #expect(RuntimeStatusParser.appRoot(current) == root)
+        #expect(RuntimeStatusParser.missingAppRoot(current, exists: { _ in false }) == root)
     }
 
     @Test("a reported root that is gone is named; one that exists is not")

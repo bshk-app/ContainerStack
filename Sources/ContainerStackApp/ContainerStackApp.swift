@@ -11,6 +11,8 @@ struct ContainerStackApp: App {
     )
     @State private var updates = AppUpdates()
     @State private var resourceSettings = ContainerResourceSettings()
+    @State private var builderSettings = ContainerResourceSettings(table: .build)
+    @State private var agentSkill = AgentSkillSettings()
 
     var body: some Scene {
         Window("ContainerStack", id: "dashboard") {
@@ -26,7 +28,12 @@ struct ContainerStackApp: App {
         }
 
         Settings {
-            SystemSettingsView(settings: resourceSettings)
+            SystemSettingsView(
+                settings: resourceSettings,
+                builderSettings: builderSettings,
+                agentSkill: agentSkill,
+                model: model
+            )
         }
 
         MenuBarExtra {
@@ -91,6 +98,8 @@ private struct ContainerStackMenuBarIcon: View {
 
 @MainActor
 private final class ContainerStackAppDelegate: NSObject, NSApplicationDelegate {
+    private var isSecondInstance = false
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
         let currentProcessID = ProcessInfo.processInfo.processIdentifier
@@ -100,6 +109,7 @@ private final class ContainerStackAppDelegate: NSObject, NSApplicationDelegate {
             .first { $0.processIdentifier != currentProcessID }
 
         guard let existingInstance else { return }
+        isSecondInstance = true
         existingInstance.activate(options: [.activateAllWindows])
         NSApp.terminate(nil)
     }
@@ -107,6 +117,9 @@ private final class ContainerStackAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        // Only the copy that stays links the agents to its skill.
+        guard !isSecondInstance else { return }
+        AgentSkillSettings().apply()
     }
 
     /// A deadline protects this process's wait, not the child it is waiting on:

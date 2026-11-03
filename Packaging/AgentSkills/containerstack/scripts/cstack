@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs the cstack CLI of the ContainerStack.app that holds this skill. Agents reach the skill
+# through a symlink, so resolve it: the script is at Contents/Resources/AgentSkills/containerstack/scripts.
+set -eu
+contents="$(cd "$(dirname "$(realpath "$0")")/../../../.." && pwd)"
+exec "$contents/MacOS/cstack" "$@"

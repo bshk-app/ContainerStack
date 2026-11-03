@@ -24,13 +24,18 @@ set -euo pipefail
 # Unlike prepare-v1-runtime.sh this touches no running service and moves no
 # data: it only writes inside its own cache directory.
 
-readonly CONTAINER_VERSION="1.3.1"
-readonly CONTAINER_PKG_SHA256="a7c1b9d7927d30875f2f6c7bd1d0cb06c2daa6ca57ce9e90a5144e898fdf54a8"
-readonly CONTAINER_PKG="container-${CONTAINER_VERSION}-installer-signed.pkg"
-readonly CONTAINER_URL="https://github.com/apple/container/releases/download/${CONTAINER_VERSION}/${CONTAINER_PKG}"
+readonly CONTAINER_VERSION="1.6.0"
+# A fork build, not Apple's package. prepare-v1-runtime.sh says why.
+# The fork reports the same `container --version` as Apple's 1.6.0, so the
+# cache key is the tag, which names the build exactly.
+readonly CONTAINER_REPOSITORY="beshkenadze/container"
+readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.2"
+readonly CONTAINER_PKG_SHA256="048cbe2bd5bf1c4c011d5edfae43f2dca2a38e7269d9016bfbbb68017ed48b4f"
+readonly CONTAINER_PKG="container-${CONTAINER_TAG}-installer-signed.pkg"
+readonly CONTAINER_URL="https://github.com/${CONTAINER_REPOSITORY}/releases/download/${CONTAINER_TAG}/${CONTAINER_PKG}"
 
 readonly CACHE_ROOT="${CONTAINERSTACK_RUNTIME_CACHE:-${HOME}/Library/Application Support/ContainerStack/container-runtime}"
-readonly INSTALL_ROOT="${CACHE_ROOT}/${CONTAINER_VERSION}"
+readonly INSTALL_ROOT="${CACHE_ROOT}/${CONTAINER_TAG}"
 
 if [[ "${1:-}" == "--print" ]]; then
     printf '%s\n' "$INSTALL_ROOT"
@@ -97,7 +102,7 @@ printf '== staging into the cache ==\n'
 mkdir -p "$(dirname "$INSTALL_ROOT")"
 rm -rf "$INSTALL_ROOT"
 # ditto rather than cp: it preserves the code signatures on the way in, so what
-# lands here still verifies as Apple's before we re-sign it.
+# lands here still verifies as the publisher's before we re-sign it.
 ditto "$payload" "$INSTALL_ROOT"
 
 # Apache-2.0 (§4a, §4d) requires the licence and any NOTICE to travel with a
@@ -114,7 +119,7 @@ fetch_doc() {
     local doc="$1" dest="$2"
 
     if command -v gh >/dev/null 2>&1 &&
-        gh api "repos/apple/container/contents/${doc}?ref=${CONTAINER_VERSION}" \
+        gh api "repos/${CONTAINER_REPOSITORY}/contents/${doc}?ref=${CONTAINER_TAG}" \
             --jq '.content' 2>/dev/null | base64 -d > "$dest" 2>/dev/null &&
         [[ -s "$dest" ]]; then
         return 0
@@ -122,7 +127,7 @@ fetch_doc() {
 
     for attempt in 1 2 3; do
         if curl -fsSL --retry 2 --retry-delay 3 -o "$dest" \
-            "https://raw.githubusercontent.com/apple/container/${CONTAINER_VERSION}/${doc}" &&
+            "https://raw.githubusercontent.com/${CONTAINER_REPOSITORY}/${CONTAINER_TAG}/${doc}" &&
             [[ -s "$dest" ]]; then
             return 0
         fi

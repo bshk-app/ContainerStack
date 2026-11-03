@@ -254,6 +254,21 @@ extension DockerAPIClient {
         return try await decode(ContainerDetailPayload.self, response: response).detail
     }
 
+    /// Running image builders. socktainer leaves plugin containers out of a plain listing unless a
+    /// label filter names the plugin label, and the builder carries `com.apple.container.plugin=builder`.
+    static let runningBuildersPath =
+        "/containers/json?filters=" + queryEncoded(#"{"label":["com.apple.container.plugin=builder"]}"#)
+
+    func builderActivity(id: String) async throws -> BuilderActivity {
+        let response = try await requestRetryingImmediateFailures(path: "/containers/\(id)/stats?stream=false")
+        return try await decode(DockerStatsSample.self, response: response).activity
+    }
+
+    func runningBuilderIDs() async throws -> [String] {
+        let response = try await requestRetryingImmediateFailures(path: Self.runningBuildersPath)
+        return try await decode([DockerContainerSummary].self, response: response).map(\.id)
+    }
+
     /// The diagnostic read of the micro-VM size: `requestRetryingImmediateFailures` excludes
     /// `.timedOut`, so a wedged socket is waited on once per container, not three times (NFR-002).
     func memoryLimitBytes(containerID: String) async throws -> Int64? {

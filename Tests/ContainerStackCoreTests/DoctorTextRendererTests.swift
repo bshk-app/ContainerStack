@@ -76,6 +76,7 @@ struct DoctorTextRendererTests {
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(info)),
             "/containers/json": containers,
+            DockerAPIClient.runningBuildersPath: .success(jsonResponse("[]")),
             "/networks": networks,
         ]
         for (id, result) in inspects {

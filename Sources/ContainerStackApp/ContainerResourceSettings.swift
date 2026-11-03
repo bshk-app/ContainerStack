@@ -2,27 +2,32 @@ import ContainerStackCore
 import Foundation
 import Observation
 
-/// The CPUs and memory a container gets when its create request names no limit. The store is the
-/// `[container]` table of Apple Container's `config.toml`, which socktainer and the `container` CLI
-/// also read.
+/// The CPUs and memory a container gets when its create request names no limit (`[container]`), or
+/// the image builder VM gets when it starts (`[build]`). The store is that table of Apple Container's
+/// `config.toml`, which socktainer and the `container` CLI also read.
 @MainActor
 @Observable
 final class ContainerResourceSettings {
     private static let legacyCPUsKey = "containerResourceDefaults.cpus"
     private static let legacyMemoryGiBKey = "containerResourceDefaults.memoryGiB"
     private static let bytesPerGiB: Int64 = 1_024 * 1_024 * 1_024
+    /// Apple's `BuildConfig` defaults, which apply while `[build]` sets neither key.
+    private static let appleBuilderCPUs = 2
+    private static let appleBuilderMemoryGiB = 2
 
+    let table: ContainerConfigFile.Table
     private let userFile: URL
     private let appRootCopy: URL
     let maximumCPUs: Int
     let maximumMemoryGiB: Int
     private let hostMemoryBytes: Int64
-    /// What ContainerStack writes for a key the file does not set: all CPUs, and a quarter of host
-    /// memory with a minimum of 2 GiB.
+    /// What a key the file does not set means. For `[container]` ContainerStack writes it: all CPUs,
+    /// and a quarter of host memory with a minimum of 2 GiB. For `[build]` it is Apple's default.
     private let defaultCPUs: Int
     private let defaultMemoryGiB: Int
     /// Retained only until initialization saves successfully, so reopening Settings retries a
     /// failed migration instead of hiding its error behind a read of a still-missing file.
+    /// Always nil for `[build]`, which had no saved setting and gets nothing written for it.
     private var pendingMigration: UserDefaults?
     private(set) var cpus: Int
     private(set) var memoryBytes: Int64
@@ -34,22 +39,31 @@ final class ContainerResourceSettings {
     private(set) var awaitsBridgeRestart = false
 
     init(
+        table: ContainerConfigFile.Table = .container,
         defaults: UserDefaults = .standard,
         userFile: URL = ContainerConfigFile.userFileURL(),
         appRootCopy: URL = ContainerConfigFile.appRootCopyURL(),
         processorCount: Int = ProcessInfo.processInfo.activeProcessorCount,
         physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
     ) {
+        self.table = table
         self.userFile = userFile
         self.appRootCopy = appRootCopy
         maximumCPUs = max(1, processorCount)
         maximumMemoryGiB = max(1, Int(physicalMemory / UInt64(Self.bytesPerGiB)))
         hostMemoryBytes = Int64(clamping: max(1, physicalMemory))
-        defaultCPUs = maximumCPUs
-        defaultMemoryGiB = max(2, maximumMemoryGiB / 4)
+        switch table {
+        case .container:
+            defaultCPUs = maximumCPUs
+            defaultMemoryGiB = max(2, maximumMemoryGiB / 4)
+            pendingMigration = defaults
+        case .build:
+            defaultCPUs = min(Self.appleBuilderCPUs, maximumCPUs)
+            defaultMemoryGiB = min(Self.appleBuilderMemoryGiB, maximumMemoryGiB)
+            pendingMigration = nil
+        }
         cpus = defaultCPUs
         memoryBytes = Int64(defaultMemoryGiB) * Self.bytesPerGiB
-        pendingMigration = defaults
         reload()
     }
 
@@ -58,11 +72,11 @@ final class ContainerResourceSettings {
         let seedFailure = pendingMigration.flatMap { seed(from: $0) }
         if seedFailure == nil { pendingMigration = nil }
         do {
-            let file = try ContainerConfigFile.load(from: userFile)
+            let file = try ContainerConfigFile.load(from: userFile, table: table)
             cpus = file.cpus ?? defaultCPUs
             memoryBytes = file.memoryBytes ?? Int64(defaultMemoryGiB) * Self.bytesPerGiB
             problem = seedFailure
-            awaitsBridgeRestart = (try? ContainerConfigFile.load(from: appRootCopy)) != file
+            awaitsBridgeRestart = (try? ContainerConfigFile.load(from: appRootCopy, table: table)) != file
         } catch {
             cpus = defaultCPUs
             memoryBytes = Int64(defaultMemoryGiB) * Self.bytesPerGiB
@@ -138,7 +152,7 @@ final class ContainerResourceSettings {
 
     private func write(cpus: Int?, memoryGiB: Int?) {
         do {
-            try ContainerConfigFile.save(cpus: cpus, memoryGiB: memoryGiB, to: userFile)
+            try ContainerConfigFile.save(table: table, cpus: cpus, memoryGiB: memoryGiB, to: userFile)
             reload()
         } catch {
             problem = describe(error)

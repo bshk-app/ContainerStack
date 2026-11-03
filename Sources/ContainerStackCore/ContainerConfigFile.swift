@@ -1,7 +1,7 @@
 import Foundation
 
-/// `cpus` and `memory` of the `[container]` table: what a container gets when its create request
-/// names no limit. nil where the file does not set the key.
+/// `cpus` and `memory` of a resource table: what a container, or the image builder, gets when
+/// nothing names a limit. nil where the file does not set the key.
 public struct ContainerResourceDefaults: Equatable, Sendable {
     public var cpus: Int?
     public var memoryBytes: Int64?
@@ -12,21 +12,27 @@ public struct ContainerResourceDefaults: Equatable, Sendable {
     }
 }
 
-/// The `[container]` table of Apple Container's `config.toml`. `container system start` copies the
-/// user file into the app root, and socktainer and the `container` CLI read that copy.
+/// The `[container]` and `[build]` tables of Apple Container's `config.toml`. `container system start`
+/// copies the user file into the app root, and socktainer and the `container` CLI read that copy.
 ///
 /// Targeted textual edits, like `ComposeFileEditor`: the user may have written the file, so only
 /// the `cpus` and `memory` lines change and every other byte stays.
 public enum ContainerConfigFile {
+    /// `container` sizes a container created without limits; `build` sizes the image builder VM.
+    public enum Table: String, Sendable {
+        case container
+        case build
+    }
+
     public enum EditError: Error, Equatable {
-        /// `container` is a dotted key or inline table at the top, or a table or key is repeated.
+        /// The table is a dotted key or inline table at the top, or a table or key is repeated.
         case unsupportedLayout(line: Int)
         case invalidValue(key: String, line: Int)
     }
 
-    public static func read(_ text: String) throws -> ContainerResourceDefaults {
+    public static func read(_ text: String, table name: Table = .container) throws -> ContainerResourceDefaults {
         let lines = lines(of: text)
-        let table = try containerTable(in: lines)
+        let table = try scan(name, in: lines)
         var defaults = ContainerResourceDefaults()
         if let index = table.keys["cpus"] {
             guard let cpus = Int(value(of: lines[index])), cpus > 0 else {
@@ -43,11 +49,16 @@ public enum ContainerConfigFile {
         return defaults
     }
 
-    /// Sets the given keys in `[container]`. A missing key goes below the table header, and
+    /// Sets the given keys in the table. A missing key goes below the table header, and
     /// a missing table goes at the end of the file.
-    public static func updating(_ text: String, cpus: Int?, memoryGiB: Int?) throws -> String {
+    public static func updating(
+        _ text: String,
+        table name: Table = .container,
+        cpus: Int?,
+        memoryGiB: Int?
+    ) throws -> String {
         var lines = lines(of: text)
-        let table = try containerTable(in: lines)
+        let table = try scan(name, in: lines)
         let newline = text.contains("\r\n") ? "\r\n" : "\n"
         let entries = [("cpus", cpus.map { String($0) }), ("memory", memoryGiB.map { "\"\($0)g\"" })]
             .compactMap { key, value in value.map { (key, $0) } }
@@ -56,7 +67,7 @@ public enum ContainerConfigFile {
             guard !entries.isEmpty else { return text }
             let endsWithNewline = text.hasSuffix("\n") || text.hasSuffix("\r\n")
             let separator = text.isEmpty ? "" : endsWithNewline ? newline : newline + newline
-            let block = (["[container]"] + entries.map { "\($0) = \($1)" }).joined(separator: newline)
+            let block = (["[\(name.rawValue)]"] + entries.map { "\($0) = \($1)" }).joined(separator: newline)
             return text + separator + block + newline
         }
 
@@ -81,14 +92,14 @@ public enum ContainerConfigFile {
     }
 
     /// A missing file sets nothing, as it does for Apple's `ConfigurationLoader`.
-    public static func load(from url: URL) throws -> ContainerResourceDefaults {
-        try read(text(at: url))
+    public static func load(from url: URL, table: Table = .container) throws -> ContainerResourceDefaults {
+        try read(text(at: url), table: table)
     }
 
     /// Writes a temporary file and renames it over the target of `url`, so a symlink stays a link.
-    public static func save(cpus: Int?, memoryGiB: Int?, to url: URL) throws {
+    public static func save(table: Table = .container, cpus: Int?, memoryGiB: Int?, to url: URL) throws {
         let target = url.resolvingSymlinksInPath()
-        let updated = try updating(text(at: target), cpus: cpus, memoryGiB: memoryGiB)
+        let updated = try updating(text(at: target), table: table, cpus: cpus, memoryGiB: memoryGiB)
         try FileManager.default.createDirectory(
             at: target.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -132,13 +143,13 @@ public enum ContainerConfigFile {
 
     // MARK: - Scanning
 
-    private struct Table {
+    private struct TableScan {
         var header: Int?
         var keys: [String: Int] = [:]
     }
 
     private enum LineKind {
-        /// nil for `[[array]]` headers: they end a table but never name `[container]`.
+        /// nil for `[[array]]` headers: they end a table but never name a resource table.
         case header([String]?)
         case keyValue([String])
         case other
@@ -150,8 +161,9 @@ public enum ContainerConfigFile {
         text.components(separatedBy: "\n").map { Substring($0) }
     }
 
-    private static func containerTable(in lines: [Substring]) throws -> Table {
-        var table = Table()
+    private static func scan(_ name: Table, in lines: [Substring]) throws -> TableScan {
+        let path = [name.rawValue]
+        var table = TableScan()
         var current: [String]? = []
         var valueScan = ValueScan()
         for (index, line) in lines.enumerated() {
@@ -160,22 +172,22 @@ public enum ContainerConfigFile {
                 continue
             }
             switch kind(of: line) {
-            case .header(let path):
-                if path == ["container"] {
+            case .header(let header):
+                if header == path {
                     guard table.header == nil else { throw EditError.unsupportedLayout(line: index + 1) }
                     table.header = index
                 }
-                current = path
-            case .keyValue(let path):
+                current = header
+            case .keyValue(let key):
                 if let equals = firstUnquoted("=", in: line) {
                     valueScan.consume(line[line.index(after: equals)...])
                 }
-                if current == [], path.first == "container" {
+                if current == [], key.first == name.rawValue {
                     throw EditError.unsupportedLayout(line: index + 1)
                 }
-                if current == ["container"], path.count == 1 {
-                    guard table.keys[path[0]] == nil else { throw EditError.unsupportedLayout(line: index + 1) }
-                    table.keys[path[0]] = index
+                if current == path, key.count == 1 {
+                    guard table.keys[key[0]] == nil else { throw EditError.unsupportedLayout(line: index + 1) }
+                    table.keys[key[0]] = index
                 }
             case .other:
                 break
@@ -362,7 +374,7 @@ extension ContainerConfigFile.EditError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unsupportedLayout(let line):
-            "line \(line) defines the container table in a way that ContainerStack cannot edit"
+            "line \(line) defines a resource table in a way that ContainerStack cannot edit"
         case .invalidValue(let key, let line):
             "line \(line) has a \(key) value that Apple Container cannot read"
         }

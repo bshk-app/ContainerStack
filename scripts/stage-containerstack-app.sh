@@ -72,6 +72,13 @@ install -m 0755 "$SOCKTAINER_BINARY" "$output_bundle/Contents/Helpers/socktainer
 install -m 0644 "$ROOT/Packaging/ContainerStack.icns" "$output_bundle/Contents/Resources/ContainerStack.icns"
 install -m 0644 "$ROOT/Packaging/socktainer.LICENSE" \
     "$output_bundle/Contents/Resources/socktainer.LICENSE"
+# The coding-agent skill. The app links the agents' skill folders to this copy, so it must keep
+# its layout: scripts/cstack finds Contents/MacOS/cstack four levels up. `ditto` keeps the mode.
+ditto "$ROOT/Packaging/AgentSkills" "$output_bundle/Contents/Resources/AgentSkills"
+[[ -x "$output_bundle/Contents/Resources/AgentSkills/containerstack/scripts/cstack" ]] || {
+    printf 'error: the agent skill was not staged with an executable scripts/cstack\n' >&2
+    exit 1
+}
 
 # SwiftPM emits a flat resource directory with a `.bundle` suffix. Re-house it
 # as a valid macOS resource bundle so zamokctl/codesign can traverse it while

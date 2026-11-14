@@ -31,6 +31,9 @@ runs:
       run: |
         brew tap bshk-app/tap
         brew trust --tap bshk-app/tap
+        # The cask depends on the Apple Container formula of this second tap.
+        brew tap beshkenadze/tap
+        brew trust --tap beshkenadze/tap
         brew install bshk-app/tap/zamokctl
 
     - name: Download and verify the Sparkle tools the checkout links

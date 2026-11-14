@@ -389,6 +389,7 @@ actor StepGates {
 @MainActor
 final class FakeRuntime {
     let gates = StepGates()
+    var agentIsRegistered = false
     var socketAnswers = false
     /// Thrown by the ping instead of answering, as a lost XPC connection does.
     var pingError: (any Error)?
@@ -430,7 +431,11 @@ final class FakeRuntime {
                 process.terminate()
                 while process.isRunning { try? await Task.sleep(for: .milliseconds(10)) }
             },
-            socketWaitTick: .milliseconds(1)
+            socketWaitTick: .milliseconds(1),
+            agentRegistered: {
+                await self.gates.pass("agentRegistered")
+                return self.agentIsRegistered
+            }
         )
     }
 

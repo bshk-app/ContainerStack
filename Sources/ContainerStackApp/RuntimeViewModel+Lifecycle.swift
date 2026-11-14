@@ -245,9 +245,11 @@ extension RuntimeViewModel {
         await endRuntimeHelper()
         guard lifecycle.isCurrent(token) else { return false }
 
+        let agentRegistered = await self.steps.agentRegistered()
+        guard lifecycle.isCurrent(token) else { return false }
         let steps = RuntimeRestartPlan.steps(
             configuration: runtimeConfiguration(),
-            agentRegistered: isAgentRegistered,
+            agentRegistered: agentRegistered,
             replacingSibling: replacingSibling
         )
         var launched = false

@@ -254,6 +254,51 @@ extension DockerAPIClient {
         return try await decode(ContainerDetailPayload.self, response: response).detail
     }
 
+    /// Running image builders. socktainer leaves plugin containers out of a plain listing unless a
+    /// label filter names the plugin label, and the builder carries `com.apple.container.plugin=builder`.
+    static let runningBuildersPath =
+        "/containers/json?filters=" + queryEncoded(#"{"label":["com.apple.container.plugin=builder"]}"#)
+
+    func builderActivity(id: String) async throws -> BuilderActivity {
+        let response = try await requestRetryingImmediateFailures(path: "/containers/\(id)/stats?stream=false")
+        return try await decode(DockerStatsSample.self, response: response).activity
+    }
+
+    func builderHasRunningBuild(id: String) async throws -> Bool {
+        let output = try await execOutput(id: id, command: ["buildctl", "debug", "histories", "--format", "json"])
+        return try output.split(whereSeparator: \.isNewline).contains { line in
+            guard let entry = try? JSONDecoder().decode(BuildHistoryEntry.self, from: Data(line.utf8)) else {
+                throw DockerAPIError.invalidResponseBody
+            }
+            return entry.isRunning
+        }
+    }
+
+    func execOutput(id: String, command: [String]) async throws -> String {
+        let create = try await request(
+            method: "POST",
+            path: "/containers/\(id)/exec",
+            body: JSONEncoder().encode(ExecCreateRequest(command: command))
+        )
+        let exec = try await decode(ExecCreateResponse.self, response: create).id
+        let started = try await request(
+            method: "POST",
+            path: "/exec/\(exec)/start",
+            body: Data(#"{"Detach":false,"Tty":false}"#.utf8),
+            timeout: Self.gracefulStopRequestTimeout
+        )
+        let inspect = try await request(path: "/exec/\(exec)/json")
+        guard try await decode(ExecInspectResponse.self, response: inspect).exitCode == 0 else {
+            throw DockerAPIError.invalidResponseBody
+        }
+        return Self.decodeLogs(started.body)
+    }
+
+    func runningBuilderIDs() async throws -> [String] {
+        let response = try await requestRetryingImmediateFailures(path: Self.runningBuildersPath)
+        return try await decode([DockerContainerSummary].self, response: response).map(\.id)
+    }
+
     /// The diagnostic read of the micro-VM size: `requestRetryingImmediateFailures` excludes
     /// `.timedOut`, so a wedged socket is waited on once per container, not three times (NFR-002).
     func memoryLimitBytes(containerID: String) async throws -> Int64? {
@@ -327,4 +372,44 @@ extension DockerAPIClient {
 
 extension CharacterSet {
     fileprivate static let dockerPathSegment = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+}
+
+private struct ExecCreateRequest: Encodable {
+    let command: [String]
+    let attachStdout = true
+
+    private enum CodingKeys: String, CodingKey {
+        case command = "Cmd"
+        case attachStdout = "AttachStdout"
+    }
+}
+
+private struct ExecCreateResponse: Decodable {
+    let id: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id = "Id"
+    }
+}
+
+private struct ExecInspectResponse: Decodable {
+    let exitCode: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case exitCode = "ExitCode"
+    }
+}
+
+private struct BuildHistoryEntry: Decodable {
+    let isRunning: Bool
+
+    private enum Key: String, CodingKey {
+        case record
+        case completedAt = "CompletedAt"
+    }
+
+    init(from decoder: any Decoder) throws {
+        let record = try decoder.container(keyedBy: Key.self).nestedContainer(keyedBy: Key.self, forKey: .record)
+        isRunning = !record.contains(.completedAt)
+    }
 }

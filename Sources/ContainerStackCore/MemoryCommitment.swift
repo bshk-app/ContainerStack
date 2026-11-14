@@ -13,11 +13,11 @@ import Foundation
 /// is already resident.
 public struct MemoryCommitment: Equatable, Sendable {
     public enum Verdict: Equatable, Sendable {
-        /// Explicit limits are comfortably inside host memory.
+        /// Configured VM sizes are comfortably inside host memory.
         case within
         /// Guests approaching their limits could pressure other applications.
         case approaching
-        /// Explicit limits consume at least four fifths of host capacity.
+        /// Configured VM sizes consume at least four fifths of host capacity.
         case exceeding
     }
 
@@ -26,31 +26,46 @@ public struct MemoryCommitment: Equatable, Sendable {
     public static let exceedingFraction = 0.8
 
     public let configuredBytes: Int64
+    /// The part of `configuredBytes` that is the image builder VM.
+    public let builderBytes: Int64
     public let hostBytes: Int64
-    /// Containers running without an explicit `HostConfig.Memory`. Named separately because the
+    /// Containers without a reported `HostConfig.Memory`. Named separately because the
     /// total understates by however many there are — an unknown is not a zero.
     public let containersWithoutLimit: Int
 
-    public init(configuredBytes: Int64, hostBytes: Int64, containersWithoutLimit: Int) {
+    public init(configuredBytes: Int64, builderBytes: Int64 = 0, hostBytes: Int64, containersWithoutLimit: Int) {
         self.configuredBytes = configuredBytes
+        self.builderBytes = builderBytes
         self.hostBytes = hostBytes
         self.containersWithoutLimit = containersWithoutLimit
     }
 
-    /// `limits` is one entry per running container: its `HostConfig.Memory`, or nil where the
+    /// `limits` is one entry per running container: its `HostConfig.Memory` (including the
+    /// default VM size reported by socktainer), or nil where the
     /// runtime reports none. Docker writes `0` for "no limit", so zero and negative are treated
-    /// the same as nil rather than summed as nothing.
-    public static func measure(limits: [Int64?], hostBytes: Int64) -> MemoryCommitment {
-        let explicit = limits.compactMap { $0 }.filter { $0 > 0 }
-        let configured = explicit.reduce(Int64.zero) { total, limit in
-            let (sum, overflow) = total.addingReportingOverflow(limit)
+    /// the same as nil rather than summed as nothing. `builderLimits` is the same for each running
+    /// image builder, which socktainer lists apart from the containers.
+    public static func measure(limits: [Int64?], builderLimits: [Int64?] = [], hostBytes: Int64) -> MemoryCommitment {
+        let explicit = explicitLimits(limits)
+        let builders = explicitLimits(builderLimits)
+        let builderBytes = sum(builders)
+        return MemoryCommitment(
+            configuredBytes: sum([sum(explicit), builderBytes]),
+            builderBytes: builderBytes,
+            hostBytes: hostBytes,
+            containersWithoutLimit: limits.count + builderLimits.count - explicit.count - builders.count
+        )
+    }
+
+    private static func explicitLimits(_ limits: [Int64?]) -> [Int64] {
+        limits.compactMap { $0 }.filter { $0 > 0 }
+    }
+
+    private static func sum(_ values: [Int64]) -> Int64 {
+        values.reduce(Int64.zero) { total, value in
+            let (sum, overflow) = total.addingReportingOverflow(value)
             return overflow ? Int64.max : sum
         }
-        return MemoryCommitment(
-            configuredBytes: configured,
-            hostBytes: hostBytes,
-            containersWithoutLimit: limits.count - explicit.count
-        )
     }
 
     /// nil when host memory is unknown, so a caller says nothing rather than dividing by zero.

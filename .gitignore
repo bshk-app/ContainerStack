@@ -28,6 +28,7 @@ __pycache__/
 # Working material, not documentation: icon explorations, research briefs, and
 # throwaway API spikes. Kept locally; docs/ carries what is still true.
 /Design/
+/docs/brainstorms/
 /research-*.md
 /spikes/
 

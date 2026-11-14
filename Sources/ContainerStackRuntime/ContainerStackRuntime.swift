@@ -159,6 +159,10 @@ struct ContainerStackRuntime {
         switch decision {
         case .bridgeAlreadyRunning:
             print("Docker bridge already listening on \(configuration.socketPath); adopting it.")
+            // The helper that started this bridge is gone, so nothing else stops its idle builders.
+            // Ends with the bridge process, as a supervising helper does: the app reads a live
+            // helper and a dead socket as a runtime that is still starting.
+            await watchBuilders(untilExitOf: adoptedBridge(socketPath: configuration.socketPath), configuration)
         case .foreignBridge:
             // Refuse rather than adopt, and refuse rather than kill: a socktainer
             // someone runs on purpose is theirs. Naming the remedy is the part
@@ -173,6 +177,7 @@ struct ContainerStackRuntime {
         case .removeStaleSocket:
             try? FileManager.default.removeItem(atPath: configuration.socketPath)
             print("Removed stale socket \(configuration.socketPath).")
+            startBuilderIdleMonitor(socketPath: configuration.socketPath)
             // Supervised, so deliberately unbounded — see `run(…timeout:)`.
             try run(
                 executablePath: configuration.socktainerPath,
@@ -181,6 +186,7 @@ struct ContainerStackRuntime {
                 timeout: nil
             )
         case .startBridge:
+            startBuilderIdleMonitor(socketPath: configuration.socketPath)
             try run(
                 executablePath: configuration.socktainerPath,
                 arguments: configuration.socktainerArguments,
@@ -188,6 +194,31 @@ struct ContainerStackRuntime {
                 timeout: nil
             )
         }
+    }
+
+    /// Stops a builder after it is idle for the time set in Settings. A builder VM keeps the memory
+    /// it has used until it stops, and nothing else stops it. Detached, because the supervising
+    /// `run` blocks this thread until socktainer exits.
+    @discardableResult
+    private static func startBuilderIdleMonitor(socketPath: String) -> Task<Void, Never> {
+        Task.detached {
+            await BuilderIdleMonitor.watch(client: DockerAPIClient(socketPath: socketPath)) { id, limit in
+                let minutes = (limit?.components.seconds ?? 0) / 60
+                print("Stopped the builder \(id): it did no work for \(minutes) minutes.")
+            }
+        }
+    }
+
+    private static func watchBuilders(untilExitOf bridge: pid_t?, _ configuration: RuntimeProcessConfiguration) async {
+        guard let bridge else { return }
+        let monitor = startBuilderIdleMonitor(socketPath: configuration.socketPath)
+        await ProcessExit.wait(for: bridge)
+        monitor.cancel()
+        print("Adopted Docker bridge (pid \(bridge)) exited.")
+    }
+
+    private static func adoptedBridge(socketPath: String) -> pid_t? {
+        BridgeOwnership.holder(lsofOutput: capture("/usr/sbin/lsof", ["-Fpcn", "--", socketPath]))
     }
 
     private static func terminateLegacyBundledSocktainer(

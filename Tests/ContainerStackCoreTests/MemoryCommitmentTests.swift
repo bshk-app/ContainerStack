@@ -34,6 +34,21 @@ struct MemoryCommitmentTests {
         #expect(commitment.containersWithoutLimit == 2)
     }
 
+    /// The image builder is one more VM: it counts toward the total and is also kept apart, so
+    /// the report can say how much of the total it is.
+    @Test("the image builder is part of the total and is kept apart")
+    func builderIsPartOfTheTotal() {
+        let commitment = MemoryCommitment.measure(
+            limits: [2 * gigabyte],
+            builderLimits: [8 * gigabyte, nil],
+            hostBytes: 32 * gigabyte
+        )
+
+        #expect(commitment.configuredBytes == 10 * gigabyte)
+        #expect(commitment.builderBytes == 8 * gigabyte)
+        #expect(commitment.containersWithoutLimit == 1)
+    }
+
     @Test("a fraction of host memory below half reads as within")
     func withinBelowHalf() {
         let commitment = MemoryCommitment.measure(limits: [6 * gigabyte], hostBytes: 32 * gigabyte)

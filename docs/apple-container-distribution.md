@@ -9,10 +9,10 @@ The pin lives in these places, and they must agree:
 | | |
 |---|---|
 | `scripts/prepare-v1-runtime.sh` | `SOCKTAINER_REV` — the bridge |
-| `RuntimeProcessConfiguration.pinnedContainerVersion` | Apple Container, currently `1.6.0` |
-| `scripts/prepare-container-runtime.sh`, `scripts/prepare-v1-runtime.sh`, `scripts/prepare-benchmark-host.sh`, the `container@1.6.0` formula | the fork release tag, currently `1.6.0-bshk.2` |
+| `RuntimeProcessConfiguration.pinnedContainerVersion` | Apple Container, currently `1.7.1` |
+| `scripts/prepare-container-runtime.sh`, `scripts/prepare-v1-runtime.sh`, `scripts/prepare-benchmark-host.sh`, the `container@1.7.1` formula | the fork release tag, currently `1.7.1-bshk.1` |
 
-Each fork build reports `1.6.0`, so `pinnedContainerVersion` cannot tell two of
+Each fork build reports `1.7.1`, so `pinnedContainerVersion` cannot tell two of
 them apart, and no check here compares the tag. Change the tag in all four files
 together, with the sha256 in `prepare-container-runtime.sh` and in the formula,
 and the commit in `prepare-benchmark-host.sh`.
@@ -32,21 +32,21 @@ There are exactly two ways to make the pin reach a user.
 ## Channel 1 — Homebrew, via a versioned formula (current default)
 
 Homebrew's own answer to pinning is to put the version in the formula's **name**:
-`node@20`, `postgresql@16`. So the tap carries `container@1.6.0`.
+`node@20`, `postgresql@16`. So the tap carries `container@1.7.1`.
 
 The formula installs a fork build, not Apple's release: `beshkenadze/container`,
-release `1.6.0-bshk.2`. The fork changes only dependencies: containerization
-0.52.1 with a ReadStream fix and a bearer token reuse fix, and async-http-client
+release `1.7.1-bshk.1`. The fork changes only dependencies: containerization
+0.54.0 with a ReadStream fix and a bearer token reuse fix, and async-http-client
 with four early-response fixes. Without them, the memory of
 `container-core-images` grows with each image push, and each blob upload sends
-its body two times. The fork has the same XPC API as Apple's 1.6.0. Move back to
+its body two times. The fork has the same XPC API as Apple's 1.7.1. Move back to
 Apple's release when an Apple Container release contains these fixes.
 
-The formula lives in `bshk-app/homebrew-tap` as `Formula/container@1.6.0.rb` and
+The formula lives in `beshkenadze/homebrew-tap` as `Formula/container@1.7.1.rb` and
 **only** there — a second copy in this repo would be one more pin to drift out of
 sync, which is the failure this whole page exists to prevent. The link back to
 the source is `RuntimeProcessConfiguration.pinnedContainerVersion`, which must
-name the same version. The formula and the cask are in the same tap; only the
+name the same version. The cask depends on `beshkenadze/tap/container@1.7.1`; the
 package that the formula downloads comes from `beshkenadze/container`.
 
 Note what is and is not generated. `zamokctl cask` renders and pushes the **cask**
@@ -65,10 +65,10 @@ by hand. Two properties of it matter:
 
 The dependency is declared on the Zamok product, not in a file here: set
 `dependsOnFormulae` in `Packaging/Homebrew/cask-containerstack.json` to
-`["bshk-app/tap/container@#{container}"]` and the
+`["beshkenadze/tap/container@#{container}"]` and the
 generated cask carries `depends_on formula:` on the next regeneration. The app
 finds the formula at the stable
-`/opt/homebrew/opt/container@1.6.0/bin/container`, which is first in
+`/opt/homebrew/opt/container@1.7.1/bin/container`, which is first in
 `RuntimeProcessConfiguration.containerSearchPaths`.
 
 Bumping the version means a new formula file, a new `pinnedContainerVersion`, and

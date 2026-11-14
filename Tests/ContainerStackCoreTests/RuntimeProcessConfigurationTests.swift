@@ -47,7 +47,7 @@ struct RuntimeProcessConfigurationTests {
                 ]
         )
         #expect(configuration.socktainerPath.hasSuffix("/Contents/Helpers/socktainer"))
-        #expect(configuration.expectedContainerVersion == "1.6.0")
+        #expect(configuration.expectedContainerVersion == "1.7.1")
     }
 
     @Test

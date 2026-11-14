@@ -46,10 +46,12 @@ struct DetachedRuntimeTests {
         let current = """
             FIELD               VALUE
             status              running
-            client.version      1.6.0
-            server.version      container-apiserver version 1.6.0 (build: release, commit: 208a7eb)
+            client.version      1.7.1
+            server.version      1.7.1
+            server.build        release
+            server.commit       17bb57e
             paths.appRoot       /Users/a/Library/Application Support/com.apple.container/
-            paths.installRoot   /opt/homebrew/opt/container@1.6.0
+            paths.installRoot   /opt/homebrew/opt/container@1.7.1
             """
         let root = "/Users/a/Library/Application Support/com.apple.container"
         #expect(RuntimeStatusParser.appRoot(current) == root)

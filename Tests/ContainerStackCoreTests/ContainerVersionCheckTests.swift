@@ -6,11 +6,11 @@ import Testing
 /// machine. Both the helper and the app act on it, so it is judged here once.
 @Suite("Judging the Apple Container version")
 struct ContainerVersionCheckTests {
-    private let real = "container CLI version 1.6.0 (build: release, commit: 208a7eb)"
+    private let real = "container CLI version 1.7.1 (build: release, commit: 17bb57e)"
 
     @Test("the pinned version inside the sentence is supported")
     func exactVersionIsSupported() {
-        #expect(ContainerVersionCheck.verdict(reportedVersion: real, expected: "1.6.0") == .supported)
+        #expect(ContainerVersionCheck.verdict(reportedVersion: real, expected: "1.7.1") == .supported)
     }
 
     /// The reason this is not `contains`: Apple has shipped a tenth patch before, and a check
@@ -29,8 +29,8 @@ struct ContainerVersionCheckTests {
     @Test("a longer major number is not the pinned version")
     func longerPrefixIsRejected() {
         let verdict = ContainerVersionCheck.verdict(
-            reportedVersion: "container CLI version 11.6.0",
-            expected: "1.6.0"
+            reportedVersion: "container CLI version 11.7.1",
+            expected: "1.7.1"
         )
 
         #expect(verdict != .supported)
@@ -40,18 +40,18 @@ struct ContainerVersionCheckTests {
     func olderVersionIsMismatch() {
         let verdict = ContainerVersionCheck.verdict(
             reportedVersion: "container CLI version 1.3.1 (build: release)",
-            expected: "1.6.0"
+            expected: "1.7.1"
         )
 
-        #expect(verdict == .mismatch(found: "container CLI version 1.3.1 (build: release)", expected: "1.6.0"))
+        #expect(verdict == .mismatch(found: "container CLI version 1.3.1 (build: release)", expected: "1.7.1"))
         let message = verdict.userFacingMessage
-        #expect(message?.contains("1.6.0") == true)
+        #expect(message?.contains("1.7.1") == true)
         #expect(message?.contains("1.3.1") == true)
     }
 
     @Test("surrounding whitespace does not decide the verdict")
     func outputIsTrimmed() {
-        #expect(ContainerVersionCheck.verdict(reportedVersion: "  \(real)\n", expected: "1.6.0") == .supported)
+        #expect(ContainerVersionCheck.verdict(reportedVersion: "  \(real)\n", expected: "1.7.1") == .supported)
     }
 
     @Test("a supported runtime has nothing to say")

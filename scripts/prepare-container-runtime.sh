@@ -24,13 +24,13 @@ set -euo pipefail
 # Unlike prepare-v1-runtime.sh this touches no running service and moves no
 # data: it only writes inside its own cache directory.
 
-readonly CONTAINER_VERSION="1.6.0"
+readonly CONTAINER_VERSION="1.7.1"
 # A fork build, not Apple's package. prepare-v1-runtime.sh says why.
-# The fork reports the same `container --version` as Apple's 1.6.0, so the
+# The fork reports the same `container --version` as Apple's 1.7.1, so the
 # cache key is the tag, which names the build exactly.
 readonly CONTAINER_REPOSITORY="beshkenadze/container"
-readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.2"
-readonly CONTAINER_PKG_SHA256="048cbe2bd5bf1c4c011d5edfae43f2dca2a38e7269d9016bfbbb68017ed48b4f"
+readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.1"
+readonly CONTAINER_PKG_SHA256="2ae90b32e28a439044e28b175347514887e8f909bbc6250665081d8e217efd67"
 readonly CONTAINER_PKG="container-${CONTAINER_TAG}-installer-signed.pkg"
 readonly CONTAINER_URL="https://github.com/${CONTAINER_REPOSITORY}/releases/download/${CONTAINER_TAG}/${CONTAINER_PKG}"
 

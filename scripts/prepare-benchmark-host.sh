@@ -9,11 +9,11 @@ set -euo pipefail
 # The install step needs sudo, so run this yourself — it is the only interactive part.
 # ContainerStack itself ships socktainer inside the app bundle, so nothing is built here.
 
-readonly CONTAINER_VERSION="1.6.0"
+readonly CONTAINER_VERSION="1.7.1"
 # The fork build that ContainerStack pins. prepare-v1-runtime.sh says why.
-# Apple's 1.6.0 reports the same version, so only the commit identifies the fork.
-readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.2"
-readonly CONTAINER_COMMIT="208a7eb"
+# Apple's 1.7.1 reports the same version, so only the commit identifies the fork.
+readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.1"
+readonly CONTAINER_COMMIT="17bb57e"
 readonly PKG_URL="https://github.com/beshkenadze/container/releases/download/${CONTAINER_TAG}/container-${CONTAINER_TAG}-installer-signed.pkg"
 readonly APP_SOURCE="${APP_SOURCE:-/tmp/ContainerStack.app}"
 

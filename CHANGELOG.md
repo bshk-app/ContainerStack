@@ -12,6 +12,13 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.8.2](https://github.com/bshk-app/ContainerStack/compare/v0.8.1...v0.8.2) (2026-11-14)
+
+
+### Fixed
+
+* release 0.8.1 with runtime restart and Doctor recovery fixes ([5b88610](https://github.com/bshk-app/ContainerStack/commit/5b88610d36f01af202268a12d529b7234635a494))
+
 ## [0.8.1](https://github.com/bshk-app/ContainerStack/compare/v0.8.0...v0.8.1) (2026-10-28)
 
 Runtime restarts now wait for the previous Docker bridge to exit before continuing.

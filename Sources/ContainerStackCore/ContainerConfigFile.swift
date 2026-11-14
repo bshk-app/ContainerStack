@@ -282,10 +282,10 @@ public enum ContainerConfigFile {
     }
 
     private static func unquoted(_ value: String) -> String? {
-        guard value.count >= 2, let quote = value.first, quote == "\"" || quote == "'", value.last == quote else {
-            return nil
-        }
-        return String(value.dropFirst().dropLast())
+        guard let quote = value.first, quote == "\"" || quote == "'",
+            let (decoded, rest) = quotedString(Substring(value)), rest.isEmpty
+        else { return nil }
+        return decoded
     }
 
     /// A dotted key of bare or quoted parts. nil when the text is not one, such as `1, 2` inside a
@@ -295,7 +295,7 @@ public enum ContainerConfigFile {
         var rest = text.drop(while: \.isWhitespace)
         while let first = rest.unicodeScalars.first {
             if first == "\"" || first == "'" {
-                guard let (part, remaining) = quotedKey(rest) else { return nil }
+                guard let (part, remaining) = quotedString(rest) else { return nil }
                 parts.append(part)
                 rest = remaining
             } else {
@@ -313,8 +313,8 @@ public enum ContainerConfigFile {
     }
 
     /// TOML basic quoted keys use the same escapes as basic strings. In particular, an escaped
-    /// quote does not end the key and Unicode escapes can spell `container` itself.
-    private static func quotedKey(_ text: Substring) -> (String, Substring)? {
+    /// quote does not end the text and Unicode escapes can spell `container` itself.
+    private static func quotedString(_ text: Substring) -> (String, Substring)? {
         guard let quote = text.unicodeScalars.first else { return nil }
         var rest = text.unicodeScalars.dropFirst()
         var value = ""

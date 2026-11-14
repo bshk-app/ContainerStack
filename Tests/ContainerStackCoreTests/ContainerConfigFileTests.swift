@@ -38,6 +38,18 @@ struct ContainerConfigFileReadTests {
         #expect(try ContainerConfigFile.read(text) == ContainerResourceDefaults(cpus: nil, memoryBytes: nil))
     }
 
+    @Test func readsABasicStringWithEscapesAsAppleContainerDoes() throws {
+        let defaults = try ContainerConfigFile.read("[container]\nmemory = \"8\\u0067\"\n")
+
+        #expect(defaults.memoryBytes == 8_589_934_592)
+    }
+
+    @Test func keepsABackslashInALiteralString() {
+        #expect(throws: ContainerConfigFile.EditError.invalidValue(key: "memory", line: 2)) {
+            try ContainerConfigFile.read("[container]\nmemory = '8\\u0067'\n")
+        }
+    }
+
     @Test func readsQuotedNamesSpacingAndComments() throws {
         let text = """
             [ "container" ] # defaults for containers without limits

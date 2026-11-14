@@ -37,16 +37,14 @@ enum CommandShell {
     }
 
     /// F-014: this build's bridge, and another ContainerStack copy's when it holds the socket.
-    static func terminateBridge(executablePath: String, socketPath: String?) -> Int {
+    static func terminateBridge(executablePath: String, socketPath: String?) throws -> Int {
         let pids = BridgeOwnership.pidsToStop(
             bridgePath: executablePath,
             lsofOutput: socketPath.map { output(executablePath: "/usr/sbin/lsof", arguments: ["-Fpcn", "--", $0]) }
                 ?? "",
             listing: output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
         )
-        for pid in pids {
-            kill(pid, SIGTERM)
-        }
+        try BridgeTermination.stop(pids)
         return pids.count
     }
 }
@@ -108,7 +106,7 @@ extension CStackCLI {
         for step in steps {
             switch step {
             case .stopBridge(let executablePath, let socketPath):
-                let stopped = CommandShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
+                let stopped = try CommandShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
                 print("Stopped \(stopped) bridge process(es)")
             case .stopContainers(let executablePath, let graceSeconds):
                 // Advisory on purpose, and so deliberately absent from `failed`: an idle machine has

@@ -24,9 +24,14 @@ description: >
 runs:
   using: composite
   steps:
-    - name: Install zamokctl
+    # Homebrew refuses to load a cask from a tap it does not trust. Release
+    # 0.8.2 published the cask and then failed in `brew audit` for this reason.
+    - name: Trust the tap and install zamokctl
       shell: bash
-      run: brew install bshk-app/tap/zamokctl
+      run: |
+        brew tap bshk-app/tap
+        brew trust --tap bshk-app/tap
+        brew install bshk-app/tap/zamokctl
 
     - name: Download and verify the Sparkle tools the checkout links
       shell: bash

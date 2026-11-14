@@ -251,8 +251,10 @@ extension RuntimeViewModel {
         await endRuntimeHelper()
         guard lifecycle.isCurrent(token) else { return false }
 
+        let agentRegistered = await self.steps.agentRegistered()
+        guard lifecycle.isCurrent(token) else { return false }
         let plan = bridgeOnly ? RuntimeRestartPlan.bridgeSteps : RuntimeRestartPlan.steps
-        let steps = plan(runtimeConfiguration(), isAgentRegistered, replacingSibling)
+        let steps = plan(runtimeConfiguration(), agentRegistered, replacingSibling)
         var launched = false
         for step in steps {
             runtimeMessage = message(for: step)

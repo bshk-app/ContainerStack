@@ -338,10 +338,6 @@ final class RuntimeViewModel {
         await socketResponds()
     }
 
-    var isAgentRegistered: Bool {
-        service.status == .enabled
-    }
-
     func runtimeConfiguration() -> RuntimeProcessConfiguration {
         let helpers = Bundle.main.bundleURL.appending(path: "Contents/Helpers")
         return RuntimeProcessConfiguration.make(

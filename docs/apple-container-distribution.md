@@ -42,13 +42,12 @@ with four early-response fixes. Without them, the memory of
 its body two times. The fork has the same XPC API as Apple's 1.6.0. Move back to
 Apple's release when an Apple Container release contains these fixes.
 
-The formula lives in `beshkenadze/homebrew-tap` as `Formula/container@1.6.0.rb` and
+The formula lives in `bshk-app/homebrew-tap` as `Formula/container@1.6.0.rb` and
 **only** there — a second copy in this repo would be one more pin to drift out of
 sync, which is the failure this whole page exists to prevent. The link back to
 the source is `RuntimeProcessConfiguration.pinnedContainerVersion`, which must
-name the same version. The formula is in the same account as the fork build that
-it installs, not in `bshk-app/homebrew-tap`. The cask stays in
-`bshk-app/homebrew-tap`.
+name the same version. The formula and the cask are in the same tap; only the
+package that the formula downloads comes from `beshkenadze/container`.
 
 Note what is and is not generated. `zamokctl cask` renders and pushes the **cask**
 from `Packaging/Homebrew/cask-containerstack.json`, which `scripts/publish-cask.sh`
@@ -66,7 +65,7 @@ by hand. Two properties of it matter:
 
 The dependency is declared on the Zamok product, not in a file here: set
 `dependsOnFormulae` in `Packaging/Homebrew/cask-containerstack.json` to
-`["beshkenadze/tap/container@#{container}"]` and the
+`["bshk-app/tap/container@#{container}"]` and the
 generated cask carries `depends_on formula:` on the next regeneration. The app
 finds the formula at the stable
 `/opt/homebrew/opt/container@1.6.0/bin/container`, which is first in

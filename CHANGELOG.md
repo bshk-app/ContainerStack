@@ -12,6 +12,15 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.8.2](https://github.com/bshk-app/ContainerStack/compare/v0.8.1...v0.8.2) (2026-11-14)
+
+The Docker bridge no longer uses CPU all the time while a client waits for a container.
+
+### Fixed
+
+- For each `docker run --rm`, and for each other client that waits for a container to exit, the bridge read the full container list every 100 ms. It did this for as long as the container ran, also after the client was gone. The bridge now checks one container once per second as a fallback, and stops when the client disconnects.
+- Measured with one waiting client for 30 s: the bridge used 0.30 s of CPU before and 0.04 s after.
+
 ## [0.8.1](https://github.com/bshk-app/ContainerStack/compare/v0.8.0...v0.8.1) (2026-10-28)
 
 Runtime restarts now wait for the previous Docker bridge to exit before continuing.

@@ -25,6 +25,8 @@ struct RuntimeSteps {
     /// How long a socket wait sleeps between pings.
     var socketWaitTick: Duration = .seconds(1)
 
+    var agentRegistered: @MainActor () async -> Bool
+
     static func live(client: DockerAPIClient) -> RuntimeSteps {
         RuntimeSteps(
             control: { try await RuntimeShell.perform($0) },
@@ -66,6 +68,9 @@ struct RuntimeSteps {
                     kill(process.processIdentifier, SIGKILL)
                     _ = await waitForExit(of: process, within: grace)
                 }
+            },
+            agentRegistered: {
+                await Task.detached { RuntimeShell.agentRegistered() }.value
             }
         )
     }

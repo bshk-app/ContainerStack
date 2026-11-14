@@ -199,13 +199,32 @@ enum RuntimeShell {
     static func run(
         executablePath: String,
         arguments: [String],
-        timeout: Duration = ProcessRunner.lifecycleTimeout
+        timeout: Duration = ProcessRunner.lifecycleTimeout,
+        runner: (String, [String], Duration) throws -> ProcessRunner.Result = { path, arguments, timeout in
+            try ProcessRunner.run(executablePath: path, arguments: arguments, timeout: timeout)
+        }
     ) throws {
-        _ = try ProcessRunner.run(
-            executablePath: executablePath,
-            arguments: arguments,
-            timeout: timeout
-        )
+        let result = try runner(executablePath, arguments, timeout)
+        guard result.status == 0 else {
+            throw CommandError(executablePath: executablePath, arguments: arguments, status: result.status)
+        }
+    }
+
+    struct CommandError: Error, CustomStringConvertible {
+        let executablePath: String
+        let arguments: [String]
+        let status: Int32
+
+        var description: String {
+            "\(executablePath) \(arguments.joined(separator: " ")) exited with status \(status)"
+        }
+    }
+
+    static func agentRegistered(
+        query: (String, [String]) -> String = RuntimeShell.output
+    ) -> Bool {
+        let label = RuntimeRestartPlan.agentLabel
+        return query("/bin/launchctl", ["print", "gui/\(getuid())/\(label)"]).contains(label)
     }
 
     /// Called from the 3s monitor loop, so it has to return on a schedule that loop can keep.

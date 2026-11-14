@@ -59,7 +59,21 @@ struct BuilderIdleStopTests {
 
     // MARK: - Monitor
 
-    private func idleRuntime(minute: Int, builders: [String], others: [String] = []) -> StubDockerTransport {
+    private static let finishedBuild = #"{"record":{"Ref":"a","CreatedAt":{"seconds":1},"CompletedAt":{"seconds":2}}}"#
+    private static let runningBuild = #"{"record":{"Ref":"b","CreatedAt":{"seconds":3}}}"#
+
+    private static func execOutput(_ text: String) -> Data {
+        let payload = Data(text.utf8)
+        let length = UInt32(payload.count).bigEndian
+        return chunkedHTTPResponse(body: Data([1, 0, 0, 0]) + withUnsafeBytes(of: length) { Data($0) } + payload)
+    }
+
+    private func idleRuntime(
+        minute: Int,
+        builders: [String],
+        others: [String] = [],
+        histories: String? = BuilderIdleStopTests.finishedBuild + "\n"
+    ) -> StubDockerTransport {
         let buildx = builders.filter { $0.hasPrefix("buildx_") }.map {
             #"{"Id":"\#($0)","Names":["/\#($0)"],"Command":"/usr/bin/buildkitd-entrypoint","State":"running"}"#
         }
@@ -79,6 +93,11 @@ struct BuilderIdleStopTests {
             let sample = Self.statsJSON(cpuNanoseconds: UInt64(1_000_000_000 + minute * 5_000_000))
             byPath["/containers/\(name)/stats?stream=false"] = .success(jsonResponse(sample))
             byPath["/containers/\(name)/stop?t=5"] = .success(httpResponse(status: 204, body: Data()))
+            if let histories {
+                byPath["/containers/\(name)/exec"] = .success(jsonResponse(#"{"Id":"exec-\#(name)"}"#, status: 201))
+                byPath["/exec/exec-\(name)/start"] = .success(Self.execOutput(histories))
+                byPath["/exec/exec-\(name)/json"] = .success(jsonResponse(#"{"ExitCode":0}"#))
+            }
         }
         return StubDockerTransport(byPath: byPath)
     }
@@ -130,6 +149,67 @@ struct BuilderIdleStopTests {
             idleLimit: tenMinutes
         )
         #expect(stopped.isEmpty)
+    }
+
+    @Test func aBuildThatOnlyWaitsKeepsItsBuilder() async {
+        var monitor = BuilderIdleMonitor()
+        var stopped: [String] = []
+        for minute in 0...15 {
+            let transport = idleRuntime(
+                minute: minute,
+                builders: ["buildkit", "buildx_buildkit_containerstack"],
+                histories: Self.finishedBuild + "\n" + Self.runningBuild + "\n"
+            )
+            stopped += await monitor.tick(client: client(transport), at: at(minutes: minute), idleLimit: tenMinutes)
+        }
+
+        #expect(stopped.isEmpty)
+    }
+
+    @Test func aWaitingBuildGivesTheBuilderAnotherIdleTime() async {
+        var monitor = BuilderIdleMonitor()
+        var stoppedAt: [Int] = []
+        for minute in 0...25 {
+            let transport = idleRuntime(
+                minute: minute,
+                builders: ["buildkit"],
+                histories: minute <= 12 ? Self.runningBuild + "\n" : Self.finishedBuild + "\n"
+            )
+            let stopped = await monitor.tick(client: client(transport), at: at(minutes: minute), idleLimit: tenMinutes)
+            if !stopped.isEmpty { stoppedAt.append(minute) }
+        }
+
+        #expect(stoppedAt.first == 20)
+    }
+
+    @Test(arguments: [nil, "buildctl: not found\n"])
+    func aBuilderThatCannotListItsBuildsIsNotStopped(histories: String?) async {
+        var monitor = BuilderIdleMonitor()
+        var stopped: [String] = []
+        for minute in 0...15 {
+            let transport = idleRuntime(minute: minute, builders: ["buildkit"], histories: histories)
+            stopped += await monitor.tick(client: client(transport), at: at(minutes: minute), idleLimit: tenMinutes)
+        }
+
+        #expect(stopped.isEmpty)
+    }
+
+    @Test func aFailedListingIsNotAnEmptyOne() async {
+        let transport = StubDockerTransport(byPath: [
+            "/containers/buildkit/exec": .success(jsonResponse(#"{"Id":"e"}"#, status: 201)),
+            "/exec/e/start": .success(Self.execOutput("")),
+            "/exec/e/json": .success(jsonResponse(#"{"ExitCode":1}"#)),
+        ])
+
+        await #expect(throws: (any Error).self) {
+            try await client(transport).builderHasRunningBuild(id: "buildkit")
+        }
+    }
+
+    @Test func aBuilderWithNoBuildsHasNoRunningBuild() async throws {
+        let transport = idleRuntime(minute: 0, builders: ["buildkit"], histories: "")
+
+        #expect(try await client(transport).builderHasRunningBuild(id: "buildkit") == false)
     }
 
     // MARK: - Tracking

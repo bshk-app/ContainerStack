@@ -98,6 +98,10 @@ public struct BuilderIdleTracker: Sendable {
         return now - since >= idleLimit
     }
 
+    public mutating func restartIdleTime(at now: ContinuousClock.Instant) {
+        lastActive = now
+    }
+
     /// Counters that go back belong to a new builder VM, which counts as activity.
     private static func isActive(from old: BuilderActivity, to new: BuilderActivity, over elapsed: Duration) -> Bool {
         guard new.cpuMicroseconds >= old.cpuMicroseconds, new.transferredBytes >= old.transferredBytes else {
@@ -131,14 +135,23 @@ public struct BuilderIdleMonitor: Sendable {
         for id in builders {
             let activity = try? await client.builderActivity(id: id)
             var tracker = trackers[id] ?? BuilderIdleTracker()
-            if tracker.observe(activity, at: now, idleLimit: idleLimit),
-                (try? await client.stopContainer(id: id)) != nil
-            {
-                trackers[id] = nil
-                stopped.append(id)
-            } else {
+            guard tracker.observe(activity, at: now, idleLimit: idleLimit) else {
                 trackers[id] = tracker
+                continue
             }
+            switch try? await client.builderHasRunningBuild(id: id) {
+            case true?:
+                tracker.restartIdleTime(at: now)
+            case false?:
+                if (try? await client.stopContainer(id: id)) != nil {
+                    trackers[id] = nil
+                    stopped.append(id)
+                    continue
+                }
+            case nil:
+                break
+            }
+            trackers[id] = tracker
         }
         return stopped
     }

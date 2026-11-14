@@ -24,7 +24,7 @@ readonly DATA_ROOT_FALLBACK="${HOME}/Library/Application Support/com.apple.conta
 # Each was exercised against a live 1.3.1 runtime before this pin moved.
 # Unpin only once every one of them is upstream.
 readonly SOCKTAINER_REPO_URL="https://github.com/beshkenadze/socktainer.git"
-readonly SOCKTAINER_REV="6cedf5e45f745c7f945babdb1f8a00a5de8d696e"
+readonly SOCKTAINER_REV="ee8b3beb3f3615a35b86930f51d38063367fa267"
 readonly SOCKTAINER_SOURCE_ROOT="${HOME}/Library/Application Support/ContainerStack/socktainer"
 readonly SOCKTAINER_BIN_DIR="${HOME}/.local/bin"
 readonly SOCKTAINER_BIN="${SOCKTAINER_BIN_DIR}/socktainer"

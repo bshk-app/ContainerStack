@@ -159,6 +159,8 @@ the app's `config.toml` reader supports flat tables only.
   wrote it, with no tag and no `docker.io/` prefix; `*` does not match `/`. `stdioSession`:
   matches each eligible run.
 - A rule of a disabled group does not match: the run is dedicated and gets no skipped label.
+- A rule that names a group that is not in `groups` is an error (the file does not parse).
+  `stdioSession` can only be `true`.
 - Unknown keys are an error (the file does not parse).
 
 ### 3.2 Labels and reasons (frozen contract)

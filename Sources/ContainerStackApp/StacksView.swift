@@ -37,6 +37,10 @@ struct StacksView: View {
                             .contextMenu {
                                 Button("Edit") { openedStackID = stack.id }
                                 Divider()
+                                Button("Remove containers and network", role: .destructive) {
+                                    Task { await model.downStack(stack, removeVolumes: false) }
+                                }
+                                .disabled(model.busyStackID != nil || !model.canMutate)
                                 Button("Unregister (keeps the file)") {
                                     model.removeStack(stack)
                                 }
@@ -168,7 +172,7 @@ private struct StackRow: View {
                     help: "Stop stack",
                     accessibilityLabel: "Stop stack \(stack.name)"
                 ) {
-                    Task { await model.downStack(stack, removeVolumes: false) }
+                    Task { await model.stopStack(stack) }
                 }
             }
             .disabled(isBusy || !model.canMutate)
@@ -221,8 +225,13 @@ struct StackInspector: View {
                     }
                     .disabled(!availability.canControl)
                     InspectorAction(title: "Stop") {
+                        Task { await model.stopStack(stack) }
+                    }
+                    .disabled(!availability.canControl)
+                    InspectorAction(title: "Remove") {
                         Task { await model.downStack(stack, removeVolumes: false) }
                     }
+                    .help("Remove the stack's containers and network, keeping its volumes")
                     .disabled(!availability.canControl)
                     InspectorAction(title: "Edit") {
                         onEdit()

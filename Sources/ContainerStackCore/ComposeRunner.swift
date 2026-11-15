@@ -80,6 +80,11 @@ public struct ComposeRunner: Sendable {
         return try await runReturningOutput(arguments)
     }
 
+    public func stop(stack: ComposeStack) async throws -> String {
+        let arguments = Self.composeArguments(for: stack, verb: "stop")
+        return try await runReturningOutput(arguments, bounded: true)
+    }
+
     /// `down`, with `--volumes` when `removeVolumes`. Returns combined stdout+stderr verbatim.
     public func down(stack: ComposeStack, removeVolumes: Bool) async throws -> String {
         let arguments = Self.composeArguments(

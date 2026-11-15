@@ -27,13 +27,16 @@ struct ComposeRunnerTests {
 
     /// A stop is the call measured hanging when the runtime loses its XPC service, and a `down`
     /// with no deadline kept its stack busy for good. Without one this test hangs, not fails.
-    @Test("a down or restart that outlives its deadline is ended and reported", arguments: ["down", "restart"])
+    @Test("a down or restart that outlives its deadline is ended and reported", arguments: ["down", "restart", "stop"])
     func stopVerbsHaveADeadline(verb: String) async throws {
         let (runner, docker) = try fakeRunner(script: "sleep 30", stopTimeout: .milliseconds(300))
+        defer { try? FileManager.default.removeItem(atPath: docker) }
         let started = ContinuousClock.now
 
         await #expect(throws: ProcessRunnerError.timedOut(executablePath: docker, seconds: 0.3)) {
-            if verb == "down" {
+            if verb == "stop" {
+                _ = try await runner.stop(stack: stack)
+            } else if verb == "down" {
                 _ = try await runner.down(stack: stack, removeVolumes: false)
             } else {
                 _ = try await runner.restart(stack: stack)
@@ -45,17 +48,29 @@ struct ComposeRunnerTests {
     /// `up` pulls images, which can legitimately take minutes; the stop deadline is not its.
     @Test("up is not cut off by the stop deadline")
     func upIsNotBoundedByTheStopDeadline() async throws {
-        let (runner, _) = try fakeRunner(script: "sleep 1; echo up", stopTimeout: .milliseconds(300))
+        let (runner, docker) = try fakeRunner(script: "sleep 1; echo up", stopTimeout: .milliseconds(300))
 
+        defer { try? FileManager.default.removeItem(atPath: docker) }
         #expect(try await runner.up(stack: stack) == "up\n")
     }
 
     private func fakeRunner(script: String, stopTimeout: Duration) throws -> (ComposeRunner, String) {
-        let url = FileManager.default.temporaryDirectory
-            .appending(path: "fake-docker-\(UUID().uuidString)")
+        let directory = URL(fileURLWithPath: "/private/tmp/claude-501")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "fake-docker-\(UUID().uuidString).txt")
         try "#!/bin/sh\n\(script)\n".write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         return (ComposeRunner(socketPath: "/tmp/c.sock", executablePath: url.path, stopTimeout: stopTimeout), url.path)
+    }
+
+    @Test("Stop keeps the stack and uses compose stop")
+    func stopUsesStopVerb() async throws {
+        let (runner, docker) = try fakeRunner(script: #"printf '%s\n' "$@""#, stopTimeout: .seconds(2))
+        defer { try? FileManager.default.removeItem(atPath: docker) }
+
+        let output = try await runner.stop(stack: stack)
+
+        #expect(output.split(separator: "\n").map(String.init) == prefix + ["stop"])
     }
 
     // MARK: - argument construction

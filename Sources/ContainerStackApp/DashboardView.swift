@@ -123,6 +123,7 @@ struct DashboardView: View {
                     }
                 }
                 .fitsSplitColumn()
+                .background { InspectorConstraintCollapse() }
                 .navigationTitle(navigation.selection.title)
                 .navigationSubtitle(headerSubtitle)
                 .searchable(text: $navigation.searchText, placement: .toolbar, prompt: "Search")

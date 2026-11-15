@@ -68,7 +68,7 @@ extension RuntimeViewModel {
         do {
             let fetched = try await client.listImages()
             guard inventoryEpochIsCurrent(epoch) else { return }
-            images = fetched
+            images = fetched.filter { !$0.isRuntimeImage }
             imagesErrorMessage = nil
         } catch {
             guard inventoryEpochIsCurrent(epoch) else { return }

@@ -24,6 +24,7 @@ final class RuntimeViewModel {
     internal(set) var isStopping = false
     var runtimeLogHandle: FileHandle?
     @ObservationIgnored var monitorTask: Task<Void, Never>?
+    @ObservationIgnored var inventoryPollCadence = DiagnosticCadence(interval: .seconds(60))
     /// Both cost far more than a socket read -- `container system status` is a CLI spawn plus an
     /// XPC round trip, and answering "who holds the socket" is an `lsof` and a `ps` -- so the 3s
     /// poll reuses the last answer. Wrappers live in RuntimeViewModel+Advisories.
@@ -244,7 +245,7 @@ final class RuntimeViewModel {
         Task { _ = await execute(.start, turn) }
     }
 
-    func probeRuntime() async {
+    func probeRuntime(now: ContinuousClock.Instant = .now) async {
         let epoch = inventoryEpoch
         let observed = lifecycle.generation
         let responds: Bool
@@ -305,6 +306,10 @@ final class RuntimeViewModel {
             // refresh — images, volumes and disk usage feed neither.
             await refreshContainers(epoch: epoch)
             await refreshNetworks(epoch: epoch)
+            if inventoryEpochIsCurrent(epoch), inventoryPollCadence.shouldRun(now: now) {
+                await refreshImages(epoch: epoch)
+                await refreshVolumes(epoch: epoch)
+            }
             let unroutable = await unroutablePublishingNetworks()
             let missingAppRoot = await throttledMissingAppRoot()
             // `responds` was read before all of those awaits. If the runtime has been declared dead
@@ -462,6 +467,7 @@ final class RuntimeViewModel {
             )
             // One epoch for every list: each fetch capturing its own let a supersede during the
             // images fetch discard images and still publish the containers fetched after it (#102).
+            inventoryPollCadence.recordRun()
             await refreshImages(epoch: epoch)
             await refreshContainers(epoch: epoch)
             await refreshVolumes(epoch: epoch)

@@ -245,13 +245,15 @@ struct DashboardView: View {
 
     /// Where the inspector is not allowed, the column hides but the user's Hide or Show choice stays.
     private var inspectorPresented: Binding<Bool> {
+        Self.inspectorPresented(navigation: $navigation, resources: $resources)
+    }
+
+    static func inspectorPresented(
+        navigation: Binding<DashboardNavigation>, resources: Binding<ResourceSelection>
+    ) -> Binding<Bool> {
         Binding(
-            get: { navigation.allowsInspector && resources.isInspectorShown },
-            set: { isPresented in
-                if navigation.allowsInspector {
-                    resources.isInspectorShown = isPresented
-                }
-            }
+            get: { navigation.wrappedValue.allowsInspector && resources.wrappedValue.isInspectorShown },
+            set: { _ in }
         )
     }
 

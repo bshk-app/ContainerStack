@@ -79,7 +79,7 @@ extension RuntimeViewModel {
     }
 
     func restart(container: DockerContainerSummary) async {
-        await withContainer(container, action: "Restarting") {
+        await withContainer(container, action: "Restarting", completion: "Restarted \(container.name).") {
             try await self.client.restartContainer(id: container.id)
         }
     }
@@ -236,11 +236,9 @@ extension RuntimeViewModel {
 
         do {
             try await body()
+            containerMessage = completion
             if refreshList {
-                containerMessage = completion ?? "\(container.name) is ready."
                 await refreshContainers()
-            } else {
-                containerMessage = completion
             }
         } catch let error
             where recoversRuntime && lifecycle.generation == observed

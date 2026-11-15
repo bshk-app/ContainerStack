@@ -182,6 +182,12 @@ gets a generated one, as a container does.
 Reasons: `no-stdin`, `no-autoremove`, `tty`, `mount`, `port`, `network`, `limits`,
 `option:<field name>`, `unknown-group`, `disabled-group`.
 
+### 3.2a `/info` (frozen contract)
+
+With `--shared-runtimes`, `Labels` of `/info` has `containerstack.shared-runtimes=on` or
+`containerstack.shared-runtimes=off`. When grouping is off, `Warnings` also has one entry,
+`shared runtimes are off: <cause>`. Without the flag, `/info` is as before (F-014).
+
 ### 3.3 Launcher (frozen contract)
 
 One static Linux arm64 binary, `cs-session`, built by the project with the toolchain and the
@@ -200,6 +206,8 @@ embedding path of the `socktainer-dns` forwarder. socktainer mounts it read-only
      SIGKILL and must stay alive for step 5. The number is 36: the launcher is a musl binary,
      where `SIGRTMIN` is 35. socktainer sends the number 36, not a name that the host resolves
      (`SIGRTMIN` is 34 with glibc and 32 in the kernel).
+     SIGSTOP on a session is refused with 400: the launcher cannot catch it, so it would stop
+     the launcher and not the program.
   5. When the program has exited, it sends SIGKILL to each remaining descendant until it has
      none, removes `<dir>`, and exits.
 - Exit code: the code of the program; 128 + N when signal N ended it; 125 for a usage error;

@@ -234,7 +234,7 @@ struct ContainerResourceSettingsTests {
         #expect(
             settings.memoryNote
                 == "Each container without limits is a VM with \(memoryGiB) GiB, \(percent)% of this Mac's memory."
-                + " The Doctor warns when running containers together reach 50%."
+                + " The cstack doctor command warns when running containers together reach 50%."
         )
     }
 

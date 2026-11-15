@@ -99,7 +99,7 @@ final class ContainerResourceSettings {
         let percent = Int((Double(memoryBytes) / Double(hostMemoryBytes) * 100).rounded())
         let threshold = Int(MemoryCommitment.approachingFraction * 100)
         return "Each container without limits is a VM with \(memoryDescription), \(percent)% of this Mac's memory."
-            + " The Doctor warns when running containers together reach \(threshold)%."
+            + " The cstack doctor command warns when running containers together reach \(threshold)%."
     }
 
     var memoryDescription: String { Self.memoryDescription(bytes: memoryBytes) }

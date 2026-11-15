@@ -232,6 +232,44 @@ struct ProcessRunnerTests {
         #expect(killed == 1)
     }
 
+    @Test("shutdown ends an unbounded child even when it ignores SIGTERM", arguments: [false, true])
+    func shutdownEndsUnboundedChild(ignoresTermination: Bool) throws {
+        let registry = BoundedChildren()
+        let finished = DispatchSemaphore(value: 0)
+        let pidFile = URL(fileURLWithPath: "/private/tmp/claude-501/child-\(UUID().uuidString).txt")
+        try FileManager.default.createDirectory(
+            at: pidFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+        let trap = ignoresTermination ? "trap '' TERM; " : ""
+        DispatchQueue.global().async {
+            _ = try? ProcessRunner.run(
+                executablePath: "/bin/sh",
+                arguments: ["-c", "\(trap)echo $$ > '\(pidFile.path)'; exec /bin/sleep 30"],
+                timeout: nil,
+                registry: registry
+            )
+            finished.signal()
+        }
+        let deadline = ContinuousClock.now + .seconds(5)
+        var pid: Int32?
+        while pid == nil, ContinuousClock.now < deadline {
+            pid = (try? String(contentsOf: pidFile, encoding: .utf8))
+                .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            usleep(10_000)
+        }
+        let child = try #require(pid)
+        defer {
+            if kill(child, 0) == 0 {
+                kill(child, SIGKILL)
+                _ = finished.wait(timeout: .now() + 5)
+            }
+        }
+        #expect(registry.count == 1)
+        try ProcessRunner.terminateSupervisedChildren(in: registry)
+        #expect(finished.wait(timeout: .now() + 2) == .success)
+        #expect(kill(child, 0) == -1)
+    }
+
     @Test("once shutdown has begun, a bounded child is refused without being started")
     func childAfterShutdownIsNeverStarted() {
         let registry = BoundedChildren()

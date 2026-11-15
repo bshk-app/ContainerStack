@@ -52,6 +52,7 @@ public enum ProcessRunner {
     /// The deliberately unbounded child - `timeout: nil`, the Docker bridge - is
     /// excluded on purpose: it exists to outlive the app that started it.
     private static let boundedChildren = BoundedChildren()
+    private static let supervisedChildren = BoundedChildren()
 
     public static var outstandingBoundedChildren: Int { boundedChildren.count }
 
@@ -74,6 +75,18 @@ public enum ProcessRunner {
             killed += 1
         }
         return killed
+    }
+
+    public static func terminateSupervisedChildren() throws {
+        try terminateSupervisedChildren(in: supervisedChildren)
+    }
+
+    static func terminateSupervisedChildren(in registry: BoundedChildren) throws {
+        let children = registry.closeAndDrain()
+        try BridgeTermination.stop(
+            children.filter(\.isRunning).map(\.processIdentifier),
+            grace: .milliseconds(500)
+        )
     }
 
     public enum OutputMode: Equatable, Sendable {
@@ -118,7 +131,7 @@ public enum ProcessRunner {
     ) throws -> Result {
         try run(
             executablePath: executablePath, arguments: arguments, output: mode, environment: environment,
-            timeout: timeout, gracePeriod: gracePeriod, registry: boundedChildren)
+            timeout: timeout, gracePeriod: gracePeriod, registry: timeout == nil ? supervisedChildren : boundedChildren)
     }
 
     static func run(
@@ -183,9 +196,7 @@ public enum ProcessRunner {
         // Registered only while this call is waiting on it, so a process that
         // exits mid-wait can take the child with it instead of orphaning it.
         do {
-            if timeout == nil {
-                try process.run()
-            } else if try !registry.start(process, using: { try process.run() }) {
+            if try !registry.start(process, using: { try process.run() }) {
                 throw ProcessRunnerError.terminatingBeforeWait(executablePath: executablePath)
             }
         } catch {
@@ -197,9 +208,8 @@ public enum ProcessRunner {
         // child exits, so close it as soon as the child has inherited the fd.
         try? pipe?.fileHandleForWriting.close()
 
+        defer { registry.remove(process) }
         if let timeout {
-            defer { registry.remove(process) }
-
             if exited.wait(timeout: .now() + seconds(timeout)) == .timedOut {
                 process.terminate()
                 if exited.wait(timeout: .now() + seconds(gracePeriod)) == .timedOut {

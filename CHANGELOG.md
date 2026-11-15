@@ -12,6 +12,21 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.9.0](https://github.com/bshk-app/ContainerStack/compare/v0.8.2...v0.9.0) (2026-11-15)
+
+
+* release as 0.9.0 ([cafdd0b](https://github.com/bshk-app/ContainerStack/commit/cafdd0b23d871b9ce40f8781df5ce2418fab0d37))
+
+
+### Fixed
+
+* **core:** decode escapes in the memory value of config.toml ([b3c83f6](https://github.com/bshk-app/ContainerStack/commit/b3c83f6848dc704201e7afc40fcd890aa26881e5))
+* **runtime:** install the default kernel on the first start ([4dcd79e](https://github.com/bshk-app/ContainerStack/commit/4dcd79edcf19b980677e5d8d89e44a946a41e361))
+* **runtime:** install the default kernel on the first start ([2f26302](https://github.com/bshk-app/ContainerStack/commit/2f263022ee92de02106981f28869db42debbccff))
+* **runtime:** keep a builder while BuildKit has a running build ([60d3393](https://github.com/bshk-app/ContainerStack/commit/60d339317c9f2aecaba386e4a499b6206304e646))
+* **runtime:** start the runtime after an app upgrade ([6714c52](https://github.com/bshk-app/ContainerStack/commit/6714c52823929236233e275c384a8aaaf3808a8c))
+* start runtime after app upgrades ([49b6a15](https://github.com/bshk-app/ContainerStack/commit/49b6a15a6d80ebb9cd6e93550672adcf1576cbb4))
+
 ## [0.8.2](https://github.com/bshk-app/ContainerStack/compare/v0.8.1...v0.8.2) (2026-11-14)
 
 The Docker bridge no longer uses CPU all the time while a client waits for a container.

@@ -1,6 +1,7 @@
 # Spec: shared runtimes — several sessions in one VM
 
-Version: 0.2 (one design review against socktainer `65e0569`: 12 findings, all taken)
+Version: 0.3 (one design review against socktainer `65e0569`: 12 findings, all taken; both
+groups off by default, owner's decision)
 Date: 2026-11-15
 Source: discussion of 2026-11-15 and two live tests on Apple Container 1.7.1-bshk.1 with
 socktainer `65e0569`. LinuxPod research: 2026-11-12.
@@ -140,7 +141,7 @@ the app's `config.toml` reader supports flat tables only.
 {
   "version": 1,
   "groups": [
-    { "name": "mcp-catalog",    "kind": "exec", "idleMinutes": 10, "enabled": true },
+    { "name": "mcp-catalog",    "kind": "exec", "idleMinutes": 10, "enabled": false },
     { "name": "stdio-sessions", "kind": "exec", "idleMinutes": 10, "enabled": false }
   ],
   "rules": [
@@ -246,7 +247,7 @@ the runtime, before it asserts anything else.
    under 1000 MB against about 1900 MB for three dedicated runs.
 2. A real MCP exchange (`initialize`, `tools/list`) through a session for `mcp/time`,
    `mcp/sequentialthinking` and `ghcr.io/github/github-mcp-server`. `mcp/time` is also run with
-   no label, to check the `mcp-catalog` rule.
+   no label and a file that turns `mcp-catalog` on, to check the rule.
 3. F-006: kill the client of a session that has child processes; no process is left.
 4. F-007 with the idle time set to its minimum by a test hook.
 
@@ -266,7 +267,8 @@ the runtime, before it asserts anything else.
   file, the labels and the launcher do not depend on this choice.
 - Explicit selection is by label, not by the compose key `runtime:`: a file with an unknown
   runtime fails on other engines.
-- `mcp-catalog` (images `mcp/*`) is on by default; `stdio-sessions` is off by default.
+- `mcp-catalog` (images `mcp/*`) and `stdio-sessions` are both off by default. The user turns a
+  group on in Settings, because a shared container is one trust domain.
 - Sessions share a container only with the same image and run configuration, so one session
   cannot read the credentials that another configuration was started with.
 - A shared container is one trust domain. Its sessions run as the same user on one writable
@@ -290,6 +292,5 @@ the runtime, before it asserts anything else.
 Open:
 
 1. What `inspect` of a session must return for the MCP clients in use to accept it.
-2. Three images passed the session test; the catalog has many more, and `mcp-catalog` is on by
-   default once the flag is passed.
+2. Three images passed the session test; the catalog has many more.
 3. The fixed VM cost was measured at an 8 GiB limit only.

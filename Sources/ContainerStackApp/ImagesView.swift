@@ -2,6 +2,23 @@ import ContainerStackCore
 import SwiftUI
 
 extension DockerImageSummary {
+    var isRuntimeImage: Bool {
+        repositoryTags?.contains { reference in
+            var repository = reference.prefix { $0 != "@" }
+            if let colon = repository.lastIndex(of: ":"), !repository[colon...].contains("/") {
+                repository = repository[..<colon]
+            }
+            switch repository {
+            case "ghcr.io/apple/containerization/vminit",
+                "ghcr.io/apple/container-builder-shim/builder",
+                "socktainer-dns":
+                return true
+            default:
+                return false
+            }
+        } ?? false
+    }
+
     var displayName: String {
         repositoryTags?.first ?? ResourceIdentifier.short(id)
     }

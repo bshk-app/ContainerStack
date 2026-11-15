@@ -195,7 +195,9 @@ embedding path of the `socktainer-dns` forwarder. socktainer mounts it read-only
      SIGTERM it sends SIGKILL to the program.
   4. `SIGRTMIN+1` is the control signal "end now": it sends SIGKILL to the program at once.
      socktainer sends it where Docker asks for SIGKILL, because the launcher cannot catch
-     SIGKILL and must stay alive for step 5.
+     SIGKILL and must stay alive for step 5. The number is 36: the launcher is a musl binary,
+     where `SIGRTMIN` is 35. socktainer sends the number 36, not a name that the host resolves
+     (`SIGRTMIN` is 34 with glibc and 32 in the kernel).
   5. When the program has exited, it sends SIGKILL to each remaining descendant until it has
      none, removes `<dir>`, and exits.
 - Exit code: the code of the program; 128 + N when signal N ended it; 125 for a usage error;

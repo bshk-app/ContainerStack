@@ -5,6 +5,7 @@
   "homepage": "https://containerstack.bshk.app",
   "autoUpdates": true,
   "appBundle": "ContainerStack.app",
+  "binary": [{ "inApp": "Contents/MacOS/cstack" }],
   "dependsOnMacOS": true,
   "dependsOnFormulae": ["bshk-app/tap/container@#{container}"],
   "livecheck": true,

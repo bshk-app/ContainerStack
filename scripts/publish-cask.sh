@@ -6,11 +6,13 @@ set -euo pipefail
 #   TAP_GITHUB_TOKEN=... ./scripts/publish-cask.sh <dmg> <short-version> <tag>
 #
 # `zamokctl cask` renders and pushes it from Packaging/Homebrew/cask-containerstack.json
-# and runs `brew audit` on the result. Requires zamokctl >= 1.8.0: 1.3.2 made metadata
+# and runs `brew audit` on the result. Requires zamokctl >= 1.11.0: 1.3.2 made metadata
 # decoding strict (an unknown key used to drop silently -- a cask that installed but
 # never pulled Apple Container); 1.8.0 added the `--set` flag this script now passes,
 # without which the `#{container}` placeholder below fails the publish outright rather
 # than shipping a cask with a literal `#{container}` in a depends_on line.
+# 1.11.0 added the `binary` entry with `inApp`, which links the `cstack` tool inside the
+# app bundle into the Homebrew prefix.
 #
 # The tap is a different repository, so a workflow's own GITHUB_TOKEN cannot
 # write it. This is the only credential the pipeline cannot avoid.
@@ -38,11 +40,11 @@ readonly CONTAINER_VERSION="$container_version"
 
 command -v zamokctl >/dev/null 2>&1 || die "zamokctl is required"
 # 1.3.2 decodes metadata strictly instead of dropping unknown keys; 1.8.0 added
-# --set, which this script relies on below.
+# --set, which this script relies on below; 1.11.0 added `binary` with `inApp`.
 zamokctl_version="$(zamokctl --version 2>/dev/null | tr -d '[:space:]')"
 [[ -n "$zamokctl_version" ]] || die "could not read zamokctl --version"
-[[ "$(printf '1.8.0\n%s\n' "$zamokctl_version" | sort -V | head -1)" == "1.8.0" ]] \
-    || die "zamokctl $zamokctl_version is too old; need >= 1.8.0 (for --set). Run: brew upgrade bshk-app/tap/zamokctl"
+[[ "$(printf '1.11.0\n%s\n' "$zamokctl_version" | sort -V | head -1)" == "1.11.0" ]] \
+    || die "zamokctl $zamokctl_version is too old; need >= 1.11.0 (for the binary stanza). Run: brew upgrade bshk-app/tap/zamokctl"
 [[ -f "$DMG" ]] || die "no DMG at $DMG"
 [[ -f "$METADATA" ]] || die "no cask metadata at $METADATA"
 [[ -n "${TAP_GITHUB_TOKEN:-}" ]] || die "TAP_GITHUB_TOKEN is required to write $TAP"

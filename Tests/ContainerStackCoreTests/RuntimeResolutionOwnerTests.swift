@@ -31,7 +31,10 @@ struct RuntimeResolutionOwnerTests {
         let config = make(bundled: bundleRoot, present: [vendored, pinnedKeg])
         #expect(config.containerPath == vendored)
         #expect(config.containerInstallRoot == bundleRoot)
-        #expect(config.containerStartArguments == ["system", "start", "--install-root", bundleRoot])
+        #expect(
+            config.containerStartArguments == [
+                "system", "start", "--enable-kernel-install", "--install-root", bundleRoot,
+            ])
     }
 
     /// The regression this exists for: dropping `bundledInstallRoot` resolved a system
@@ -43,7 +46,7 @@ struct RuntimeResolutionOwnerTests {
         let withoutRoot = make(bundled: nil, present: [vendored, pinnedKeg])
         #expect(withRoot.containerPath != withoutRoot.containerPath)
         #expect(withoutRoot.containerInstallRoot == nil)
-        #expect(withoutRoot.containerStartArguments == ["system", "start"])
+        #expect(withoutRoot.containerStartArguments == ["system", "start", "--enable-kernel-install"])
     }
 
     @Test

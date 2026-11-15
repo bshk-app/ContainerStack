@@ -38,7 +38,7 @@ struct RuntimeProcessConfigurationTests {
             socktainerPath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
         )
 
-        #expect(configuration.containerStartArguments == ["system", "start"])
+        #expect(configuration.containerStartArguments == ["system", "start", "--enable-kernel-install"])
         #expect(
             configuration.socktainerArguments
                 == [
@@ -59,7 +59,10 @@ struct RuntimeProcessConfigurationTests {
             containerInstallRoot: root
         )
 
-        #expect(configuration.containerStartArguments == ["system", "start", "--install-root", root])
+        #expect(
+            configuration.containerStartArguments == [
+                "system", "start", "--enable-kernel-install", "--install-root", root,
+            ])
     }
 
     /// Without a vendored copy the flag must be absent rather than empty: a
@@ -72,7 +75,7 @@ struct RuntimeProcessConfigurationTests {
             socktainerPath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
         )
 
-        #expect(configuration.containerStartArguments == ["system", "start"])
+        #expect(configuration.containerStartArguments == ["system", "start", "--enable-kernel-install"])
     }
 
     @Test

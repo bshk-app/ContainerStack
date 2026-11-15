@@ -120,10 +120,12 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         // The flag is omitted rather than emptied for a system install: that
         // copy already knows its own root, and naming a wrong one would send
         // the daemon looking for plugins that are not there.
+        // With no default kernel the start asks on stdin, and the helper has no terminal.
+        let start = ["system", "start", "--enable-kernel-install"]
         guard let containerInstallRoot else {
-            return ["system", "start"]
+            return start
         }
-        return ["system", "start", "--install-root", containerInstallRoot]
+        return start + ["--install-root", containerInstallRoot]
     }
 
     public var socktainerArguments: [String] {

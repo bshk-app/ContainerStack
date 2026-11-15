@@ -165,7 +165,9 @@ struct RuntimeRestartPlanTests {
                 ),
                 .stopContainers(executablePath: "/usr/local/bin/container", graceSeconds: 5),
                 .run(executablePath: "/usr/local/bin/container", arguments: ["system", "stop"]),
-                .run(executablePath: "/usr/local/bin/container", arguments: ["system", "start"]),
+                .run(
+                    executablePath: "/usr/local/bin/container",
+                    arguments: ["system", "start", "--enable-kernel-install"]),
                 .startBridge,
             ])
     }

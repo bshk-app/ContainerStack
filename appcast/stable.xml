@@ -3,6 +3,42 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.9.0</title>
+            <pubDate>Sun, 15 Nov 2026 10:53:45 +0000</pubDate>
+            <sparkle:version>495</sparkle:version>
+            <sparkle:shortVersionString>0.9.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>ContainerStack now runs on Apple Container 1.7.1. Settings has the default CPUs and memory of containers and of the image builder, and builders stop when they are idle.</p>
+<h3>Added</h3>
+<ul>
+<li><strong>Default container resources.</strong> Settings has a new section, Default Container Resources. It sets the CPUs and memory of each container that is started with no limit: from Run Container, from Docker API clients such as <code class="notranslate">docker</code> and <code class="notranslate">docker compose</code>, and from the <code class="notranslate">container</code> CLI. The values are saved in Apple Container's <code class="notranslate">config.toml</code> (<code class="notranslate">[container]</code> table), so all three use the same numbers. A change applies to new containers after a restart of the Docker bridge. Before, such a container got 4 CPUs and 1024 MB.</li>
+<li><strong>Image builder size.</strong> Settings &gt; Image Builder sets the CPUs and memory of the image builder (<code class="notranslate">[build]</code> table of the same file). A running builder keeps its size; the new values apply the next time it starts.</li>
+<li><strong>Builders stop when idle.</strong> A builder VM keeps the memory it has used until it stops. ContainerStack now stops a builder that has done no work for the time set in Settings &gt; Image Builder &gt; Stop when idle for: Never, 5, 10, 30 or 60 minutes. The default is 10 minutes. This applies to the Apple image builder and to buildx builder containers. A builder with a running build is not stopped. The build cache stays; the next build starts the builder again.</li>
+<li><strong>Restart of the Docker bridge only.</strong> Restart Docker Bridge in Settings restarts only the Docker API bridge. Apple Container and the running containers stay up.</li>
+<li><strong>Skill for coding agents.</strong> ContainerStack links a <code class="notranslate">containerstack</code> skill into the skill folders of Codex and Claude Code. The skill tells an agent to use <code class="notranslate">docker</code> and <code class="notranslate">docker compose</code> through ContainerStack. Settings &gt; Coding Agents has the switch.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li><strong>Apple Container 1.7.1.</strong> The runtime moves from 1.3.1 to 1.7.1. Existing images, volumes and containers stay. The first container after the update can take about 10 seconds to start.</li>
+<li>The Doctor's memory check now counts the image builder VM and names its part of the total.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>After an update of the app, the runtime starts when you open ContainerStack. Before, the Docker socket stayed dead until you pressed Start.</li>
+<li>The first start on a Mac with no default kernel now installs the kernel. Before, the start failed.</li>
+<li><code class="notranslate">docker cp</code> into a volume or bind mount of a running container now writes the file where the container sees it. Before, the command returned success and the file was not there.</li>
+<li>An image push no longer leaves image data in the memory of the runtime.</li>
+</ul>
+<h3>Known limitations</h3>
+<ul>
+<li>A buildx builder container takes the Default Container Resources when buildx creates it, and keeps that size until it is removed.</li>
+<li>The idle check runs one time each minute, so a builder stops up to 1 minute after the limit.</li>
+<li><code class="notranslate">act --use-new-action-cache</code> gets a 500 error.</li>
+</ul>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.9.0/ContainerStack-0.9.0.dmg" length="23920051" type="application/octet-stream" sparkle:edSignature="Zdi53VrUmc9ru2IhcqDKdPIWXFUVuA8FXhatqZKnONL8N2PgVAXb3J+k8WYEBb5rE2ez2T1gMvUn162TMS6BDg=="/>
+        </item>
+        <item>
             <title>0.8.2</title>
             <pubDate>Sat, 14 Nov 2026 15:33:42 +0000</pubDate>
             <sparkle:version>448</sparkle:version>
@@ -329,35 +365,6 @@ vmnet helper dies; restarting only the containers does not repair the host route
 The per-container micro-VM architecture also remains slower than OrbStack on the<br>
 measured M1 system (4.6x container round trip, 3.6x bind-mount writes).</p>]]></description>
             <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.4.2/ContainerStack-0.4.2.dmg" length="22434733" type="application/octet-stream" sparkle:edSignature="AuHbAI7HPY/Tt1FnJk5tkv+ldwta3Ci/fv6bHIzdZIbUaUoWtGgllIggwlCyGeUeEn8PBDCkRrF8qpqmvK+8DA=="/>
-        </item>
-        <item>
-            <title>0.4.1</title>
-            <pubDate>Tue, 25 Aug 2026 23:42:28 +0300</pubDate>
-            <sparkle:version>151</sparkle:version>
-            <sparkle:shortVersionString>0.4.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<p>Starting and stopping containers works again on a machine where another Docker<br>
-bridge got there first, and one slow container no longer freezes the rest.</p>
-<h3>Fixed</h3>
-<ul>
-<li>Another program listening on the Docker socket is now named instead of adopted.<br>
-A bridge from a different build answers every status check while start and stop<br>
-hang - measured past 150 seconds against a container the bundled bridge started<br>
-in 2 - so the app reported a healthy engine while nothing could be controlled.<br>
-It now says which socket is held and what to do, keeps saying it while it is<br>
-true, and stops offering the actions that cannot succeed. Listing containers and<br>
-reading their logs keep working, since that is what you need at that point.</li>
-<li>Acting on one container no longer disables every other one. Stopping can take<br>
-the full two-minute timeout, and for that whole time no other container could be<br>
-started, stopped, deleted or have its logs opened - and a click on a different<br>
-container did nothing at all, without a word.</li>
-<li>Quitting no longer leaves runtime commands running. A command the app was<br>
-waiting on used to survive the app that started it: eight of them were found on<br>
-one machine, the oldest four days old, each wedged and invisible. The Docker<br>
-bridge is unaffected and still outlives the app on purpose.</li>
-</ul>]]></description>
-            <enclosure url="https://dl.bshk.app/products/containerstack/releases/0.4.1/59686655-4e4e-420f-8c7c-48904ad6177f/ContainerStack-0.4.1.dmg" length="133483230" type="application/octet-stream" sparkle:edSignature="v0vgbKWRBjf5HtAnymr9Jknk+kgHAhEN/lWxWG5w/SYFRB/GOvUIQAilfwswM7x7Ug1SornF4Z1WFXAXSuOLDQ=="/>
         </item>
     </channel>
 </rss>

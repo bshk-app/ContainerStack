@@ -41,6 +41,7 @@ extension RuntimeViewModel {
         await withContainer(
             container,
             action: container.isRunning ? "Stopping" : "Starting",
+            completion: "\(container.isRunning ? "Stopped" : "Started") \(container.name).",
             recoversRuntime: container.isRunning
         ) { [client] in
             if container.isRunning {

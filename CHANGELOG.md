@@ -12,6 +12,36 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.9.0](https://github.com/bshk-app/ContainerStack/compare/v0.8.2...v0.9.0) (2026-11-15)
+
+ContainerStack now runs on Apple Container 1.7.1. Settings has the default CPUs and memory of containers and of the image builder, and builders stop when they are idle.
+
+### Added
+
+- **Default container resources.** Settings has a new section, Default Container Resources. It sets the CPUs and memory of each container that is started with no limit: from Run Container, from Docker API clients such as `docker` and `docker compose`, and from the `container` CLI. The values are saved in Apple Container's `config.toml` (`[container]` table), so all three use the same numbers. A change applies to new containers after a restart of the Docker bridge. Before, such a container got 4 CPUs and 1024 MB.
+- **Image builder size.** Settings > Image Builder sets the CPUs and memory of the image builder (`[build]` table of the same file). A running builder keeps its size; the new values apply the next time it starts.
+- **Builders stop when idle.** A builder VM keeps the memory it has used until it stops. ContainerStack now stops a builder that has done no work for the time set in Settings > Image Builder > Stop when idle for: Never, 5, 10, 30 or 60 minutes. The default is 10 minutes. This applies to the Apple image builder and to buildx builder containers. A builder with a running build is not stopped. The build cache stays; the next build starts the builder again.
+- **Restart of the Docker bridge only.** Restart Docker Bridge in Settings restarts only the Docker API bridge. Apple Container and the running containers stay up.
+- **Skill for coding agents.** ContainerStack links a `containerstack` skill into the skill folders of Codex and Claude Code. The skill tells an agent to use `docker` and `docker compose` through ContainerStack. Settings > Coding Agents has the switch.
+
+### Changed
+
+- **Apple Container 1.7.1.** The runtime moves from 1.3.1 to 1.7.1. Existing images, volumes and containers stay. The first container after the update can take about 10 seconds to start.
+- The Doctor's memory check now counts the image builder VM and names its part of the total.
+
+### Fixed
+
+- After an update of the app, the runtime starts when you open ContainerStack. Before, the Docker socket stayed dead until you pressed Start.
+- The first start on a Mac with no default kernel now installs the kernel. Before, the start failed.
+- `docker cp` into a volume or bind mount of a running container now writes the file where the container sees it. Before, the command returned success and the file was not there.
+- An image push no longer leaves image data in the memory of the runtime.
+
+### Known limitations
+
+- A buildx builder container takes the Default Container Resources when buildx creates it, and keeps that size until it is removed.
+- The idle check runs one time each minute, so a builder stops up to 1 minute after the limit.
+- `act --use-new-action-cache` gets a 500 error.
+
 ## [0.8.2](https://github.com/bshk-app/ContainerStack/compare/v0.8.1...v0.8.2) (2026-11-14)
 
 The Docker bridge no longer uses CPU all the time while a client waits for a container.

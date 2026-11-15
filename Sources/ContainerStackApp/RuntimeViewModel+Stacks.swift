@@ -116,6 +116,13 @@ extension RuntimeViewModel {
         }
     }
 
+    func stopStack(_ stack: ComposeStack) async {
+        let runner = stackRunner
+        await runStackAction(stack, verb: "Stopping", pastTense: "stopped", recoversRuntime: true) {
+            try await runner.stop(stack: stack)
+        }
+    }
+
     func downStack(_ stack: ComposeStack, removeVolumes: Bool) async {
         let runner = stackRunner
         await downStack(stack, removeVolumes: removeVolumes) {

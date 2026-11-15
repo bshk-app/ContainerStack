@@ -98,9 +98,15 @@ struct StackDetailView: View {
                 }
                 .help("Start the stack, recreating any service whose compose file changed")
                 Button {
+                    Task { await model.stopStack(stack) }
+                } label: {
+                    LucideLabel(title: "Stop", icon: .square)
+                }
+                .help("Stop the services, keeping the containers and network")
+                Button {
                     Task { await model.downStack(stack, removeVolumes: false) }
                 } label: {
-                    LucideLabel(title: "Down", icon: .square)
+                    LucideLabel(title: "Remove", icon: .trash)
                 }
                 .help("Stop and remove the stack's containers, keeping its volumes")
                 Button {

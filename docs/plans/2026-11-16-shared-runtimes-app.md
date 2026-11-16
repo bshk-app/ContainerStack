@@ -7,10 +7,18 @@ socktainer: stage 1 is merged in the fork at `524be88`. Its user doc is `docs/sh
 at that commit.
 App base: `origin/main` at `46b4374` (#140). Between `f3a7d47` and `46b4374` only
 `scripts/publish-cask.sh` changed, so the file references below are valid for both.
-Design: the design project "ContainerStack — onboarding", files `Settings.dc.html`, `Card.dc.html`
-and `cs-data.js` (step `shared`).
+Design: the design project "ContainerStack — onboarding". `Settings.dc.html` shows the section
+"Shared Runtimes" as the card of step `shared` and a footer. `cs-data.js` (step `shared`) gives the
+card rows and the text.
 
-This plan changes no behaviour of the spec. Each assumption has the mark **[A]**.
+Two items of this plan change spec text if the owner accepts them:
+
+- §1 makes the flag conditional. Spec F-101 says "The runtime helper passes `--shared-runtimes`".
+  The new text: "The runtime helper passes `--shared-runtimes` when the file needs it (plan §1)."
+- §7 question 2 removes the per-group idle time and the pattern editor from 1.0.0. Spec F-102 then
+  reads: "enable each group, one idle time for both groups".
+
+Each assumption has the mark **[A]**.
 
 ## 0. Facts this plan depends on
 
@@ -150,7 +158,10 @@ Rules:
 
 1. **The decoder is as strict as socktainer's (§0 item 6).** It gives the same error texts, so the
    Settings text and the `/info` cause agree. The app does not decode the file with `Codable`.
-   `Codable` ignores unknown keys, and an unknown key is an error in socktainer.
+   `Codable` ignores unknown keys, and an unknown key is an error in socktainer. The app parses
+   with `JSONSerialization`, as socktainer's `SharedRuntimeJSON` does: a `CFBoolean` is a boolean,
+   an `NSNumber` of an integer type is an integer, each other number is not an integer. So
+   `"idleMinutes": 10.0` and `"enabled": 1` are errors in both.
 2. **The fixture is shared.** Copy `Tests/socktainerTests/Resources/runtime-groups.v1.json` from
    the fork at `524be88` into `Tests/ContainerStackCoreTests/Fixtures/`, byte for byte. A test
    decodes it and compares it with `RuntimeGroupsDocument.defaults`.
@@ -174,7 +185,7 @@ Rules:
 8. **Encoding.** Two-space indent, keys in the order of §3.1, one group or rule per line, as the
    default document. Stable output gives a readable diff when the user opens the file. **[A]**
 9. **Reset to Defaults** writes the default document. It shows a confirmation, because it removes
-   the user's hand edits.
+   the user's hand edits. **[A: the spec and the design do not have this button; §7 question 8.]**
 
 ### The `/info` cause
 
@@ -194,7 +205,10 @@ public static func parse(info: DockerInfo) -> SharedRuntimesStatus
 - `.starting` comes from one exact cause text. The app does not show it as an error. It asks
   again at the next health refresh.
 - The app reads the status from the `/info` that its health refresh already fetches
-  (`DockerAPIClient.health()`). There is no new request.
+  (`DockerAPIClient.health()`). `RuntimeViewModel.snapshot` keeps it, so the Settings model reads
+  `model.snapshot?.info`. There is no new request and no change to a `RuntimeViewModel*` file.
+- A `nil` snapshot (the bridge does not answer) is not `.notRunning`. The app then shows no status
+  and offers no restart for shared runtimes.
 
 ### The view model: `SharedRuntimeSettings` (App)
 
@@ -234,8 +248,8 @@ question 2).
 
 - The fixture decodes and is equal to the defaults; it encodes and decodes to the same value.
 - One test for each error class of §0 item 6, with the exact cause text: unknown key at each of
-  the three levels, unknown version, bad name, duplicate name, bad `idleMinutes`, `enabled` that is
-  not a boolean, a rule with two conditions, `stdioSession: false`, an empty pattern, a rule with an
+  the three levels, unknown version, bad name, duplicate name, bad `idleMinutes`,
+  `"idleMinutes": 10.0`, `enabled` that is not a boolean, `"enabled": 1`, a rule with two conditions, `stdioSession: false`, an empty pattern, a rule with an
   unknown group, not JSON.
 - An edit keeps an extra rule, a `pod` group and the order.
 - A write into a symlink keeps the link and changes the target.
@@ -277,7 +291,10 @@ a missing file gives both toggles off and no file is created; one toggle creates
   }
   ```
 
-  `project` stays as a computed value, so callers that read it do not change.
+  `project` stays as a computed value, so callers that read it do not change. `id` changes: today
+  it is `project ?? "__standalone"`, so each shared group would get the standalone id. The new
+  `id` is `compose:<project>`, `shared:<container id>` or `__standalone`. `ForEach`, the
+  `collapsed` set of `ContainersView` and `withResource(group.id)` use it.
 - `grouped(_:)`:
   1. A shared container makes one `.shared` group. Its containers are the sessions whose
      `sessionContainerID` equals its `id`.
@@ -317,6 +334,7 @@ decoded from Docker API JSON that carries the §3.2 labels:
   container is not a standalone row.
 - Two shared containers of one group give two groups.
 - A session with a missing shared container is standalone.
+- The ids of two shared groups, one compose group and the standalone group are all different.
 - Compose and standalone groups do not change (the existing tests pass unchanged).
 
 `ResourceSearchTests`: the search keeps the kind; a search by session name keeps the group.
@@ -336,6 +354,10 @@ alex-mac:
 
 ### Files
 
+The memory check is CLI-only (`CheckID.cliSet`; it costs one `inspect` per running container, and
+NFR-001 forbids that cost in the app). So F-104 changes `cstack doctor` only. The Doctor view of
+the app does not show the line.
+
 - `Sources/ContainerStackCore/DiagnosticRunner.swift`, `memoryMeasurement`: before it asks each
   container for its memory limit, it removes the sessions from `running`. A shared container stays
   and is counted one time, as each dedicated container. Sessions get no `inspect`, so they cannot
@@ -348,7 +370,7 @@ alex-mac:
 
 ### Acceptance (unit, no runtime)
 
-In `DiagnosticRunnerTests` (fake client): a listing with one shared container (limit 8 GiB), three
+In `DiagnosticRunnerMemoryTests` (fake client): a listing with one shared container (limit 8 GiB), three
 sessions and one dedicated container (limit 2 GiB) gives `configuredBytes` 10 GiB,
 `containersWithoutLimit` 0, no `inspect` for a session, and the line "3 sessions in 1 shared
 containers". A listing with no sessions gives the same text as today (the existing tests pass
@@ -385,6 +407,9 @@ Rule (one rule for all start paths): **after the bridge answers, if `/info` has 
   Without the flag the bridge treats the shared container as a normal container.
 - A failure of one delete does not stop the others. Each result goes to `runtime.log`:
   `Removed shared container <name> left by an earlier bridge.` or `Could not remove … : <error>`.
+- A failed `/info` is not "no label". When `/info` fails or does not decode, the sweep removes
+  nothing and writes one line to `runtime.log`. (`RuntimeState` documents a state where the ping
+  answers and `/info` fails.)
 - It runs one time per bridge start, in a detached task, as `startBuilderIdleMonitor`. It waits
   for the socket with the existing wait helper, with a limit of 60 s.
 
@@ -420,8 +445,18 @@ measurement. No new request on the normal path.
 
 Remedy: `.manual("docker rm -f <names>")`. **[A: no new remedy button in 1.0.0; see question 5.]**
 
-Also: the CLI `cstack doctor` prints the new check. `CheckIDSetsTests` and the CLI output tests
-need the new case.
+The check goes into both sets, `CheckID.uiSet` and `CheckID.cliSet`. It costs no `inspect`: it
+reads the listing and `/info`, which both sets already fetch for `routes` and `versions`. So the
+app's Doctor shows the leftover report and the `/info` cause. The other socket's ping (case 2) is
+the only new request, and only when such a container exists.
+
+Files that the new case touches: `DiagnosticReport.swift` (case, title, both sets),
+`DoctorTextRenderer.swift` (its fixed order list), `DiagnosticRunner.swift` (measurement),
+`DiagnosticRunner+Projection.swift` (projection), `DiagnosticRunner+Verdicts.swift` (it
+names checks by `CheckID`), `DoctorViewModel.swift` (its "all passed" test reads `uiSet`; a `skipped` or
+`indeterminate` shared-runtimes row must not block "all passed" **[A]**). `DoctorView.swift`
+switches over the verdict, not over `CheckID`, so it does not change. Tests:
+`CheckIDSetsTests`, `DoctorTextRendererTests`, `DiagnosticRunnerTests`.
 
 ### Acceptance (unit, no runtime)
 
@@ -470,7 +505,7 @@ Disjoint files in each wave. A wave starts when the waves before it are merged.
   alex-mac needed (list layout, focus, inspector).**
 - **W2-d: Doctor (F-104 and the F-105 check).** `MemoryCommitment.swift`, `DiagnosticRunner.swift`,
   `DiagnosticRunner+Projection.swift`, `DiagnosticRunner+Verdicts.swift`, `DiagnosticReport.swift`,
-  the CLI doctor output, their tests. One worker, because all these files are in one pipeline.
+  `DoctorTextRenderer.swift`, `DoctorViewModel.swift`, their tests. One worker, because all these files are in one pipeline.
   Uses W1-a.
 
 ### Wave 3 (one worker, after W2-a)
@@ -514,6 +549,11 @@ Each wave ends with an independent review of the staged diff and `task test`.
    doc at `524be88` does not have. Recommendation: add the section in the fork (one paragraph:
    SIGTERM while a shared container is being created leaves a stopped container; the next start
    with the flag removes it, F-012; the app removes it at a start without the flag, F-105).
+
+8. **"Reset to Defaults" for a file that does not parse.** Neither the spec nor the design has
+   it. Without it, the user must repair the file in an editor. Recommendation: keep the button,
+   with a confirmation, under the cause text. It is the only exit from a disabled section that does
+   not need an editor.
 
 ### Risks
 

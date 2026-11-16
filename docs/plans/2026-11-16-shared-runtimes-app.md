@@ -11,12 +11,8 @@ Design: the design project "ContainerStack — onboarding". `Settings.dc.html` s
 "Shared Runtimes" as the card of step `shared` and a footer. `cs-data.js` (step `shared`) gives the
 card rows and the text.
 
-Two items of this plan change spec text if the owner accepts them:
-
-- §1 makes the flag conditional. Spec F-101 says "The runtime helper passes `--shared-runtimes`".
-  The new text: "The runtime helper passes `--shared-runtimes` when the file needs it (plan §1)."
-- §7 question 2 removes the per-group idle time and the pattern editor from 1.0.0. Spec F-102 then
-  reads: "enable each group, one idle time for both groups".
+The owner decided the open questions of this plan on 2026-11-16 (§7). The spec v0.4 has the
+decisions in F-101 to F-105 and a "Later" note.
 
 Each assumption has the mark **[A]**.
 
@@ -64,17 +60,18 @@ These facts come from the code. A worker must not change them without a new deci
    `HostConfig.Memory` **[A: the fork doc lists the fields of `inspect` and memory is not one]**.
 10. The app's `DockerInfo` decodes no `Labels` and no `Warnings` today.
 11. No Welcome window and no onboarding code exist in the app. The onboarding step is outside F-101
-    to F-105 (see §7, question 4).
+    to F-105 (see §7, decision 6).
 12. The fork doc at `524be88` has no "Known limits" section. The case that the task names (SIGTERM
     while a shared container is being created leaves a stopped container) is not written in the
     fork. The spec covers it in F-015 and F-012: what the shutdown does not remove, the next start
-    removes. F-105 covers the start without the flag.
+    removes. F-105 covers the start without the flag. The fork doc gets a "Known limits" paragraph
+    (§7, decision 8).
 
 ## 1. F-101: the bridge flag
 
-### Decision (item 3 of the task)
+### Decision (owner, 2026-11-16)
 
-**Recommendation: pass `--shared-runtimes` only when the file needs it.** The rule:
+**The app passes `--shared-runtimes` only when the file needs it.** The rule:
 
 | File state | Flag |
 |---|---|
@@ -101,7 +98,7 @@ The cost of this choice: turning on the first group needs one restart. That rest
 open builds, exec sessions, runner jobs and the sessions of other groups (there are none in this
 case, because no group was on). The other choice, "always pass the flag", needs no restart. It
 makes F-105 dead code in the normal case, and it runs the new code for all users of 1.0.0. The
-owner decides (§7, question 1).
+owner chose "only when needed" (§7, decision 1).
 
 ### Files
 
@@ -185,7 +182,8 @@ Rules:
 8. **Encoding.** Two-space indent, keys in the order of §3.1, one group or rule per line, as the
    default document. Stable output gives a readable diff when the user opens the file. **[A]**
 9. **Reset to Defaults** writes the default document. It shows a confirmation, because it removes
-   the user's hand edits. **[A: the spec and the design do not have this button; §7 question 8.]**
+   the user's hand edits. The button shows only when the file is not valid (spec F-102; §7,
+   decision 5).
 
 ### The `/info` cause
 
@@ -216,7 +214,7 @@ public static func parse(info: DockerInfo) -> SharedRuntimesStatus
 `ContainerResourceSettings`.
 
 - State: `fileState`, `problem: String?`, `bridgeStatus: SharedRuntimesStatus`.
-- `setEnabled(_:group:)`, `setIdleMinutes(_:)` (see question 2), `resetToDefaults()`, `reload()`.
+- `setEnabled(_:group:)`, `setIdleMinutes(_:)` (writes the value to both groups; §7, decision 2), `resetToDefaults()`, `reload()`.
 - `awaitsBridgeRestart`: `SharedRuntimesFlag.needed(fileState) && bridgeStatus == .notRunning`.
   It is true only on the change from "no flag" to "flag".
 - `bridgeProblem: String?`: the cause from `.off(cause:)`, shown under the section.
@@ -228,7 +226,8 @@ In `SystemSettingsView` (`ContainerResourceViews.swift`), one new `Section`, hea
 
 - Toggle `mcp-catalog`, subtitle "Images mcp/*".
 - Toggle `stdio-sessions`, subtitle "Plain docker run -i --rm sessions".
-- Picker "Stop when idle for": Never, 5, 10, 30, 60 minutes.
+- Picker "Stop when idle for": Never, 5, 10, 30, 60 minutes. It writes the value to both groups.
+  When the two groups have different values, it shows "Mixed".
 - Footer: "A matching docker run -i --rm runs in one shared VM. Sessions of one group share one
   container, so they are one trust domain. A run with a TTY, mounts, ports or limits gets its own
   VM." Then "Saved immediately in <path>."
@@ -238,9 +237,8 @@ In `SystemSettingsView` (`ContainerResourceViews.swift`), one new `Section`, hea
 - The existing restart section shows when `awaitsBridgeRestart` of any of the three settings is
   true. Its text gets one more case: "Shared runtimes start after a Docker bridge restart."
 
-The section has no editor for the image pattern. The design has none, and the spec text "one image
-pattern per added group" needs an "add group" control that the design does not have (§7,
-question 2).
+The section has no editor for the image pattern and no "add group" control. An idle time for each
+group and groups with a user pattern are "Later" in the spec (§7, decision 2).
 
 ### Acceptance (unit, no runtime)
 
@@ -313,7 +311,9 @@ a missing file gives both toggles off and no file is created; one toggle creates
 
 - `ContainersView.swift`, `ContainerGroupHeader`: for `.shared`, the title is the group name, the
   subtitle is the container name, and the count is "N sessions". The header has no Up, Down or
-  Restart. See question 3 for Stop and Delete.
+  Restart. It has Stop only: a confirmation names the number of sessions that Stop ends ("Stop
+  <name>? This ends N sessions."). It has no Start and no Delete (§7, decision 3). The bridge
+  removes the container at the idle limit.
 - `ContainerRow`: for a session, only Stop and Logs. No Start, no Delete. The same applies in
   `DashboardView` ("Recent containers" uses `ContainerRow`).
 - `ContainerInspector.swift`:
@@ -335,6 +335,8 @@ decoded from Docker API JSON that carries the §3.2 labels:
 - Two shared containers of one group give two groups.
 - A session with a missing shared container is standalone.
 - The ids of two shared groups, one compose group and the standalone group are all different.
+- The actions of a `.shared` header are Stop only, and the confirmation text names the number of
+  sessions. A session row offers Stop and Logs only.
 - Compose and standalone groups do not change (the existing tests pass unchanged).
 
 `ResourceSearchTests`: the search keeps the kind; a search by session name keeps the group.
@@ -443,7 +445,8 @@ measurement. No new request on the normal path.
    **[A: a live socket of another bridge means that bridge owns it; the check does not look at the
    other bridge's flags.]**
 
-Remedy: `.manual("docker rm -f <names>")`. **[A: no new remedy button in 1.0.0; see question 5.]**
+Remedy: `.manual("docker rm -f <names>")`. Doctor shows the command and has no button for it
+(§7, decision 4).
 
 The check goes into both sets, `CheckID.uiSet` and `CheckID.cliSet`. It costs no `inspect`: it
 reads the listing and `/info`, which both sets already fetch for `routes` and `versions`. So the
@@ -520,40 +523,38 @@ Disjoint files in each wave. A wave starts when the waves before it are merged.
 
 Each wave ends with an independent review of the staged diff and `task test`.
 
-## 7. Risks and owner questions
+## 7. Decisions and risks
 
-### Questions
+### Decisions (owner, 2026-11-16)
 
-1. **The flag: only when needed, or always?** Recommendation: only when needed (§1). It keeps
-   F-014 true for users who do not opt in. The cost is one bridge restart when the first group is
-   turned on.
-2. **Idle time and image patterns.** The design has one "Stop when idle for" popup and no "add
-   group" control. The spec has `idleMinutes` per group and "one image pattern per added group".
-   Recommendation for 1.0.0: follow the design. The popup writes the same value to both groups.
-   When the file has two different values (a hand edit), the popup shows "Mixed" until the user
-   picks a value. No group editor and no pattern editor in 1.0.0; change the F-102 text of the
-   spec to match.
-3. **Actions on the shared container.** The spec does not say what Stop and Delete do on the group
-   row. Stop of a shared container ends all its sessions. Recommendation: the header has Stop with
-   a confirmation that names the number of sessions, and no Delete and no Start. The bridge removes
-   the container at the idle limit.
-4. **The onboarding step.** The design has a step "Shared runtimes", marked "New in 1.0.0". No
-   Welcome window exists in the code. Recommendation: build the step in the onboarding work, after
-   W2-b, with `SharedRuntimeSettings` as its model. Stage 2 does not wait for it.
-5. **Doctor remedy for a leftover container.** Recommendation: a manual remedy (`docker rm -f`)
-   in 1.0.0. A button is a new destructive action in Doctor and needs a design.
-6. **Doctor memory text.** The memory note says that the owner has not decided the Doctor memory
-   text. The spec gives "N sessions in M shared containers". Recommendation: use that text, with
-   the singular for one container (§4).
-7. **"Known limits" in the fork doc.** The task points to a "Known limits" section that the fork
-   doc at `524be88` does not have. Recommendation: add the section in the fork (one paragraph:
+The owner took each recommendation of this plan.
+
+1. **The flag.** The app passes `--shared-runtimes` only when the file has an enabled group, or
+   when the file is not valid (§1). With no enabled group the bridge runs without the flag.
+   Turning on the first group needs one bridge restart; Settings has the button for it.
+2. **Idle time and groups.** 1.0.0 follows the design: two group toggles and one idle time. The
+   popup writes the same value to both groups. When the file has two different values (a hand
+   edit), the popup shows "Mixed" until the user picks a value. An idle time for each group and
+   groups that the user adds with an image pattern are "Later" in the spec. A user who needs them
+   edits the file by hand.
+3. **The shared container row.** It has Stop only, with a confirmation that names the number of
+   sessions that it ends. No Delete and no Start (§3).
+4. **A shared container that no bridge owns.** Doctor shows `docker rm -f <name>`. There is no
+   button (§5).
+5. **A file that is not valid.** Settings shows "Reset to Defaults" with a confirmation (§2,
+   rule 9).
+
+Decisions of the plan review (no owner question):
+
+6. **The onboarding step** goes to the onboarding work. No Welcome window exists in the code. The
+   step "Shared runtimes" ("New in 1.0.0") is built there, after W2-b, with `SharedRuntimeSettings`
+   as its model. Stage 2 does not wait for it.
+7. **The memory line** "N sessions in M shared containers" is in `cstack doctor` only, because the
+   memory check is CLI-only (§4). The text uses the singular for one container.
+8. **"Known limits" in the fork doc.** The fork gets one paragraph in `docs/shared-runtimes.md`:
    SIGTERM while a shared container is being created leaves a stopped container; the next start
-   with the flag removes it, F-012; the app removes it at a start without the flag, F-105).
-
-8. **"Reset to Defaults" for a file that does not parse.** Neither the spec nor the design has
-   it. Without it, the user must repair the file in an editor. Recommendation: keep the button,
-   with a confirmation, under the cause text. It is the only exit from a disabled section that does
-   not need an editor.
+   with the flag removes it (F-012); the app removes it when the bridge runs without the flag
+   (F-105). This is a docs task in the fork, outside the waves of this plan.
 
 ### Risks
 

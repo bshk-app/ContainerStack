@@ -1,7 +1,7 @@
 # Spec: shared runtimes — several sessions in one VM
 
-Version: 0.3 (one design review against socktainer `65e0569`: 12 findings, all taken; both
-groups off by default, owner's decision)
+Version: 0.4 (0.3: one design review against socktainer `65e0569`, 12 findings, all taken; both
+groups off by default. 0.4: owner's decisions of 2026-11-16 on stage 2)
 Date: 2026-11-15
 Source: discussion of 2026-11-15 and two live tests on Apple Container 1.7.1-bshk.1 with
 socktainer `65e0569`. LinuxPod research: 2026-11-12.
@@ -125,20 +125,36 @@ Stage 1 (socktainer):
   `--shared-runtimes`. Without the flag, every request behaves as today. *Acceptance:* a test
   that an eligible `mcp/*` run with no flag creates a dedicated container.
 
-Stage 2 (app), detailed in its own plan:
+Stage 2 (app), detailed in its own plan (`docs/plans/2026-11-16-shared-runtimes-app.md`):
 
-- **[F-101]** The runtime helper passes `--shared-runtimes`.
-- **[F-102]** Settings > Shared Runtimes edits the file: enable, idle time, one image pattern
-  per added group. A file that does not parse disables the controls and shows the cause.
-- **[F-103]** Containers shows a shared container as a group row with its sessions below it;
-  a session has Stop and Logs only; a skipped run shows its reason in the inspector.
+- **[F-101]** The runtime helper passes `--shared-runtimes` only when the file needs it: the file
+  has at least one enabled group of kind `exec`, or the file is not valid (it does not parse, has
+  an unknown version, or cannot be read). Then the bridge shows the cause in `/info`. A missing
+  file, or a valid file with no enabled group, gives no flag. The change from "no flag" to "flag"
+  needs one restart of the bridge; Settings offers "Restart Docker Bridge". Other changes of the
+  file need no restart, because the bridge reads the file again. The CLI `cstack runtime` uses the
+  same rule.
+- **[F-102]** Settings > Shared Runtimes edits the file: one toggle for each of the two default
+  groups (`mcp-catalog`, `stdio-sessions`) and one idle time, which the app writes to both groups.
+  The app changes only these fields and keeps the rest of the file. A file that is not valid
+  disables the controls, shows the cause, and shows "Reset to Defaults". That button asks for a
+  confirmation, then writes the default document (§3.1).
+- **[F-103]** Containers shows a shared container as a group row with its sessions below it.
+  The group row has Stop only; Stop asks for a confirmation that shows how many sessions it ends.
+  The group row has no Start and no Delete. A session has Stop and Logs only. A skipped run shows
+  its reason in the inspector.
 - **[F-104]** Doctor's memory check counts a shared container one time and no sessions, and
-  reports "N sessions in M shared containers".
+  reports "N sessions in M shared containers". The memory check runs in `cstack doctor` only, so
+  this line is not in the Doctor view of the app.
 - **[F-105]** A bridge that starts without `--shared-runtimes` runs no code of the feature
   (F-014), so it does not remove a shared container that an earlier run left (the bridge got
   SIGKILL before its shutdown cleanup). The app removes the containers with its socket in
-  `containerstack.shared.socket` when it starts the bridge without the flag, and Doctor reports
-  a shared container that no bridge owns.
+  `containerstack.shared.socket` when the bridge runs without the flag, and Doctor reports
+  a shared container that no bridge owns. Doctor shows the command `docker rm -f <name>` for it.
+  Doctor has no button for this removal.
+
+Later (not a requirement of 1.0.0): an idle time for each group, and groups that the user adds
+with an image pattern. Until then, a user who needs them edits the file by hand.
 
 ## 3. Design
 
@@ -301,6 +317,9 @@ the runtime, before it asserts anything else.
 - A session shows as a container; the shared container shows too.
 - The project builds the launcher. Each session has its own temporary directory.
 - Rule-selected runs fall back to a dedicated VM; label-selected runs fail.
+- Stage 2 (2026-11-16): the app passes the flag only when the file needs it (F-101), so a user
+  who turns on no group runs no code of the feature. The cost is one bridge restart when the
+  first group is turned on.
 
 ## 7. Delivery
 

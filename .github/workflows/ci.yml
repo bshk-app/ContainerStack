@@ -28,6 +28,19 @@ jobs:
           swift --version
           xcodebuild -version
 
+      # The shell that ships on macOS is bash 3.2, and it is stricter than any
+      # newer one: it tracks quotes through comments inside a command
+      # substitution, so an apostrophe there stops the parser. `#!/usr/bin/env
+      # bash` finds 5.x wherever Homebrew bash exists, and Linux has no 3.2 at
+      # all, so this sweep runs in this macOS job and names /bin/bash.
+      - name: Parse every shell script under the shell macOS ships
+        run: |
+          /bin/bash -c 'echo "bash ${BASH_VERSION}"'
+          for f in scripts/*.sh scripts/hooks/*.sh .githooks/*; do
+            [ -f "$f" ] || continue
+            /bin/bash -n "$f"
+          done
+
       - name: Build every product
         run: |
           swift build --product ContainerStack
@@ -43,15 +56,26 @@ jobs:
     # Style is machine-owned so review can spend itself on behaviour: swift-format
     # holds layout, SwiftLint holds size, complexity and naming. Leaving both on
     # their layout rules made them fight, so .swiftlint.yml delegates those.
-    runs-on: macos-26
+    # Linux, because macOS runners are scarce and no step here needs macOS. The
+    # image pins the toolchain, and with it swift-format: keep it at the Swift
+    # version of the current Xcode.
+    runs-on: ubuntu-latest
+    container: swift:6.4.2-noble
     steps:
       - uses: actions/checkout@v7
         with:
           # The comment gate needs a merge base with the target branch.
           fetch-depth: 0
 
+      # The checkout belongs to another user than the container's root, and git
+      # refuses to work in it for the comment gate.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Formatting
-        run: swift format lint --strict -r -p Sources Tests
+        run: |
+          swift format --version
+          swift format lint --strict -r -p Sources Tests
 
       # Pinned, where this used to be `brew install swiftlint`. An unpinned install
       # means the day the runner image picks up a release that adds a rule, every
@@ -59,9 +83,11 @@ jobs:
       # one number, and the same file tells `task lint` what CI is running.
       - name: Install SwiftLint
         run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends curl ca-certificates
           version="$(tr -d '[:space:]' < .swiftlint-version)"
           curl -fsSL -o swiftlint.zip \
-            "https://github.com/realm/SwiftLint/releases/download/${version}/portable_swiftlint.zip"
+            "https://github.com/realm/SwiftLint/releases/download/${version}/swiftlint_linux_amd64.zip"
           unzip -q swiftlint.zip -d "$RUNNER_TEMP/swiftlint"
           echo "$RUNNER_TEMP/swiftlint" >> "$GITHUB_PATH"
 
@@ -83,19 +109,6 @@ jobs:
 
       - name: Comment gate regression
         run: ./scripts/hooks/test-comment-gate.sh
-
-      # The shell that ships on macOS is bash 3.2, and it is stricter than any
-      # newer one: it tracks quotes through comments inside a command
-      # substitution, so an apostrophe there stops the parser. `#!/usr/bin/env
-      # bash` finds 5.x wherever Homebrew bash exists, and the ubuntu runner has
-      # no 3.2 at all, so this sweep has to run here and name /bin/bash.
-      - name: Parse every shell script under the shell macOS ships
-        run: |
-          /bin/bash -c 'echo "bash ${BASH_VERSION}"'
-          for f in scripts/*.sh scripts/hooks/*.sh .githooks/*; do
-            [ -f "$f" ] || continue
-            /bin/bash -n "$f"
-          done
 
   scripts:
     # The release path itself cannot run here, but its scripts are where this

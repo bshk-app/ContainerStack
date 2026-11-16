@@ -107,6 +107,11 @@ Stage 1 (socktainer):
   for Doctor. socktainer reads the file again at a `create` when its modification time has
   changed. Live sessions keep their container. *Acceptance:* tests for missing, malformed,
   unknown version, and a change between two creates.
+- **[F-015] Cleanup at shutdown.** On SIGTERM or SIGINT the bridge takes no new session and
+  sends a forced delete for each of its shared containers, and waits at most 400 ms (the
+  runtime helper sends SIGKILL 500 ms after SIGTERM). What it does not remove, F-012 removes
+  at the next start with the flag. *Acceptance:* a test that each container gets the delete,
+  that a late join is refused, and that the shutdown returns in its limit; a live check.
 - **[F-012] Cleanup at start.** With `--shared-runtimes`, socktainer removes at start the
   shared containers whose `containerstack.shared.socket` label is its own socket path. This
   cleanup does not depend on `--startup-housekeeping`, and it finishes before the first session
@@ -129,6 +134,11 @@ Stage 2 (app), detailed in its own plan:
   a session has Stop and Logs only; a skipped run shows its reason in the inspector.
 - **[F-104]** Doctor's memory check counts a shared container one time and no sessions, and
   reports "N sessions in M shared containers".
+- **[F-105]** A bridge that starts without `--shared-runtimes` runs no code of the feature
+  (F-014), so it does not remove a shared container that an earlier run left (the bridge got
+  SIGKILL before its shutdown cleanup). The app removes the containers with its socket in
+  `containerstack.shared.socket` when it starts the bridge without the flag, and Doctor reports
+  a shared container that no bridge owns.
 
 ## 3. Design
 

@@ -100,3 +100,24 @@ struct RuntimeProcessConfigurationTests {
         #expect(!RuntimeStatusParser.isRunning("apiserver is not running and not registered with launchd"))
     }
 }
+
+extension RuntimeProcessConfigurationTests {
+    @Test func sharedRuntimeFlagFollowsEveryResolutionPath() {
+        for environment in [[:], ["CONTAINERSTACK_CONTAINER_PATH": "/override"]] {
+            for bundled in [nil, "/bundle"] as [String?] {
+                let base = RuntimeProcessConfiguration.make(
+                    socktainerPath: "/bridge", socketPath: "/test.sock", bundledInstallRoot: bundled,
+                    environment: environment, exists: { _ in true })
+                let shared = RuntimeProcessConfiguration.make(
+                    socktainerPath: "/bridge", socketPath: "/test.sock", bundledInstallRoot: bundled,
+                    sharedRuntimes: true, environment: environment, exists: { _ in true })
+                #expect(shared.socktainerArguments == base.socktainerArguments + ["--shared-runtimes"])
+                #expect(
+                    base.socktainerArguments == [
+                        "--no-check-compatibility", "--no-docker-context", "--socket", "/test.sock",
+                        "--startup-housekeeping",
+                    ])
+            }
+        }
+    }
+}

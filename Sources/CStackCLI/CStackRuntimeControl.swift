@@ -192,7 +192,10 @@ extension CStackCLI {
             socketPath: socketPath ?? RuntimeProcessConfiguration.defaultSocketPath,
             bundledInstallRoot: RuntimeProcessConfiguration.bundledInstallRoot(
                 forExecutableAt: Bundle.main.executableURL
-            )
+            ),
+            sharedRuntimes: SharedRuntimesFlag.needed(
+                for: RuntimeGroupsFile.read(
+                    at: RuntimeGroupsFile.url(home: FileManager.default.homeDirectoryForCurrentUser)))
         )
     }
 

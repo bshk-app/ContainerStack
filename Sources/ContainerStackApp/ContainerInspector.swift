@@ -84,7 +84,7 @@ struct ContainerInspector: View {
                 }
             }
         }
-        .disabled(model.isBusy(container) || !model.canMutate)
+        .disabled(model.isBusy(container) || !model.canMutate || !container.allowsLifecycleAction)
         .confirmDestructive(
             $confirmingStop, title: "Stop \(container.name)?", confirmTitle: "Stop Group",
             message:

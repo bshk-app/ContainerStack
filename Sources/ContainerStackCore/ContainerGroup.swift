@@ -73,6 +73,8 @@ public enum ContainerAction: Equatable, Sendable {
 }
 
 extension DockerContainerSummary {
+    public var allowsLifecycleAction: Bool { (!isSession && !isSharedContainer) || isRunning }
+
     public var rowActions: [ContainerAction] {
         if isSession || isSharedContainer { return [.stop, .logs] }
         return [isRunning ? .stop : .start, .logs, .delete]

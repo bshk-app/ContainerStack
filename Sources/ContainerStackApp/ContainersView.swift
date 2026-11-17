@@ -230,7 +230,7 @@ struct ContainerRow: View {
                 }
                 .disabled(
                     isBusy || !model.canMutate
-                        || ((container.isSession || container.isSharedContainer) && !container.isRunning))
+                        || !container.allowsLifecycleAction)
                 // Reading, so it survives a bridge that cannot be changed through -
                 // which is when someone most wants to see why.
                 RowActionButton(

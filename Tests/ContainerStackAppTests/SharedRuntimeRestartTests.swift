@@ -23,3 +23,24 @@ import Testing
         #expect(!settings.awaitsBridgeRestart)
     }
 }
+
+extension SharedRuntimeRestartTests {
+    @Test func restartMessagesDescribeOnlyThePendingChanges() {
+        let shared = "Shared runtimes start after a Docker bridge restart."
+        let resources = "Saved. New Docker API containers and builds use these values after a Docker bridge restart."
+        #expect(
+            SystemSettingsView.restartMessages(resourcesAwaitRestart: false, sharedRuntimesAwaitRestart: true) == [
+                shared
+            ])
+        #expect(
+            SystemSettingsView.restartMessages(resourcesAwaitRestart: true, sharedRuntimesAwaitRestart: false) == [
+                resources
+            ])
+        #expect(
+            SystemSettingsView.restartMessages(resourcesAwaitRestart: true, sharedRuntimesAwaitRestart: true) == [
+                shared, resources,
+            ])
+        #expect(
+            SystemSettingsView.restartMessages(resourcesAwaitRestart: false, sharedRuntimesAwaitRestart: false).isEmpty)
+    }
+}

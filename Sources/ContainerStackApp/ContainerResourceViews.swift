@@ -111,10 +111,11 @@ struct SystemSettingsView: View {
             SharedRuntimeSettingsSection(settings: sharedRuntimeSettings)
             if awaitsBridgeRestart || restartProblem != nil {
                 Section {
-                    if sharedRuntimeSettings.awaitsBridgeRestart {
-                        Text("Shared runtimes start after a Docker bridge restart.")
-                    }
-                    Text("Saved. New Docker API containers and builds use these values after a Docker bridge restart.")
+                    ForEach(
+                        Self.restartMessages(
+                            resourcesAwaitRestart: settings.awaitsBridgeRestart || builderSettings.awaitsBridgeRestart,
+                            sharedRuntimesAwaitRestart: sharedRuntimeSettings.awaitsBridgeRestart), id: \.self
+                    ) { Text($0) }
                     Text(
                         "Restarting interrupts open builds, exec sessions and runner jobs."
                             + " Running containers keep their size and continue running.")
@@ -150,6 +151,16 @@ struct SystemSettingsView: View {
         .onChange(of: model.isRestarting) { _, restarting in
             if !restarting { reload() }
         }
+    }
+
+    static func restartMessages(resourcesAwaitRestart: Bool, sharedRuntimesAwaitRestart: Bool) -> [String] {
+        var messages: [String] = []
+        if sharedRuntimesAwaitRestart { messages.append("Shared runtimes start after a Docker bridge restart.") }
+        if resourcesAwaitRestart {
+            messages.append(
+                "Saved. New Docker API containers and builds use these values after a Docker bridge restart.")
+        }
+        return messages
     }
 
     private var awaitsBridgeRestart: Bool {

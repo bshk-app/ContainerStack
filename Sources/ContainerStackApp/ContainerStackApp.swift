@@ -12,6 +12,7 @@ struct ContainerStackApp: App {
     @State private var updates = AppUpdates()
     @State private var resourceSettings = ContainerResourceSettings()
     @State private var builderSettings = ContainerResourceSettings(table: .build)
+    @State private var sharedRuntimeSettings = SharedRuntimeSettings()
     @State private var agentSkill = AgentSkillSettings()
 
     var body: some Scene {
@@ -32,6 +33,7 @@ struct ContainerStackApp: App {
                 settings: resourceSettings,
                 builderSettings: builderSettings,
                 agentSkill: agentSkill,
+                sharedRuntimeSettings: sharedRuntimeSettings,
                 model: model
             )
         }

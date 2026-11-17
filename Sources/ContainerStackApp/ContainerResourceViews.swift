@@ -22,6 +22,7 @@ struct SystemSettingsView: View {
     let settings: ContainerResourceSettings
     let builderSettings: ContainerResourceSettings
     let agentSkill: AgentSkillSettings
+    let sharedRuntimeSettings: SharedRuntimeSettings
     let model: RuntimeViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var restartProblem: String?
@@ -107,8 +108,12 @@ struct SystemSettingsView: View {
                         + " through ContainerStack, not with the container CLI. It links to this app, so it"
                         + " changes when the app updates.")
             }
+            SharedRuntimeSettingsSection(settings: sharedRuntimeSettings)
             if awaitsBridgeRestart {
                 Section {
+                    if sharedRuntimeSettings.awaitsBridgeRestart {
+                        Text("Shared runtimes start after a Docker bridge restart.")
+                    }
                     Text("Saved. New Docker API containers and builds use these values after a Docker bridge restart.")
                     Text(
                         "Restarting interrupts open builds, exec sessions and runner jobs."
@@ -135,6 +140,9 @@ struct SystemSettingsView: View {
         .formStyle(.grouped)
         .frame(width: 520, height: 700)
         .onAppear { reload() }
+        .onChange(of: model.snapshot) { _, snapshot in
+            sharedRuntimeSettings.bridgeStatus = snapshot.map { SharedRuntimesStatus.parse(info: $0.info) }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { reload() }
         }
@@ -147,12 +155,14 @@ struct SystemSettingsView: View {
     }
 
     private var awaitsBridgeRestart: Bool {
-        settings.awaitsBridgeRestart || builderSettings.awaitsBridgeRestart
+        settings.awaitsBridgeRestart || builderSettings.awaitsBridgeRestart || sharedRuntimeSettings.awaitsBridgeRestart
     }
 
     private func reload() {
         settings.reload()
         builderSettings.reload()
+        sharedRuntimeSettings.reload()
+        sharedRuntimeSettings.bridgeStatus = model.snapshot.map { SharedRuntimesStatus.parse(info: $0.info) }
         agentSkill.apply()
     }
 

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "groups": [
+    { "name": "mcp-catalog",    "kind": "exec", "idleMinutes": 10, "enabled": false },
+    { "name": "stdio-sessions", "kind": "exec", "idleMinutes": 10, "enabled": false }
+  ],
+  "rules": [
+    { "group": "mcp-catalog",    "image": "mcp/*" },
+    { "group": "stdio-sessions", "stdioSession": true }
+  ]
+}

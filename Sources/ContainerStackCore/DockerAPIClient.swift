@@ -45,6 +45,8 @@ public struct DockerVersion: Codable, Equatable, Sendable {
 }
 
 public struct DockerInfo: Codable, Equatable, Sendable {
+    public var labels: [String]?
+    public var warnings: [String]?
     public let serverVersion: String?
     public let operatingSystem: String?
     public let architecture: String?
@@ -52,6 +54,8 @@ public struct DockerInfo: Codable, Equatable, Sendable {
     public let images: Int?
 
     enum CodingKeys: String, CodingKey {
+        case labels = "Labels"
+        case warnings = "Warnings"
         case serverVersion = "ServerVersion"
         case operatingSystem = "OperatingSystem"
         case architecture = "Architecture"

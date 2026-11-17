@@ -44,4 +44,16 @@ extension SettingsNavigationTests {
         #expect(SystemSettingsView.showsRestartBar(awaitsRestart: true, problem: "Restart failed"))
     }
 
+    @Test func restartBlockReasonNamesEveryPaneThatPreventsRestart() {
+        #expect(SystemSettingsView.restartBlockReason(containerProblem: nil, builderProblem: nil) == nil)
+        #expect(
+            SystemSettingsView.restartBlockReason(containerProblem: "Invalid container config", builderProblem: nil)
+                == "Fix the config file in Containers before restarting.")
+        #expect(
+            SystemSettingsView.restartBlockReason(containerProblem: nil, builderProblem: "Invalid build config")
+                == "Fix the config file in Image Builder > Resources before restarting.")
+        #expect(
+            SystemSettingsView.restartBlockReason(containerProblem: "", builderProblem: "Invalid build config")
+                == "Fix the config file in Containers and Image Builder > Resources before restarting.")
+    }
 }

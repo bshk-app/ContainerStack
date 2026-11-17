@@ -27,8 +27,13 @@ struct SystemSettingsView: View {
                 theme.hairline.frame(width: 1)
                 VStack(alignment: .leading, spacing: 16) {
                     Text(navigation.selection.title).font(.title2.weight(.semibold))
-                    pane
-                    Spacer(minLength: 0)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            pane
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .id(navigation.selection)
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -141,6 +146,11 @@ struct SystemSettingsView: View {
             note(
                 "Restarting interrupts open builds, exec sessions and runner jobs. Running containers keep their size and continue running."
             )
+            if let reason = Self.restartBlockReason(
+                containerProblem: settings.problem, builderProblem: builderSettings.problem)
+            {
+                Text(reason).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
                 if let restartProblem {
                     Text(restartProblem).foregroundStyle(.red).textSelection(.enabled)
@@ -167,6 +177,14 @@ struct SystemSettingsView: View {
 
     private func note(_ text: String) -> some View {
         Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+
+    static func restartBlockReason(containerProblem: String?, builderProblem: String?) -> String? {
+        var panes: [String] = []
+        if containerProblem != nil { panes.append("Containers") }
+        if builderProblem != nil { panes.append("Image Builder > Resources") }
+        guard !panes.isEmpty else { return nil }
+        return "Fix the config file in \(panes.joined(separator: " and ")) before restarting."
     }
 
     static func showsRestartBar(awaitsRestart: Bool, problem: String?) -> Bool {

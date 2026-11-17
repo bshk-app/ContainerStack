@@ -31,9 +31,13 @@ final class SharedRuntimeSettings {
     }
 
     var document: RuntimeGroupsDocument? { fileState.document }
+    var hasEditableGroups: Bool {
+        ["mcp-catalog", "stdio-sessions"].contains { document?.group(named: $0) != nil }
+    }
+
     var idleMinutes: Int? {
         let values = ["mcp-catalog", "stdio-sessions"].compactMap { document?.group(named: $0)?.idleMinutes }
-        guard values.count == 2, Set(values).count == 1 else { return nil }
+        guard Set(values).count == 1 else { return nil }
         return values.first
     }
 

@@ -43,11 +43,12 @@ struct SharedRuntimeSettingsSection: View {
                 selection: Binding(
                     get: { settings.idleMinutes ?? -1 }, set: { settings.setIdleMinutes($0) })
             ) {
-                if settings.idleMinutes == nil { Text("Mixed").tag(-1) }
+                if settings.idleMinutes == nil { Text(settings.hasEditableGroups ? "Mixed" : "No groups").tag(-1) }
                 ForEach([0, 5, 10, 30, 60], id: \.self) { minutes in
                     Text(minutes == 0 ? "Never" : "\(minutes) minutes").tag(minutes)
                 }
             }
+            .disabled(!settings.hasEditableGroups)
         }
     }
 

@@ -7,7 +7,14 @@ final class SharedRuntimeSettings {
     let fileURL: URL
     private(set) var fileState: RuntimeGroupsFile.State = .missing
     private(set) var problem: String?
-    var bridgeStatus: SharedRuntimesStatus?
+    private var restartPending = false
+    var bridgeStatus: SharedRuntimesStatus? {
+        didSet {
+            if let bridgeStatus, bridgeStatus != .notRunning { restartPending = false }
+        }
+    }
+
+    func beginBridgeRestart() { restartPending = awaitsBridgeRestart }
 
     init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         fileURL = RuntimeGroupsFile.url(home: home)
@@ -15,7 +22,7 @@ final class SharedRuntimeSettings {
     }
 
     var awaitsBridgeRestart: Bool {
-        SharedRuntimesFlag.needed(for: fileState) && bridgeStatus == .notRunning
+        SharedRuntimesFlag.needed(for: fileState) && (bridgeStatus == .notRunning || restartPending)
     }
 
     var bridgeProblem: String? {
@@ -32,6 +39,7 @@ final class SharedRuntimeSettings {
 
     func reload() {
         fileState = RuntimeGroupsFile.read(at: fileURL)
+        if !SharedRuntimesFlag.needed(for: fileState) { restartPending = false }
         if case .invalid(let cause) = fileState { problem = cause } else { problem = nil }
     }
 

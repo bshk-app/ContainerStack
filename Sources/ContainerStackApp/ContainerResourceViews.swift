@@ -109,7 +109,7 @@ struct SystemSettingsView: View {
                         + " changes when the app updates.")
             }
             SharedRuntimeSettingsSection(settings: sharedRuntimeSettings)
-            if awaitsBridgeRestart {
+            if awaitsBridgeRestart || restartProblem != nil {
                 Section {
                     if sharedRuntimeSettings.awaitsBridgeRestart {
                         Text("Shared runtimes start after a Docker bridge restart.")
@@ -121,6 +121,7 @@ struct SystemSettingsView: View {
                     Button("Restart Docker Bridge") {
                         Task {
                             restartProblem = nil
+                            sharedRuntimeSettings.beginBridgeRestart()
                             if await model.restartBridge() {
                                 reload()
                             } else {
@@ -148,9 +149,6 @@ struct SystemSettingsView: View {
         }
         .onChange(of: model.isRestarting) { _, restarting in
             if !restarting { reload() }
-        }
-        .onChange(of: awaitsBridgeRestart) { _, awaitsRestart in
-            if !awaitsRestart { restartProblem = nil }
         }
     }
 

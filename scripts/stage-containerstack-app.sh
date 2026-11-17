@@ -96,6 +96,8 @@ fi
 if [[ -d "$swiftpm_bundle" ]]; then
     mkdir -p "$resource_bundle/Contents/Resources"
     ditto "$swiftpm_resources" "$resource_bundle/Contents/Resources"
+    install -m 0644 "$ROOT/VERSION" "$resource_bundle/Contents/Resources/WelcomeVersion.txt"
+    install -m 0644 "$ROOT/CHANGELOG.md" "$resource_bundle/Contents/Resources/WelcomeChangelog.md"
     install -m 0644 "$ROOT/Packaging/ContainerStackResources-Info.plist" \
         "$resource_bundle/Contents/Info.plist"
     # A release build draws a placeholder for a missing icon instead of failing.

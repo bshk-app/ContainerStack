@@ -104,6 +104,18 @@ public struct AgentSkillLinks: Sendable {
         return sources
     }
 
+    public func existingContainerStackSources() -> Set<String> {
+        Set(
+            Self.agents.compactMap { agent in
+                let path = home.appending(path: "\(agent.skills)/\(Self.skillName)").path
+                guard let target = try? FileManager.default.destinationOfSymbolicLink(atPath: path),
+                    target == source.path || ownedSources.contains(target)
+                        || target.hasSuffix(".app/Contents/Resources/AgentSkills/containerstack")
+                else { return nil }
+                return target
+            })
+    }
+
     private func isOwned(_ destination: String) -> Bool {
         destination == source.path || ownedSources.contains(destination)
     }

@@ -7,6 +7,7 @@ struct SystemSettingsView: View {
     let agentSkill: AgentSkillSettings
     let sharedRuntimeSettings: SharedRuntimeSettings
     let model: RuntimeViewModel
+    var commandLine: CommandLineSettings = CommandLineSettings()
     var navigation: SettingsNavigation = .shared
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
@@ -93,7 +94,7 @@ struct SystemSettingsView: View {
         case .sharedRuntimes:
             SharedRuntimeSettingsSection(settings: sharedRuntimeSettings)
         case .codingAgents:
-            CodingAgentsSettingsPane(settings: agentSkill)
+            CodingAgentsSettingsPane(settings: agentSkill, commandLine: commandLine)
         }
     }
 

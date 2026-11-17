@@ -14,12 +14,16 @@ struct ContainerStackApp: App {
     @State private var builderSettings = ContainerResourceSettings(table: .build)
     @State private var sharedRuntimeSettings = SharedRuntimeSettings()
     @State private var agentSkill = AgentSkillSettings()
+    @State private var commandLine = CommandLineSettings()
+    @State private var welcome = WelcomeSession()
 
     var body: some Scene {
         Window("ContainerStack", id: "dashboard") {
             DashboardView(model: model, resourceSettings: resourceSettings)
+                .modifier(OnboardingLaunch(session: welcome))
         }
         .commands {
+            OnboardingCommands()
             // The app menu is where macOS users look for this, and the menu bar
             // extra is the only surface visible when no window is open.
             CommandGroup(after: .appInfo) {
@@ -28,13 +32,29 @@ struct ContainerStackApp: App {
             }
         }
 
+        Window("Welcome to ContainerStack", id: "welcome") {
+            WelcomeWindowContent(
+                session: welcome, model: model, resources: resourceSettings, builder: builderSettings,
+                shared: sharedRuntimeSettings, commandLine: commandLine, skill: agentSkill)
+        }
+        .defaultSize(width: 760, height: 520)
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+
+        Window("What's New in ContainerStack", id: "whats-new") {
+            WhatsNewWindowContent(session: welcome)
+        }
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+
         Settings {
             SystemSettingsView(
                 settings: resourceSettings,
                 builderSettings: builderSettings,
                 agentSkill: agentSkill,
                 sharedRuntimeSettings: sharedRuntimeSettings,
-                model: model
+                model: model,
+                commandLine: commandLine
             )
         }
 

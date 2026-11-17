@@ -33,7 +33,7 @@ struct SharedRuntimeSettingsSection: View {
         }
     }
 
-    private var controls: some View {
+    var controls: some View {
         VStack(alignment: .leading, spacing: 0) {
             groupToggle("mcp-catalog", subtitle: "Images mcp/*")
             groupToggle("stdio-sessions", subtitle: "Plain docker run -i --rm sessions")

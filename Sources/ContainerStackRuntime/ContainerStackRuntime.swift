@@ -182,6 +182,8 @@ struct ContainerStackRuntime {
                 """
             )
         case .removeStaleSocket:
+            let sweep = startSharedContainerSweep(socketPath: configuration.socketPath)
+            defer { sweep.cancel() }
             try? FileManager.default.removeItem(atPath: configuration.socketPath)
             print("Removed stale socket \(configuration.socketPath).")
             startBuilderIdleMonitor(socketPath: configuration.socketPath)
@@ -193,6 +195,8 @@ struct ContainerStackRuntime {
                 timeout: nil
             )
         case .startBridge:
+            let sweep = startSharedContainerSweep(socketPath: configuration.socketPath)
+            defer { sweep.cancel() }
             startBuilderIdleMonitor(socketPath: configuration.socketPath)
             try run(
                 executablePath: configuration.socktainerPath,
@@ -216,8 +220,19 @@ struct ContainerStackRuntime {
         }
     }
 
+    private static func startSharedContainerSweep(socketPath: String) -> Task<Void, Never> {
+        Task.detached {
+            let client = DockerAPIClient(
+                socketPath: socketPath, retryPolicy: DockerRetryPolicy(maxAttempts: 1, delay: .zero))
+            await SharedContainerSweep.waitAndRun(client: client, socketPath: socketPath) { print($0) }
+        }
+    }
+
     private static func watchBuilders(untilExitOf bridge: pid_t?, _ configuration: RuntimeProcessConfiguration) async {
+
         guard let bridge else { return }
+        let sweep = startSharedContainerSweep(socketPath: configuration.socketPath)
+        defer { sweep.cancel() }
         let monitor = startBuilderIdleMonitor(socketPath: configuration.socketPath)
         await ProcessExit.wait(for: bridge)
         monitor.cancel()

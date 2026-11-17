@@ -3,6 +3,35 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.10.0</title>
+            <pubDate>Tue, 17 Nov 2026 06:24:18 +0000</pubDate>
+            <sparkle:version>521</sparkle:version>
+            <sparkle:shortVersionString>0.10.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>The Docker bridge no longer stops when a client writes input to a container whose program has ended. Stop on a stack keeps its containers. A Homebrew install puts <code class="notranslate">cstack</code> in your PATH.</p>
+<h3>Added</h3>
+<ul>
+<li><strong><code class="notranslate">cstack</code> in PATH.</strong> The Homebrew cask links the <code class="notranslate">cstack</code> command into the Homebrew prefix.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>The Docker bridge no longer stops when a client writes input to a container whose program has ended, for example <code class="notranslate">yes | docker run -i --rm busybox head -1</code>. Before, this also ended the output of all other containers.</li>
+<li>Stop on a stack no longer removes its containers and network, so the stack can start again. Remove is a separate action. It removes the containers and the network and keeps the volumes.</li>
+<li><code class="notranslate">docker ps -a</code> shows the exit code of a container that was stopped through the Docker API. Before, it showed <code class="notranslate">Exited (-1)</code>.</li>
+<li><code class="notranslate">docker cp</code> into a container accepts a tar archive whose last file has no padding. Before, the request failed with HTTP 500.</li>
+<li>Kill events in <code class="notranslate">docker events</code> show Linux signal numbers, as Docker does.</li>
+<li>When the runtime helper stops, it also stops the Docker bridge. Before, the bridge continued to run.</li>
+<li>Images and volumes refresh every 60 seconds, so changes made outside the app appear in the lists and on the Overview.</li>
+<li>Images and Run no longer show the images of the runtime.</li>
+<li>After Stop, Start, Restart or Remove, the status message names the action. Before, it said "&lt;name&gt; is ready."</li>
+<li>The inspector keeps your choice after a quick switch between sections.</li>
+<li>The sidebar no longer moves while the inspector opens in a narrow window.</li>
+<li>The note under the default container size names <code class="notranslate">cstack doctor</code> as the place of the memory check.</li>
+</ul>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.10.0/ContainerStack-0.10.0.dmg" length="24351233" type="application/octet-stream" sparkle:edSignature="fxBGci88+JIGgtmbt6dM3XqpQbMvRWE7YdBHVvdG80ksz63UunG/zyOBnsML6xK8vi5OWVTpeVOgMsbsrQ/MAg=="/>
+        </item>
+        <item>
             <title>0.9.0</title>
             <pubDate>Sun, 15 Nov 2026 10:53:45 +0000</pubDate>
             <sparkle:version>495</sparkle:version>
@@ -331,40 +360,6 @@ vmnet helper dies; restarting only the containers does not repair the host route
 The per-container micro-VM architecture also remains slower than OrbStack on the<br>
 measured M1 system (4.6x container round trip, 3.6x bind-mount writes).</p>]]></description>
             <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.5.0/ContainerStack-0.5.0.dmg" length="22550529" type="application/octet-stream" sparkle:edSignature="65Gmq/MEuxGi2TYRFS+QNbDGAf2CYsQ670Qc9w3UGptbvnOrchy9uspxxumqBFBomi6HImhTYznE89bFRDCRDw=="/>
-        </item>
-        <item>
-            <title>0.4.2</title>
-            <pubDate>Wed, 26 Aug 2026 12:49:13 +0000</pubDate>
-            <sparkle:version>167</sparkle:version>
-            <sparkle:shortVersionString>0.4.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<p>ContainerStack now owns a Docker socket separate from a standalone Socktainer<br>
-installation. Upgrading moves the app and its Docker context without stopping or<br>
-removing a bridge you run yourself.</p>
-<h3>Changed</h3>
-<ul>
-<li>The app, <code class="notranslate">cstack</code>, Docker context, and verification tools now use<br>
-<code class="notranslate">~/.containerstack/docker.sock</code> instead of <code class="notranslate">~/.socktainer/container.sock</code>.<br>
-An active <code class="notranslate">containerstack</code> Docker context is refreshed during the upgrade. If<br>
-you set <code class="notranslate">DOCKER_HOST</code> yourself, update it to the new path.</li>
-<li>The bundled bridge explicitly owns startup housekeeping for the shared Apple<br>
-Container runtime. Homebrew cleanup removes only ContainerStack's state and<br>
-no longer treats <code class="notranslate">~/.socktainer</code> as app-owned data.</li>
-</ul>
-<h3>Fixed</h3>
-<ul>
-<li>Upgrading retires the old bundled bridge before starting its replacement. The<br>
-migration matches both the exact helper path inside ContainerStack.app and the<br>
-old argument list, waits for that process to exit, and aborts safely if it<br>
-cannot confirm retirement. A standalone Socktainer process is left running.</li>
-</ul>
-<h3>Known limitations</h3>
-<p>Published ports still require a runtime restart if a bridge-created network's<br>
-vmnet helper dies; restarting only the containers does not repair the host route.<br>
-The per-container micro-VM architecture also remains slower than OrbStack on the<br>
-measured M1 system (4.6x container round trip, 3.6x bind-mount writes).</p>]]></description>
-            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.4.2/ContainerStack-0.4.2.dmg" length="22434733" type="application/octet-stream" sparkle:edSignature="AuHbAI7HPY/Tt1FnJk5tkv+ldwta3Ci/fv6bHIzdZIbUaUoWtGgllIggwlCyGeUeEn8PBDCkRrF8qpqmvK+8DA=="/>
         </item>
     </channel>
 </rss>

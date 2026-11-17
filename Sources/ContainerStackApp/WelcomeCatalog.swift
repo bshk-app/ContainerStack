@@ -13,8 +13,6 @@ struct WelcomeStep: Identifiable, Equatable {
 }
 
 enum WelcomeCatalog {
-    static let steps = makeSteps(cliVersion: WelcomeRelease.version)
-
     private static let existingSteps: [WelcomeStep] = [
         WelcomeStep(
             id: "socket",
@@ -81,12 +79,12 @@ enum WelcomeCatalog {
             alternative: "The runtime status and its actions are at the bottom of the sidebar."),
     ]
 
-    static func makeSteps(cliVersion: String) -> [WelcomeStep] {
+    static let steps: [WelcomeStep] =
         existingSteps + [
             WelcomeStep(
                 id: "cli",
                 short: "Command line",
-                release: cliVersion,
+                release: "0.12.0",
                 title: "Command line and coding agents",
                 body:
                     "The cstack command checks and controls ContainerStack from Terminal. The skill tells Codex and "
@@ -111,5 +109,4 @@ enum WelcomeCatalog {
                 alternative:
                     "Both groups are off by default. A run with a TTY, mounts, ports or limits still gets its own VM."),
         ]
-    }
 }

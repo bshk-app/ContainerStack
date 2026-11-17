@@ -4,7 +4,7 @@ import Testing
 @testable import ContainerStackApp
 
 struct WelcomePolicyTests {
-    private let steps = WelcomeCatalog.makeSteps(cliVersion: "0.12.0")
+    private let steps = WelcomeCatalog.steps
     @Test func firstLaunchShowsAllStepsWithoutNewTags() {
         let policy = WelcomePolicy(currentVersion: "0.12.0", lastVersion: nil)
         #expect(policy.mode == .first)
@@ -21,7 +21,8 @@ struct WelcomePolicyTests {
     }
 
     @Test func minorReleaseWithoutNewStepsDoesNotShowWelcome() {
-        let policy = WelcomePolicy(currentVersion: "0.12.1", lastVersion: "0.12.0", steps: steps)
+        #expect(WelcomeCatalog.steps.first { $0.id == "cli" }?.release == "0.12.0")
+        let policy = WelcomePolicy(currentVersion: "0.12.1", lastVersion: "0.12.0")
         #expect(policy.mode == nil)
         #expect(policy.newSteps.isEmpty)
     }
@@ -42,7 +43,7 @@ struct WelcomePolicyTests {
         let policy = WelcomePolicy(currentVersion: "0.10.0", lastVersion: "0.9.0", steps: steps)
         #expect(!policy.newSteps.contains { $0.id == "shared" })
         #expect(policy.newSteps.isEmpty)
-        #expect(WelcomeCatalog.steps.first { $0.id == "cli" }?.release == WelcomeRelease.version)
+        #expect(WelcomeCatalog.steps.first { $0.id == "cli" }?.release == "0.12.0")
     }
 
     @MainActor @Test func skipRecordsSeenVersion() throws {

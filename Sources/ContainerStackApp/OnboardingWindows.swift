@@ -1,3 +1,4 @@
+import AppKit
 import ContainerStackCore
 import Observation
 import SwiftUI
@@ -84,6 +85,10 @@ struct WelcomeWindowContent: View {
             shared.reload()
             shared.bridgeStatus = model.snapshot.map { SharedRuntimesStatus.parse(info: $0.info) }
             skill.apply()
+        }
+        .onDisappear { session.windowClosed() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            session.windowClosed()
         }
         .onChange(of: model.snapshot) { _, snapshot in
             shared.bridgeStatus = snapshot.map { SharedRuntimesStatus.parse(info: $0.info) }

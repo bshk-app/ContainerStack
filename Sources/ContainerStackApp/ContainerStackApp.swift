@@ -5,17 +5,29 @@ import SwiftUI
 @main
 struct ContainerStackApp: App {
     @NSApplicationDelegateAdaptor(ContainerStackAppDelegate.self) private var appDelegate
-    @State private var model = RuntimeViewModel(
-        dockerContextStore: .live,
-        dockerContextTakeoverPreference: DockerContextTakeoverPreference()
-    )
-    @State private var updates = AppUpdates()
-    @State private var resourceSettings = ContainerResourceSettings()
-    @State private var builderSettings = ContainerResourceSettings(table: .build)
-    @State private var sharedRuntimeSettings = SharedRuntimeSettings()
-    @State private var agentSkill = AgentSkillSettings()
-    @State private var commandLine = CommandLineSettings()
-    @State private var welcome = WelcomeSession()
+    @State private var model: RuntimeViewModel
+    @State private var updates: AppUpdates
+    @State private var resourceSettings: ContainerResourceSettings
+    @State private var builderSettings: ContainerResourceSettings
+    @State private var sharedRuntimeSettings: SharedRuntimeSettings
+    @State private var agentSkill: AgentSkillSettings
+    @State private var commandLine: CommandLineSettings
+    @State private var welcome: WelcomeSession
+
+    init() {
+        let earlierInstall = WelcomeSession.hasEarlierInstall(defaults: .standard, links: .bundled())
+        _welcome = State(initialValue: WelcomeSession(earlierInstall: earlierInstall))
+        _model = State(
+            initialValue: RuntimeViewModel(
+                dockerContextStore: .live,
+                dockerContextTakeoverPreference: DockerContextTakeoverPreference()))
+        _updates = State(initialValue: AppUpdates())
+        _resourceSettings = State(initialValue: ContainerResourceSettings())
+        _builderSettings = State(initialValue: ContainerResourceSettings(table: .build))
+        _sharedRuntimeSettings = State(initialValue: SharedRuntimeSettings())
+        _agentSkill = State(initialValue: AgentSkillSettings())
+        _commandLine = State(initialValue: CommandLineSettings())
+    }
 
     var body: some Scene {
         Window("ContainerStack", id: "dashboard") {

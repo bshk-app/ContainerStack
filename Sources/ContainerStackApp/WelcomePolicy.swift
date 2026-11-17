@@ -1,3 +1,4 @@
+import ContainerStackCore
 import Foundation
 import Observation
 
@@ -77,11 +78,13 @@ final class WelcomeSession {
 
     init(
         defaults: UserDefaults = .standard, version: String = WelcomeRelease.version,
-        steps: [WelcomeStep] = WelcomeCatalog.steps
+        steps: [WelcomeStep] = WelcomeCatalog.steps, earlierInstall: Bool = false
     ) {
         self.defaults = defaults
         policy = WelcomePolicy(
-            currentVersion: version, lastVersion: defaults.string(forKey: Self.lastVersionKey), steps: steps)
+            currentVersion: version,
+            lastVersion: defaults.string(forKey: Self.lastVersionKey) ?? (earlierInstall ? "0.10.0" : nil), steps: steps
+        )
         selectedID = policy.orderedSteps[0].id
     }
 
@@ -98,4 +101,11 @@ final class WelcomeSession {
     }
 
     func finish() { defaults.set(policy.currentVersion, forKey: Self.lastVersionKey) }
+
+    func windowClosed() { finish() }
+
+    static func hasEarlierInstall(defaults: UserDefaults, links: AgentSkillLinks?) -> Bool {
+        defaults.object(forKey: AgentSkillSettings.linkedSourcesKey) != nil
+            || !(links?.existingContainerStackSources().isEmpty ?? true)
+    }
 }

@@ -12,6 +12,28 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.11.0](https://github.com/bshk-app/ContainerStack/compare/v0.10.0...v0.11.0) (2026-11-17)
+
+Shared runtimes: several `docker run -i --rm` sessions of one group can run in one VM, not one VM for each run. Both groups are off by default.
+
+### Added
+
+- **Shared runtimes.** Settings > Shared Runtimes has two groups: `mcp-catalog` (images `mcp/*`) and `stdio-sessions` (any plain `docker run -i --rm`). Turn on a group, then restart the Docker bridge once. Matching runs then start as sessions in one shared VM. See the [guide](https://github.com/bshk-app/ContainerStack/blob/main/docs/shared-runtimes.md).
+- Containers shows a shared VM as a group with its sessions below it. A session has Stop and Logs. The group has Stop, with a confirmation that shows how many sessions end.
+- The inspector tells why a run did not join a group, for example a TTY, a mount or a published port.
+- Doctor shows whether shared runtimes are on. `cstack doctor` counts the sessions and counts the memory of each shared VM once.
+- When the bridge runs without shared runtimes, ContainerStack removes the shared containers that an earlier bridge left.
+
+### Fixed
+
+- `docker events --until` no longer drops events that arrive shortly before the deadline.
+- The DNS server for containers reports the port that it uses. Before, it reported the requested port also when that port was in use.
+
+### Known limitations
+
+- The sessions of one shared container are one trust domain: they run as one user on one writable file system. To keep a run separate, add `--label containerstack.group=none`.
+- Sessions do not support `docker exec` or `docker cp`.
+
 ## [0.10.0](https://github.com/bshk-app/ContainerStack/compare/v0.9.0...v0.10.0) (2026-11-17)
 
 The Docker bridge no longer stops when a client writes input to a container whose program has ended. Stop on a stack keeps its containers. A Homebrew install puts `cstack` in your PATH.

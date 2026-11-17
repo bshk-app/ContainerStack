@@ -35,3 +35,13 @@ struct SettingsNavigationTests {
         #expect(opened == SettingsPane.allCases.count + 1)
     }
 }
+
+extension SettingsNavigationTests {
+    @Test func restartBarStaysVisibleForPendingChangesOrAnError() {
+        #expect(!SystemSettingsView.showsRestartBar(awaitsRestart: false, problem: nil))
+        #expect(SystemSettingsView.showsRestartBar(awaitsRestart: true, problem: nil))
+        #expect(SystemSettingsView.showsRestartBar(awaitsRestart: false, problem: "Restart failed"))
+        #expect(SystemSettingsView.showsRestartBar(awaitsRestart: true, problem: "Restart failed"))
+    }
+
+}

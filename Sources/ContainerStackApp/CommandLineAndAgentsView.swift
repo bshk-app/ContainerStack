@@ -7,6 +7,8 @@ import SwiftUI
 final class CommandLineSettings {
     let command: CStackCommand
     private let path: (() -> String)?
+    private let environment: [String: String]
+    private let runAdministratorScript: @MainActor (String) -> NSDictionary?
     private var loginPath: String?
     private(set) var state: CStackCommand.State = .missing
     private(set) var problem: String?
@@ -15,25 +17,48 @@ final class CommandLineSettings {
     init(
         command: CStackCommand = CStackCommand(
             executable: Bundle.main.bundleURL.appending(path: "Contents/MacOS/cstack")),
-        path: (() -> String)? = nil
+        path: (() -> String)? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        runAdministratorScript: @escaping @MainActor (String) -> NSDictionary? = CommandLineSettings
+            .executeAdministratorScript
     ) {
         self.command = command
         self.path = path
+        self.environment = environment
+        self.runAdministratorScript = runAdministratorScript
         refresh()
     }
 
     private var searchPath: String {
-        path?() ?? loginPath ?? ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        path?() ?? loginPath ?? Self.fallbackPath(environment: environment)
     }
 
-    func refresh() { state = command.state(path: searchPath) }
+    static func fallbackPath(environment: [String: String]) -> String {
+        let current = (environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        let standard = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        return (current + standard.filter { !current.contains($0) }).joined(separator: ":")
+    }
+
+    var installedCommandPath: String { command.resolvedCommand(path: searchPath)?.path ?? command.executable.path }
+
+    var canRemoveCommand: Bool {
+        state == .installed
+            && command.resolvedCommand(path: searchPath)?.standardizedFileURL == command.link.standardizedFileURL
+            && (try? FileManager.default.destinationOfSymbolicLink(atPath: command.link.path)) != nil
+    }
+
+    func refresh() {
+        let newState = command.state(path: searchPath)
+        if newState != state { problem = nil }
+        state = newState
+    }
 
     func refreshFromShell() async {
         guard path == nil else {
             refresh()
             return
         }
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let shell = environment["SHELL"] ?? "/bin/zsh"
         let result = await Task.detached {
             try? ProcessRunner.run(
                 executablePath: shell, arguments: ["-lc", "printf '\\n__CSTACK_PATH__%s\\n' \"$PATH\""],
@@ -62,22 +87,30 @@ final class CommandLineSettings {
                 return
             }
             let shell = try command.shellScript(for: operation)
-            let literal = shell.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-                .replacingOccurrences(of: "\n", with: "\\n")
-                .replacingOccurrences(of: "\r", with: "\\r")
-            var error: NSDictionary?
-            let script = NSAppleScript(source: "do shell script \"\(literal)\" with administrator privileges")
-            guard let script else {
-                problem = "Could not prepare the administrator prompt."
+            if let error = runAdministratorScript(shell) {
+                problem =
+                    (error[NSAppleScript.errorNumber] as? Int) == -128
+                    ? nil : error[NSAppleScript.errorMessage] as? String ?? "The command link was not changed."
                 return
             }
-            script.executeAndReturnError(&error)
-            problem = error.map { $0[NSAppleScript.errorMessage] as? String ?? "The command link was not changed." }
-            if problem == nil, operation != .remove, command.state(path: searchPath) == .missing {
+            problem = nil
+            if operation != .remove, command.state(path: searchPath) == .missing {
                 problem = "Installed at /usr/local/bin/cstack. Add /usr/local/bin to your PATH to use it."
             }
         } catch { problem = error.localizedDescription }
+    }
+
+    private static func executeAdministratorScript(_ shell: String) -> NSDictionary? {
+        let literal = shell.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        guard let script = NSAppleScript(source: "do shell script \"\(literal)\" with administrator privileges") else {
+            return [NSAppleScript.errorMessage: "Could not prepare the administrator prompt."]
+        }
+        var error: NSDictionary?
+        script.executeAndReturnError(&error)
+        return error
     }
 }
 
@@ -146,7 +179,7 @@ struct CommandLineAndAgentsView: View {
     private var statusText: String {
         switch commandLine.state {
         case .missing: "Not in PATH. Install links /usr/local/bin/cstack to this app."
-        case .installed: "/usr/local/bin/cstack → this app"
+        case .installed: "\(commandLine.installedCommandPath) → this app"
         case .homebrew:
             commandLine.command.homebrewLink.resolvingSymlinksInPath()
                 == commandLine.command.executable.resolvingSymlinksInPath()
@@ -161,7 +194,9 @@ struct CommandLineAndAgentsView: View {
         case .missing:
             Button("Install…") { commandLine.perform(.install) }.buttonStyle(.borderedProminent)
         case .installed:
-            Button("Remove") { commandLine.perform(.remove) }
+            if commandLine.canRemoveCommand {
+                Button("Remove") { commandLine.perform(.remove) }
+            }
         case .homebrew:
             EmptyView()
         case .other:

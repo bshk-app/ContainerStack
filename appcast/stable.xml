@@ -3,6 +3,34 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.11.0</title>
+            <pubDate>Tue, 17 Nov 2026 13:22:43 +0000</pubDate>
+            <sparkle:version>559</sparkle:version>
+            <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>Shared runtimes: several <code class="notranslate">docker run -i --rm</code> sessions of one group can run in one VM, not one VM for each run. Both groups are off by default.</p>
+<h3>Added</h3>
+<ul>
+<li><strong>Shared runtimes.</strong> Settings &gt; Shared Runtimes has two groups: <code class="notranslate">mcp-catalog</code> (images <code class="notranslate">mcp/*</code>) and <code class="notranslate">stdio-sessions</code> (any plain <code class="notranslate">docker run -i --rm</code>). Turn on a group, then restart the Docker bridge once. Matching runs then start as sessions in one shared VM. See the <a href="https://github.com/bshk-app/ContainerStack/blob/main/docs/shared-runtimes.md">guide</a>.</li>
+<li>Containers shows a shared VM as a group with its sessions below it. A session has Stop and Logs. The group has Stop, with a confirmation that shows how many sessions end.</li>
+<li>The inspector tells why a run did not join a group, for example a TTY, a mount or a published port.</li>
+<li>Doctor shows whether shared runtimes are on. <code class="notranslate">cstack doctor</code> counts the sessions and counts the memory of each shared VM once.</li>
+<li>When the bridge runs without shared runtimes, ContainerStack removes the shared containers that an earlier bridge left.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li><code class="notranslate">docker events --until</code> no longer drops events that arrive shortly before the deadline.</li>
+<li>The DNS server for containers reports the port that it uses. Before, it reported the requested port also when that port was in use.</li>
+</ul>
+<h3>Known limitations</h3>
+<ul>
+<li>The sessions of one shared container are one trust domain: they run as one user on one writable file system. To keep a run separate, add <code class="notranslate">--label containerstack.group=none</code>.</li>
+<li>Sessions do not support <code class="notranslate">docker exec</code> or <code class="notranslate">docker cp</code>.</li>
+</ul>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.11.0/ContainerStack-0.11.0.dmg" length="24607840" type="application/octet-stream" sparkle:edSignature="K99nO4NU4QjqdIEiCgLE6FK3+XWrH+cStHLlESUUxY37n1hOhbpvHKMS+usRJ78o6L9JJT8BHmr2QYyzaVVdCw=="/>
+        </item>
+        <item>
             <title>0.10.0</title>
             <pubDate>Tue, 17 Nov 2026 06:24:18 +0000</pubDate>
             <sparkle:version>521</sparkle:version>
@@ -318,48 +346,6 @@ helper dies; restarting only the containers does not repair the host route.</p>
 <p>Style gates — swift-format, SwiftLint and the comment-length hook — and the CI wiring<br>
 that runs them on every pull request. No user-visible change.</p>]]></description>
             <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.5.1/ContainerStack-0.5.1.dmg" length="22485713" type="application/octet-stream" sparkle:edSignature="rMNE4Ue4kR//GMJmrHYCdUnbKcVO4QTaardhMKPUMMFXLXSWTbt8LVnAxXWQuZtmETCTbYT317bQQvbdhfbSDA=="/>
-        </item>
-        <item>
-            <title>0.5.0</title>
-            <pubDate>Thu, 27 Aug 2026 16:33:09 +0000</pubDate>
-            <sparkle:version>174</sparkle:version>
-            <sparkle:shortVersionString>0.5.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<p>Containers can be sized now, and a stop that loses the runtime's XPC service no<br>
-longer hangs the app with no way out.</p>
-<h3>Added</h3>
-<ul>
-<li>Global CPU and memory defaults in Settings, clamped to this Mac's capacity,<br>
-and per-container overrides in the image Run dialog. Apple Container gives<br>
-every container its own VM, and until now each one got the runtime's built-in<br>
-4 CPUs and 1 GiB. The values travel as Docker's <code class="notranslate">HostConfig.Memory</code> and<br>
-<code class="notranslate">HostConfig.NanoCpus</code>. Fractional CPUs are deliberately not offered: the<br>
-bridge floors them to whole vCPUs, so 0.5 would silently become 1. <code class="notranslate">cstack</code><br>
-keeps its previous behaviour and passes no limits.</li>
-</ul>
-<h3>Fixed</h3>
-<ul>
-<li>Stopping a container no longer hangs on "Stopping…" indefinitely. Measured<br>
-cause: Apple Container's API server had lost its XPC service, so both stop and<br>
-kill answered HTTP 500 "XPC connection error: Connection interrupted" and<br>
-every later ping answered "Connection invalid", while the app waited out the<br>
-full lifecycle timeout. Stop now pins the daemon's grace window at five<br>
-seconds, bounds its own wait, and treats 304 and 404 as the requested end<br>
-state rather than a failure.</li>
-<li>A lost connection is repaired once instead of repeatedly. The health monitor<br>
-is the only owner of restarts and first proves the API server is really gone<br>
-with <code class="notranslate">container system status</code>, so a single transient ping timeout can no<br>
-longer cycle a stack that is serving traffic. A recovery that fails ends the<br>
-startup window, so the manual restart stays available instead of the sidebar<br>
-sitting in a starting state with nothing to click.</li>
-</ul>
-<h3>Known limitations</h3>
-<p>Published ports still require a runtime restart if a bridge-created network's<br>
-vmnet helper dies; restarting only the containers does not repair the host route.<br>
-The per-container micro-VM architecture also remains slower than OrbStack on the<br>
-measured M1 system (4.6x container round trip, 3.6x bind-mount writes).</p>]]></description>
-            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.5.0/ContainerStack-0.5.0.dmg" length="22550529" type="application/octet-stream" sparkle:edSignature="65Gmq/MEuxGi2TYRFS+QNbDGAf2CYsQ670Qc9w3UGptbvnOrchy9uspxxumqBFBomi6HImhTYznE89bFRDCRDw=="/>
         </item>
     </channel>
 </rss>

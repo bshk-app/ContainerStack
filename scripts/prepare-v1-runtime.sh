@@ -30,7 +30,7 @@ readonly DATA_ROOT_FALLBACK="${HOME}/Library/Application Support/com.apple.conta
 #     port — exactly what adding a second port produces.
 # Unpin only once every one of them is upstream.
 readonly SOCKTAINER_REPO_URL="https://github.com/beshkenadze/socktainer.git"
-readonly SOCKTAINER_REV="688d72c6c4fcc5394cc34d083e9f4dfd4b26a2b9"
+readonly SOCKTAINER_REV="166bbd50a588b424517d671cf2c88b3477079886"
 readonly SOCKTAINER_SOURCE_ROOT="${HOME}/Library/Application Support/ContainerStack/socktainer"
 readonly SOCKTAINER_BIN_DIR="${HOME}/.local/bin"
 readonly SOCKTAINER_BIN="${SOCKTAINER_BIN_DIR}/socktainer"

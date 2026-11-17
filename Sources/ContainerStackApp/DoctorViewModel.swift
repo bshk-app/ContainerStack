@@ -224,7 +224,11 @@ final class DoctorViewModel {
         }
         guard inFlightGeneration == generation else { return }
         self.report = report
-        if CheckID.uiSet.allSatisfy({ report.check($0)?.verdict == .ok }) {
+        if CheckID.uiSet.allSatisfy({ id in
+            let verdict = report.check(id)?.verdict
+            return verdict == .ok || (id == .sharedRuntimes && (verdict == .skipped || verdict == .indeterminate))
+        }) {
+
             repairFailure = nil
         }
     }

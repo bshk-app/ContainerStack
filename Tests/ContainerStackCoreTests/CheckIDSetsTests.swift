@@ -9,10 +9,12 @@ struct CheckIDSetsTests {
     @Test("both sets are pinned literally, per F-002")
     func theTwoCheckSetsAreExactlyThese() {
         #expect(
-            CheckID.cliSet == [.appRoot, .socket, .versions, .routes, .foreignBridge, .memoryCommitment]
+            CheckID.cliSet == [
+                .appRoot, .socket, .versions, .routes, .foreignBridge, .memoryCommitment, .sharedRuntimes,
+            ]
         )
         #expect(
-            CheckID.uiSet == [.appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext]
+            CheckID.uiSet == [.appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext, .sharedRuntimes]
         )
     }
 

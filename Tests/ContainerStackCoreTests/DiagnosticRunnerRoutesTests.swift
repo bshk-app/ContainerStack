@@ -51,7 +51,7 @@ struct DiagnosticRunnerRoutesTests {
             "/_ping": .success(jsonResponse("OK")),
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(#"{"Containers":1,"Images":1}"#)),
-            "/containers/json": .success(jsonResponse(containers)),
+            "/containers/json?all=1": .success(jsonResponse(containers)),
             "/networks": networks,
         ])
     }
@@ -247,7 +247,7 @@ struct DiagnosticRunnerRoutesTests {
     func theRoutesCheckAsksEachEndpointOnce() async {
         let transport = runtime(containers: publishingContainers, networks: .success(jsonResponse(networksWithSubnet)))
         _ = await makeRunner(routingTable: .output(routedTable), transport: transport).run(checks: [.routes])
-        #expect(await transport.paths.filter { $0 == "/containers/json" }.count == 1)
+        #expect(await transport.paths.filter { $0 == "/containers/json?all=1" }.count == 1)
         #expect(await transport.paths.filter { $0 == "/networks" }.count == 1)
     }
 

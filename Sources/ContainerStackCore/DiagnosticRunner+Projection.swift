@@ -75,7 +75,14 @@ extension DiagnosticRunner {
         ranked: [UnroutableNetwork]
     ) -> DiagnosticCheck {
         let took = signals.duration(of: id)
-        if id == .appRoot { return appRootCheck(signals.appRoot, took: took) }
+        if id == .sharedRuntimes {
+            return signals.sharedRuntimes
+                ?? indeterminate(
+                    id, summary: "Shared runtimes: could not check", detail: budgetExpired, took: took)
+        }
+        if id == .appRoot {
+            return appRootCheck(signals.appRoot, took: took)
+        }
         // F-003: the bytes `cstack doctor` prints today (`CStackCommands.swift:32`).
         if id == .socket { return passed(id, summary: Self.socketHealthy, detail: nil, took: took) }
         if id == .versions { return versionsCheck(signals.versions, took: took) }
@@ -217,6 +224,12 @@ extension DiagnosticRunner {
         builderUnlisted: Bool
     ) -> [String] {
         var lines: [String] = []
+        if commitment.sessions > 0 {
+            lines.append(
+                "\(commitment.sessions) sessions in \(commitment.sharedContainers) shared "
+                    + (commitment.sharedContainers == 1 ? "container" : "containers"))
+        }
+
         if commitment.builderBytes > 0 {
             lines.append(
                 "\(ByteSize.formatted(commitment.builderBytes)) of that is the image builder."

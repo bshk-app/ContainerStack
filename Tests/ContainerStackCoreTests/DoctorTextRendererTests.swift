@@ -75,7 +75,7 @@ struct DoctorTextRendererTests {
             "/_ping": .success(jsonResponse("OK")),
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(info)),
-            "/containers/json": containers,
+            "/containers/json?all=1": containers,
             DockerAPIClient.runningBuildersPath: .success(jsonResponse("[]")),
             "/networks": networks,
         ]
@@ -150,6 +150,7 @@ struct DoctorTextRendererTests {
                 Images: 0
                 Runtime storage: \(root.path)
                 Container routes: no running container publishes ports
+                Shared runtimes: off
                 Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory
                 """
         )
@@ -198,6 +199,7 @@ struct DoctorTextRendererTests {
                 Container routes: NO ROUTE to compose_default (192.168.64.0/24)
                 Published ports accept connections and then hang.
                 Restarting the containers does not fix it. Run: cstack runtime restart
+                Shared runtimes: off
                 Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory
                 """
         )
@@ -242,6 +244,7 @@ struct DoctorTextRendererTests {
                 Runtime storage: UNKNOWN — the runtime status could not be read.
                 \(probeFailure)
                 Container routes: no running containers to check
+                Shared runtimes: off
                 Container memory limits: no running containers to check
                 """
         )
@@ -283,6 +286,7 @@ struct DoctorTextRendererTests {
                 Images: 0
                 Container routes: UNKNOWN — the Docker API did not answer.
                 The connection to the Docker socket timed out.
+                Shared runtimes: off
                 Container memory limits: no running containers to check
                 """
         )
@@ -307,6 +311,7 @@ struct DoctorTextRendererTests {
                 Images: 0
                 Container routes: UNKNOWN — the Docker API did not answer.
                 The Docker API sent a response whose headers never ended.
+                Shared runtimes: off
                 Container memory limits: no running containers to check
                 """
         )
@@ -326,6 +331,7 @@ struct DoctorTextRendererTests {
                 Containers: 0
                 Images: 0
                 Container routes: no running containers to check
+                Shared runtimes: off
                 Container memory limits: no running containers to check
                 """
         )
@@ -351,6 +357,8 @@ struct DoctorTextRendererTests {
                 Images: 0
                 Container routes: UNKNOWN — the Docker API did not answer.
                 The connection to the Docker socket timed out.
+                Shared runtimes: could not check
+                The Docker API did not answer.
                 Container memory limits: UNKNOWN — the Docker API did not answer.
                 The connection to the Docker socket timed out.
                 """
@@ -390,6 +398,7 @@ struct DoctorTextRendererTests {
                 Images: 1
                 Container routes: reachable (compose_default (192.168.64.0/24))
                 Container routes: cannot check legacy_default — no subnet reported
+                Shared runtimes: off
                 Container memory limits: 4.0 GB in configured container limits vs 16.0 GB host memory
                 """
         )
@@ -401,7 +410,7 @@ struct DoctorTextRendererTests {
     func thePrintOrderIsPinnedApartFromPrecedence() {
         #expect(
             DoctorTextRenderer.printOrder == [
-                .foreignBridge, .socket, .versions, .appRoot, .routes, .dockerContext,
+                .foreignBridge, .socket, .versions, .appRoot, .routes, .dockerContext, .sharedRuntimes,
                 .memoryCommitment,
             ]
         )
@@ -471,6 +480,7 @@ struct DoctorTextRendererTests {
                 Containers: 2
                 Images: 0
                 Container routes: no running container publishes ports
+                Shared runtimes: off
                 Container memory limits: HIGH — 14.0 GB in configured container limits vs 16.0 GB host memory
                 Guests do not reserve every byte immediately, but host use can grow toward these limits.
                 \(advice)

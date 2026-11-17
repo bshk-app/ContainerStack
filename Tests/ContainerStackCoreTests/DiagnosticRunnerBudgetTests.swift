@@ -67,7 +67,7 @@ private func idleRuntime() -> StubDockerTransport {
         "/_ping": .success(jsonResponse("OK")),
         "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
         "/info": .success(jsonResponse(#"{"Containers":0,"Images":0}"#)),
-        "/containers/json": .success(jsonResponse("[]")),
+        "/containers/json?all=1": .success(jsonResponse("[]")),
         "/networks": .success(jsonResponse("[]")),
     ])
 }
@@ -79,7 +79,7 @@ private func publishingRuntime() -> StubDockerTransport {
         "/_ping": .success(jsonResponse("OK")),
         "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
         "/info": .success(jsonResponse(#"{"Containers":1,"Images":1}"#)),
-        "/containers/json": .success(
+        "/containers/json?all=1": .success(
             jsonResponse(
                 """
                 [{"Id":"c1","Names":["/web"],"State":"running",
@@ -312,7 +312,7 @@ struct DiagnosticRunnerDurationTests {
                         "/_ping": (jsonResponse("OK"), .seconds(1)),
                         "/version": (jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#), .seconds(2)),
                         "/info": (jsonResponse(#"{"Containers":0,"Images":0}"#), .seconds(4)),
-                        "/containers/json": (jsonResponse("[]"), .seconds(8)),
+                        "/containers/json?all=1": (jsonResponse("[]"), .seconds(8)),
                         "/networks": (jsonResponse("[]"), .seconds(16)),
                     ],
                     clock: clock

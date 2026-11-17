@@ -12,6 +12,29 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.10.0](https://github.com/bshk-app/ContainerStack/compare/v0.9.0...v0.10.0) (2026-11-17)
+
+The Docker bridge no longer stops when a client writes input to a container whose program has ended. Stop on a stack keeps its containers. A Homebrew install puts `cstack` in your PATH.
+
+### Added
+
+- **`cstack` in PATH.** The Homebrew cask links the `cstack` command into the Homebrew prefix.
+
+### Fixed
+
+- The Docker bridge no longer stops when a client writes input to a container whose program has ended, for example `yes | docker run -i --rm busybox head -1`. Before, this also ended the output of all other containers.
+- Stop on a stack no longer removes its containers and network, so the stack can start again. Remove is a separate action. It removes the containers and the network and keeps the volumes.
+- `docker ps -a` shows the exit code of a container that was stopped through the Docker API. Before, it showed `Exited (-1)`.
+- `docker cp` into a container accepts a tar archive whose last file has no padding. Before, the request failed with HTTP 500.
+- Kill events in `docker events` show Linux signal numbers, as Docker does.
+- When the runtime helper stops, it also stops the Docker bridge. Before, the bridge continued to run.
+- Images and volumes refresh every 60 seconds, so changes made outside the app appear in the lists and on the Overview.
+- Images and Run no longer show the images of the runtime.
+- After Stop, Start, Restart or Remove, the status message names the action. Before, it said "\<name\> is ready."
+- The inspector keeps your choice after a quick switch between sections.
+- The sidebar no longer moves while the inspector opens in a narrow window.
+- The note under the default container size names `cstack doctor` as the place of the memory check.
+
 ## [0.9.0](https://github.com/bshk-app/ContainerStack/compare/v0.8.2...v0.9.0) (2026-11-15)
 
 ContainerStack now runs on Apple Container 1.7.1. Settings has the default CPUs and memory of containers and of the image builder, and builders stop when they are idle.

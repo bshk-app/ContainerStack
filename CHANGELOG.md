@@ -12,35 +12,28 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
-## [0.10.0](https://github.com/bshk-app/ContainerStack/compare/v0.9.0...v0.10.0) (2026-11-16)
+## [0.10.0](https://github.com/bshk-app/ContainerStack/compare/v0.9.0...v0.10.0) (2026-11-17)
 
+The Docker bridge no longer stops when a client writes input to a container whose program has ended. Stop on a stack keeps its containers. A Homebrew install puts `cstack` in your PATH.
 
 ### Added
 
-* **cask:** link the cstack command into the Homebrew prefix ([46b4374](https://github.com/bshk-app/ContainerStack/commit/46b4374ef1865d781d24b1fb86ea1d1f9a54a9aa))
-* **cask:** link the cstack command into the Homebrew prefix ([d145782](https://github.com/bshk-app/ContainerStack/commit/d145782aef86ddbd28df7777b8f4531d3306ad5c))
-
+- **`cstack` in PATH.** The Homebrew cask links the `cstack` command into the Homebrew prefix.
 
 ### Fixed
 
-* **app:** hide runtime images from inventory ([b91a7fb](https://github.com/bshk-app/ContainerStack/commit/b91a7fb33088e711ea8e99efaaed237986e55edf))
-* **app:** keep the inspector choice after a quick return to a section ([6ebdd08](https://github.com/bshk-app/ContainerStack/commit/6ebdd08e1a64105f74f3ac054b87dfaf90488a19))
-* **app:** keep the inspector choice and report the container action that ran ([37c2b7f](https://github.com/bshk-app/ContainerStack/commit/37c2b7f74f1a52e4f29866bc333f70eccda9a766))
-* **app:** keep the sidebar in place while the inspector opens ([1821959](https://github.com/bshk-app/ContainerStack/commit/1821959793ad7d3653417e22c17748f836ee6a08))
-* **app:** keep the sidebar in place while the inspector opens ([de80dc8](https://github.com/bshk-app/ContainerStack/commit/de80dc8641bc93802894e8a5cb587ef8d60a0500))
-* **app:** name cstack doctor as the source of the memory warning ([4076195](https://github.com/bshk-app/ContainerStack/commit/4076195a79c721d85d371248dafbce91b50f932e))
-* **app:** name cstack doctor as the source of the memory warning ([9d737e8](https://github.com/bshk-app/ContainerStack/commit/9d737e850cd7c9c23d20468a356a0b17638185e8))
-* **app:** refresh inventory on a slower poll cadence ([5456df2](https://github.com/bshk-app/ContainerStack/commit/5456df24387d454ca857753a44b6c9490d943c79))
-* **app:** report the container action that ran ([bb1b6ca](https://github.com/bshk-app/ContainerStack/commit/bb1b6ca268b82e0436044ce209a105bf03ce6af9))
-* **app:** update inventory with low-cost polling and hide runtime images ([09c540a](https://github.com/bshk-app/ContainerStack/commit/09c540a20de2601076926961c1e9481b6c1193a3))
-* **runtime:** pin socktainer that keeps stop exit codes and accepts short tar uploads ([f3a7d47](https://github.com/bshk-app/ContainerStack/commit/f3a7d47a4d35d056f258c35f52ecdf5817155cb1))
-* **runtime:** pin socktainer that keeps stop exit codes and accepts short tar uploads ([5a673fc](https://github.com/bshk-app/ContainerStack/commit/5a673fc5ba0f9a33736d6c69ac9c93cf41b26ee3))
-* **runtime:** pin socktainer that survives a closed stdin and has shared runtime groups ([7961dea](https://github.com/bshk-app/ContainerStack/commit/7961deabd9a807cd958ce2a8d46a275d713d6247))
-* **runtime:** pin socktainer that survives a closed stdin and has shared runtime groups ([49b8d6a](https://github.com/bshk-app/ContainerStack/commit/49b8d6aef0a01d89b2329e864b9b8fc7ec5b6759))
-* **runtime:** stop the supervised bridge when the helper exits ([e183159](https://github.com/bshk-app/ContainerStack/commit/e1831596f986e6191566eea3769780288c3e3f5b))
-* **runtime:** stop the supervised bridge when the helper exits ([1abf118](https://github.com/bshk-app/ContainerStack/commit/1abf11812aa4908b7a8f2fd45ed567a7be56197f))
-* **stacks:** keep services when a stack is stopped ([49528ec](https://github.com/bshk-app/ContainerStack/commit/49528ec2f3ff3b404e70bd5f486b2d398f37b577))
-* **stacks:** keep services when a stack is stopped ([3e3fd46](https://github.com/bshk-app/ContainerStack/commit/3e3fd46ba4c485824b771c03051a6d2efa54a8df))
+- The Docker bridge no longer stops when a client writes input to a container whose program has ended, for example `yes | docker run -i --rm busybox head -1`. Before, this also ended the output of all other containers.
+- Stop on a stack no longer removes its containers and network, so the stack can start again. Remove is a separate action. It removes the containers and the network and keeps the volumes.
+- `docker ps -a` shows the exit code of a container that was stopped through the Docker API. Before, it showed `Exited (-1)`.
+- `docker cp` into a container accepts a tar archive whose last file has no padding. Before, the request failed with HTTP 500.
+- Kill events in `docker events` show Linux signal numbers, as Docker does.
+- When the runtime helper stops, it also stops the Docker bridge. Before, the bridge continued to run.
+- Images and volumes refresh every 60 seconds, so changes made outside the app appear in the lists and on the Overview.
+- Images and Run no longer show the images of the runtime.
+- After Stop, Start, Restart or Remove, the status message names the action. Before, it said "\<name\> is ready."
+- The inspector keeps your choice after a quick switch between sections.
+- The sidebar no longer moves while the inspector opens in a narrow window.
+- The note under the default container size names `cstack doctor` as the place of the memory check.
 
 ## [0.9.0](https://github.com/bshk-app/ContainerStack/compare/v0.8.2...v0.9.0) (2026-11-15)
 

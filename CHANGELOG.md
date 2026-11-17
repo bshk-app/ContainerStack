@@ -12,6 +12,36 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.11.0](https://github.com/bshk-app/ContainerStack/compare/v0.10.0...v0.11.0) (2026-11-17)
+
+
+### Added
+
+* add shared runtime controls and session groups ([5651a2b](https://github.com/bshk-app/ContainerStack/commit/5651a2bed2899b8cc7a0bb650deed9e9dd85ccb7))
+* add shared runtime file and API models ([13af9ba](https://github.com/bshk-app/ContainerStack/commit/13af9bad71fa41377872a3ad7aedd9cd1b3245cf))
+* add shared runtime settings ([32a42bc](https://github.com/bshk-app/ContainerStack/commit/32a42bc645ab37b44ae3e14cf6fef5670f6e5d58))
+* explain why a run needs its own VM ([77b9a71](https://github.com/bshk-app/ContainerStack/commit/77b9a71bfdfae4cdb3df426de0c6229f17fe30ed))
+* pass the shared runtime flag when the file needs it ([ddbee58](https://github.com/bshk-app/ContainerStack/commit/ddbee583333c43ce2406c0b3802632180c5d7cbd))
+* read and edit the shared runtime file ([ab94cbe](https://github.com/bshk-app/ContainerStack/commit/ab94cbed76bf80aa75d57b395e24d528706b654f))
+* read shared runtime status and container labels ([2879349](https://github.com/bshk-app/ContainerStack/commit/2879349c2217c0f825b74ca1b3db41cd32d31483))
+* remove shared containers left by a bridge without the flag ([28f8f1c](https://github.com/bshk-app/ContainerStack/commit/28f8f1c507f593ff1a74792aec96630490c0ffe1))
+* remove shared containers left by an earlier bridge ([5909087](https://github.com/bshk-app/ContainerStack/commit/59090871a580b58aa963b02d08abfc8608a76ca1))
+* report shared runtime status and memory in doctor ([3cbdb4a](https://github.com/bshk-app/ContainerStack/commit/3cbdb4a5e50e4e66a1fe6fa0a11f9c9cf79a3d1c))
+* show shared containers as groups of sessions ([f32b147](https://github.com/bshk-app/ContainerStack/commit/f32b1473ca5acc76d89e58ff7848d7668984a171))
+
+
+### Fixed
+
+* disable stop for shared resources that are not running ([f1ae04b](https://github.com/bshk-app/ContainerStack/commit/f1ae04bdc2f2995f10c94f67e3f784ac907f2d5b))
+* keep shared runtime links and report failed edits ([c9cb3c2](https://github.com/bshk-app/ContainerStack/commit/c9cb3c2bbaef9873941940d05af8db882fb07981))
+* keep shared runtime restart errors visible ([cb5ef5f](https://github.com/bshk-app/ContainerStack/commit/cb5ef5fe201374b7656bb22768ce740c2594206d))
+* **runtime:** pin socktainer with event, DNS and shared session fixes ([80dc51e](https://github.com/bshk-app/ContainerStack/commit/80dc51e914bfb283a362a1c5b7bc39644a1655c6))
+* **runtime:** pin socktainer with event, DNS and shared session fixes ([2f32941](https://github.com/bshk-app/ContainerStack/commit/2f32941a43fb861ca3744fbacf7d935efa721ccc))
+* show the idle time when only one default group exists ([baf10d5](https://github.com/bshk-app/ContainerStack/commit/baf10d5a8b11dfdd5e7d0f47fbcfada518898780))
+* show the resource restart notice only for resource changes ([824e320](https://github.com/bshk-app/ContainerStack/commit/824e3204623e937d3357655d113e9edf796a4354))
+* stop a cancelled sweep after reading bridge info ([a2c9234](https://github.com/bshk-app/ContainerStack/commit/a2c92345d5d2d92db8d4db9c1709d5f4e2293c82))
+* use the full group when confirming a shared stop ([cdc4b29](https://github.com/bshk-app/ContainerStack/commit/cdc4b2980e058c48a774f8c44edabbb00c9b6770))
+
 ## [0.10.0](https://github.com/bshk-app/ContainerStack/compare/v0.9.0...v0.10.0) (2026-11-17)
 
 The Docker bridge no longer stops when a client writes input to a container whose program has ended. Stop on a stack keeps its containers. A Homebrew install puts `cstack` in your PATH.

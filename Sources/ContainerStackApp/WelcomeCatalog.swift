@@ -1,5 +1,22 @@
 import Foundation
 
+enum WelcomeDestination: Equatable {
+    case settings(SettingsPane)
+    case sidebar(String)
+
+    var title: String {
+        switch self {
+        case .settings(let pane): "Settings › " + pane.title
+        case .sidebar(let text): text
+        }
+    }
+
+    var settingsPane: SettingsPane? {
+        if case .settings(let pane) = self { return pane }
+        return nil
+    }
+}
+
 struct WelcomeStep: Identifiable, Equatable {
     let id: String
     let short: String
@@ -7,9 +24,11 @@ struct WelcomeStep: Identifiable, Equatable {
     let title: String
     let body: String
     let line: String
-    let location: String
+    let destination: WelcomeDestination
     let action: String
     let alternative: String
+
+    var location: String { destination.title }
 }
 
 enum WelcomeCatalog {
@@ -24,7 +43,7 @@ enum WelcomeCatalog {
                 + "use. ContainerStack does not change the context for you. It does not replace "
                 + "/var/run/docker.sock, so other Docker apps keep working.",
             line: "docker reaches ContainerStack only through the containerstack context.",
-            location: "Sidebar › ⋯ at the bottom › Use as Docker Context",
+            destination: .sidebar("Sidebar › ⋯ at the bottom › Use as Docker Context"),
             action: "Show in Sidebar",
             alternative: "Or set DOCKER_HOST=unix://$HOME/.containerstack/docker.sock"),
         WelcomeStep(
@@ -37,7 +56,7 @@ enum WelcomeCatalog {
                 + "limit gets the default size. The default is all CPUs and a quarter of this Mac’s memory, minimum "
                 + "2 GiB.",
             line: "Each container is a VM. Set the size of containers with no limit.",
-            location: "Settings › Default Container Resources",
+            destination: .settings(.containers),
             action: "Open Settings",
             alternative:
                 "Restart Docker Bridge shows here after you change a value. Running containers keep their size."),
@@ -50,7 +69,7 @@ enum WelcomeCatalog {
                 "A builder VM keeps the memory it has used until it stops. ContainerStack stops the image builder "
                 + "and buildx builders that do no work for the set time. The next build starts them again.",
             line: "A builder keeps its memory until it stops. Idle builders stop after 10 minutes.",
-            location: "Settings › Image Builder",
+            destination: .settings(.imageBuilder),
             action: "Open Settings",
             alternative: "A running builder keeps its size. New values apply the next time it starts."),
         WelcomeStep(
@@ -62,7 +81,7 @@ enum WelcomeCatalog {
                 "Add a compose file you have, or make a new one. The stack editor changes ports and volumes and "
                 + "runs Up, Down and Restart. Containers groups its list by stack.",
             line: "Register compose files, edit ports and volumes, run Up and Down.",
-            location: "Sidebar › Stacks › Add Existing… or New Stack…",
+            destination: .sidebar("Sidebar › Stacks › Add Existing… or New Stack…"),
             action: "Show in Sidebar",
             alternative: "Down removes the stack’s containers and network. Volumes stay."),
         WelcomeStep(
@@ -74,7 +93,7 @@ enum WelcomeCatalog {
                 "Doctor checks the runtime, the Docker socket and bridge, and the Docker context. When a check "
                 + "fails, Doctor shows the repair: Restart Runtime or Repair Context.",
             line: "Checks the socket, the bridge and the context, and repairs them.",
-            location: "Sidebar › Doctor",
+            destination: .sidebar("Sidebar › Doctor"),
             action: "Show in Sidebar",
             alternative: "The runtime status and its actions are at the bottom of the sidebar."),
     ]
@@ -91,7 +110,7 @@ enum WelcomeCatalog {
                     + "Claude Code to build and run containers with docker and cstack through ContainerStack. The skill "
                     + "has its own copy of cstack, so agents work without the command.",
                 line: "Install the cstack command. Let Codex and Claude Code use ContainerStack.",
-                location: "Settings › Command Line and Agents",
+                destination: .settings(.codingAgents),
                 action: "Open Settings",
                 alternative: "Install asks for an administrator password. You can change both later in Settings."),
             WelcomeStep(
@@ -104,7 +123,7 @@ enum WelcomeCatalog {
                     + "own. Measured: three MCP sessions use about 560 MB, against about 1490 MB in three VMs. Sessions "
                     + "of one group share one container, so they are one trust domain.",
                 line: "Several MCP sessions share one VM: about 560 MB for three, not 1490 MB.",
-                location: "Settings › Shared Runtimes",
+                destination: .settings(.sharedRuntimes),
                 action: "Open Settings",
                 alternative:
                     "Both groups are off by default. A run with a TTY, mounts, ports or limits still gets its own VM."),

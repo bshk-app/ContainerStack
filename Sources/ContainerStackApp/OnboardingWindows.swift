@@ -67,12 +67,9 @@ struct WelcomeWindowContent: View {
                 step: step, model: model, resources: resources, builder: builder, shared: shared,
                 commandLine: commandLine, skill: skill, doctor: doctor)
         } openLocation: { step in
-            switch step.id {
-            case "resources": openSettings(pane: .containers)
-            case "builder": openSettings(pane: .imageBuilder)
-            case "shared": openSettings(pane: .sharedRuntimes)
-            case "cli": openSettings(pane: .codingAgents)
-            default:
+            if let pane = step.destination.settingsPane {
+                openSettings(pane: pane)
+            } else {
                 WelcomeSidebarNavigation.shared.destination = step.id
                 openWindow(id: "dashboard")
             }

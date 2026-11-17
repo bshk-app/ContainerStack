@@ -5,6 +5,23 @@ import Testing
 
 struct WelcomePolicyTests {
     private let steps = WelcomeCatalog.steps
+
+    @Test func settingsLocationsNameTheTargetPane() throws {
+        let destinations: [(String, SettingsPane)] = [
+            ("resources", .containers), ("builder", .imageBuilder),
+            ("shared", .sharedRuntimes), ("cli", .codingAgents),
+        ]
+        for (id, pane) in destinations {
+            let step = try #require(steps.first { $0.id == id })
+            #expect(step.destination.settingsPane == pane)
+        }
+        for step in steps {
+            if let pane = step.destination.settingsPane {
+                #expect(step.location == "Settings › " + pane.title)
+            }
+        }
+    }
+
     @Test func firstLaunchShowsAllStepsWithoutNewTags() {
         let policy = WelcomePolicy(currentVersion: "0.12.0", lastVersion: nil)
         #expect(policy.mode == .first)

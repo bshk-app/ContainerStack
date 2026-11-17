@@ -95,4 +95,15 @@ struct CStackCommandTests {
         #expect(command.state(path: path) == .installed)
         #expect(FileManager.default.isExecutableFile(atPath: other.path))
     }
+
+    @Test func installStopsIfDestinationBecomesADirectory() throws {
+        defer { try? FileManager.default.removeItem(at: root) }
+        try makeExecutable(executable)
+        let script = try command.shellScript(for: .install)
+        try FileManager.default.createDirectory(at: link, withIntermediateDirectories: true)
+        let result = try ProcessRunner.run(
+            executablePath: "/bin/sh", arguments: ["-c", script], timeout: .seconds(2))
+        #expect(result.status != 0)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: link.path).isEmpty)
+    }
 }

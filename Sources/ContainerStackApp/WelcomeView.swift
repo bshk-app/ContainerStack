@@ -55,7 +55,7 @@ struct WelcomeView<Controls: View>: View {
             HStack(spacing: 8) {
                 ZStack {
                     Circle().strokeBorder(theme.hairline, lineWidth: 1)
-                    if session.visited.contains(step.id) {
+                    if session.visited.contains(step.id), session.selectedID != step.id {
                         Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold))
                     } else {
                         Text(number.formatted()).font(.system(size: 10, weight: .medium))
@@ -84,7 +84,7 @@ struct WelcomeView<Controls: View>: View {
                     .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(theme.hairline, lineWidth: 1) }
                     .id(session.selectedID)
                 if newIDs.contains(session.selectedID) {
-                    newBadge("New in \(session.selected.introduced(in: session.policy.currentVersion))")
+                    newBadge("New in \(session.selected.release)")
                 }
                 Text(session.selected.title).font(.system(size: 19, weight: .semibold))
                 Text(session.selected.body)
@@ -147,7 +147,7 @@ struct WhatsNewView: View {
 
     private var steps: [WelcomeStep] {
         session.policy.steps.filter {
-            WelcomePolicy.compare($0.introduced(in: session.policy.currentVersion), session.policy.currentVersion)
+            WelcomePolicy.compare($0.release, session.policy.currentVersion)
                 == .orderedSame
         }
     }

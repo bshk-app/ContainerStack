@@ -82,10 +82,18 @@ struct WelcomeWindowContent: View {
             resources.reload()
             builder.reload()
             shared.reload()
+            shared.bridgeStatus = model.snapshot.map { SharedRuntimesStatus.parse(info: $0.info) }
             skill.apply()
         }
         .onChange(of: model.snapshot) { _, snapshot in
             shared.bridgeStatus = snapshot.map { SharedRuntimesStatus.parse(info: $0.info) }
+        }
+        .onChange(of: model.isRestarting) { _, restarting in
+            if !restarting {
+                resources.reload()
+                builder.reload()
+                shared.reload()
+            }
         }
     }
 }

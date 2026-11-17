@@ -98,17 +98,21 @@ struct CommandLineAndAgentsView: View {
                 commandButton.disabled(commandLine.isWorking)
             }
             Divider()
-            Toggle(
-                isOn: Binding(get: { agentSkill.isEnabled }, set: { agentSkill.isEnabled = $0 })
-            ) {
+            HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Link the ContainerStack skill for coding agents")
                     Text("Writes links in ~/.claude/skills and ~/.agents/skills.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                Spacer(minLength: 12)
+                Toggle(
+                    "Link the ContainerStack skill for coding agents",
+                    isOn: Binding(get: { agentSkill.isEnabled }, set: { agentSkill.isEnabled = $0 })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .disabled(!agentSkill.isAvailable)
             }
-            .toggleStyle(.switch)
-            .disabled(!agentSkill.isAvailable)
             if !agentSkill.isAvailable {
                 Text("This build of ContainerStack has no skill to link.").font(.caption).foregroundStyle(.secondary)
             }

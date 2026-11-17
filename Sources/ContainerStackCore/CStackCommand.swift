@@ -60,7 +60,7 @@ public struct CStackCommand: Sendable {
                 files.isExecutableFile(atPath: executable.path)
             else { throw CommandError.conflict }
             return "set -eu; /bin/mkdir -p \(Self.quote(link.deletingLastPathComponent().path)); "
-                + "test ! -e \(quotedLink) && test ! -L \(quotedLink); /bin/ln -s \(quotedExecutable) \(quotedLink)"
+                + "test ! -e \(quotedLink); test ! -L \(quotedLink); /bin/ln -s \(quotedExecutable) \(quotedLink)"
         case .remove, .replace:
             guard let destination,
                 operation == .remove

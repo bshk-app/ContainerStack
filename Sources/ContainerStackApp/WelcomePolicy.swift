@@ -14,8 +14,8 @@ struct WelcomePolicy {
     var newSteps: [WelcomeStep] {
         guard let lastVersion else { return [] }
         return steps.filter {
-            Self.compare($0.introduced(in: currentVersion), lastVersion) == .orderedDescending
-                && Self.compare($0.introduced(in: currentVersion), currentVersion) != .orderedDescending
+            Self.compare($0.release, lastVersion) == .orderedDescending
+                && Self.compare($0.release, currentVersion) != .orderedDescending
         }
     }
 
@@ -75,9 +75,13 @@ final class WelcomeSession {
     var visited: Set<String> = []
     var attemptedAutomaticPresentation = false
 
-    init(defaults: UserDefaults = .standard, version: String = WelcomeRelease.version) {
+    init(
+        defaults: UserDefaults = .standard, version: String = WelcomeRelease.version,
+        steps: [WelcomeStep] = WelcomeCatalog.steps
+    ) {
         self.defaults = defaults
-        policy = WelcomePolicy(currentVersion: version, lastVersion: defaults.string(forKey: Self.lastVersionKey))
+        policy = WelcomePolicy(
+            currentVersion: version, lastVersion: defaults.string(forKey: Self.lastVersionKey), steps: steps)
         selectedID = policy.orderedSteps[0].id
     }
 
@@ -88,6 +92,7 @@ final class WelcomeSession {
     }
 
     func select(_ id: String) {
+        guard id != selectedID else { return }
         visited.insert(selectedID)
         selectedID = id
     }

@@ -42,7 +42,8 @@ struct WelcomeRenderTests {
             if mode == "update" { defaults.set("0.10.0", forKey: WelcomeSession.lastVersionKey) }
             for scheme in [ColorScheme.light, .dark] {
                 for step in WelcomeCatalog.steps {
-                    let session = WelcomeSession(defaults: defaults, version: "0.12.0")
+                    let session = WelcomeSession(
+                        defaults: defaults, version: "0.12.0", steps: WelcomeCatalog.makeSteps(cliVersion: "0.12.0"))
                     session.select(step.id)
                     let view = WelcomeView(session: session) { selected in
                         WelcomeControls(

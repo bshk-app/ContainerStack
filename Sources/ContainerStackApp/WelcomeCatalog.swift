@@ -10,12 +10,12 @@ struct WelcomeStep: Identifiable, Equatable {
     let location: String
     let action: String
     let alternative: String
-
-    func introduced(in currentVersion: String) -> String { release == "next" ? currentVersion : release }
 }
 
 enum WelcomeCatalog {
-    static let steps: [WelcomeStep] = [
+    static let steps = makeSteps(cliVersion: WelcomeRelease.version)
+
+    private static let existingSteps: [WelcomeStep] = [
         WelcomeStep(
             id: "socket",
             short: "Docker context",
@@ -79,32 +79,37 @@ enum WelcomeCatalog {
             location: "Sidebar › Doctor",
             action: "Show in Sidebar",
             alternative: "The runtime status and its actions are at the bottom of the sidebar."),
-        WelcomeStep(
-            id: "cli",
-            short: "Command line",
-            release: "next",
-            title: "Command line and coding agents",
-            body:
-                "The cstack command checks and controls ContainerStack from Terminal. The skill tells Codex and "
-                + "Claude Code to build and run containers with docker and cstack through ContainerStack. The skill "
-                + "has its own copy of cstack, so agents work without the command.",
-            line: "Install the cstack command. Let Codex and Claude Code use ContainerStack.",
-            location: "Settings › Command Line and Agents",
-            action: "Open Settings",
-            alternative: "Install asks for an administrator password. You can change both later in Settings."),
-        WelcomeStep(
-            id: "shared",
-            short: "Shared runtimes",
-            release: "0.11.0",
-            title: "MCP sessions can share one VM",
-            body:
-                "Turn on a group, and each matching docker run -i --rm runs in one shared VM, not in a VM of its "
-                + "own. Measured: three MCP sessions use about 560 MB, against about 1490 MB in three VMs. Sessions "
-                + "of one group share one container, so they are one trust domain.",
-            line: "Several MCP sessions share one VM: about 560 MB for three, not 1490 MB.",
-            location: "Settings › Shared Runtimes",
-            action: "Open Settings",
-            alternative:
-                "Both groups are off by default. A run with a TTY, mounts, ports or limits still gets its own VM."),
     ]
+
+    static func makeSteps(cliVersion: String) -> [WelcomeStep] {
+        existingSteps + [
+            WelcomeStep(
+                id: "cli",
+                short: "Command line",
+                release: cliVersion,
+                title: "Command line and coding agents",
+                body:
+                    "The cstack command checks and controls ContainerStack from Terminal. The skill tells Codex and "
+                    + "Claude Code to build and run containers with docker and cstack through ContainerStack. The skill "
+                    + "has its own copy of cstack, so agents work without the command.",
+                line: "Install the cstack command. Let Codex and Claude Code use ContainerStack.",
+                location: "Settings › Command Line and Agents",
+                action: "Open Settings",
+                alternative: "Install asks for an administrator password. You can change both later in Settings."),
+            WelcomeStep(
+                id: "shared",
+                short: "Shared runtimes",
+                release: "0.11.0",
+                title: "MCP sessions can share one VM",
+                body:
+                    "Turn on a group, and each matching docker run -i --rm runs in one shared VM, not in a VM of its "
+                    + "own. Measured: three MCP sessions use about 560 MB, against about 1490 MB in three VMs. Sessions "
+                    + "of one group share one container, so they are one trust domain.",
+                line: "Several MCP sessions share one VM: about 560 MB for three, not 1490 MB.",
+                location: "Settings › Shared Runtimes",
+                action: "Open Settings",
+                alternative:
+                    "Both groups are off by default. A run with a TTY, mounts, ports or limits still gets its own VM."),
+        ]
+    }
 }

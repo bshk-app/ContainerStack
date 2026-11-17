@@ -8,8 +8,9 @@ extension RuntimeViewModel {
     }
 
     func start(group: ContainerGroup) async {
+        guard group.sharedContainer == nil else { return }
         await withResource(group.id, message: "Starting \(group.title)…") {
-            for container in group.containers where !container.isRunning {
+            for container in group.containers where !container.isRunning && !container.isSession {
                 try await self.client.startContainer(id: container.id)
             }
             self.resourceMessage = "Started \(group.title)."
@@ -22,6 +23,7 @@ extension RuntimeViewModel {
     }
 
     func stop(group: ContainerGroup, stopContainer: @escaping (String) async throws -> Void) async {
+        guard group.sharedContainer == nil else { return }
         await withResource(group.id, message: "Stopping \(group.title)…", recoversRuntime: true) {
             for container in group.containers where container.isRunning {
                 try await stopContainer(container.id)
@@ -32,8 +34,9 @@ extension RuntimeViewModel {
     }
 
     func remove(group: ContainerGroup) async {
+        guard group.sharedContainer == nil else { return }
         await withResource(group.id, message: "Removing \(group.title)…") {
-            for container in group.containers {
+            for container in group.containers where !container.isSession {
                 try await self.client.removeContainer(id: container.id, force: true)
             }
             self.resourceMessage = "Removed \(group.title)."
@@ -41,7 +44,15 @@ extension RuntimeViewModel {
         }
     }
 
+    func stopSharedContainer(_ container: DockerContainerSummary) async {
+        guard container.isSharedContainer else { return }
+        await withContainer(container, action: "Stopping", recoversRuntime: true) {
+            try await self.client.stopContainer(id: container.id)
+        }
+    }
+
     var storageSummary: String {
+
         ByteSize.formatted(diskUsage?.layersSize)
     }
 
@@ -79,6 +90,7 @@ extension RuntimeViewModel {
     }
 
     func restart(container: DockerContainerSummary) async {
+        guard container.inspectorActions.contains(.restart) else { return }
         await withContainer(container, action: "Restarting", completion: "Restarted \(container.name).") {
             try await self.client.restartContainer(id: container.id)
         }

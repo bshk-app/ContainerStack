@@ -235,7 +235,7 @@ struct DiagnosticRunnerDockerContextTests {
             "/_ping": .success(jsonResponse("OK")),
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(#"{"Containers":\#(count),"Images":1}"#)),
-            "/containers/json": .success(jsonResponse("[\(containers.joined(separator: ","))]")),
+            "/containers/json?all=1": .success(jsonResponse("[\(containers.joined(separator: ","))]")),
             "/networks": .success(
                 jsonResponse(
                     #"[{"Id":"n1","Name":"compose_default","Driver":"bridge","#
@@ -279,7 +279,7 @@ struct DiagnosticRunnerDockerContextTests {
             #expect(ui.probe == probes, "UI set, \(count) publishing")
             #expect(ui.listings == 1, "UI set, \(count) publishing")
             #expect(ui.probe.count + ui.listings == (count == 0 ? 4 : 5), "UI set, \(count) publishing")
-            #expect(ui.paths == ["/_ping", "/version", "/info", "/containers/json", "/networks"], "\(count)")
+            #expect(ui.paths == ["/_ping", "/version", "/info", "/containers/json?all=1", "/networks"], "\(count)")
             #expect(cli.probe == probes, "CLI set, \(count) publishing")
             #expect(cli.listings == 0, "CLI set, \(count) publishing")
             #expect(cli.probe.count + cli.listings == (count == 0 ? 3 : 4), "CLI set, \(count) publishing")

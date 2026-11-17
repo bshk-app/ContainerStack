@@ -131,7 +131,7 @@ struct DiagnosticRunnerTests {
         #expect(
             report.checks.map(\.id) == [
                 .foreignBridge, .appRoot, .socket, .versions, .routes, .dockerContext,
-                .memoryCommitment,
+                .memoryCommitment, .sharedRuntimes,
             ]
         )
     }
@@ -533,10 +533,10 @@ struct DiagnosticRunnerSocketTests {
             "/_ping": .success(jsonResponse("OK")),
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(#"{"Containers":3,"Images":11}"#)),
-            "/containers/json": .success(jsonResponse("[]")),
+            "/containers/json?all=1": .success(jsonResponse("[]")),
             "/networks": .success(jsonResponse("[]")),
         ])
         _ = await makeRunner(transport: transport).run(checks: CheckID.uiSet)
-        #expect(await transport.paths == ["/_ping", "/version", "/info", "/containers/json", "/networks"])
+        #expect(await transport.paths == ["/_ping", "/version", "/info", "/containers/json?all=1", "/networks"])
     }
 }

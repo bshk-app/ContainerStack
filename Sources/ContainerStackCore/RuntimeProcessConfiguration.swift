@@ -63,6 +63,7 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         socktainerPath: String,
         socketPath: String = RuntimeProcessConfiguration.defaultSocketPath,
         bundledInstallRoot: String? = nil,
+        sharedRuntimes: Bool = false,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         exists: (String) -> Bool = FileManager.default.isExecutableFile(atPath:)
     ) -> RuntimeProcessConfiguration {
@@ -73,7 +74,8 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
                 containerPath: override,
                 socktainerPath: socktainerPath,
                 socketPath: socketPath,
-                containerInstallRoot: nil
+                containerInstallRoot: nil,
+                sharedRuntimes: sharedRuntimes
             )
         }
 
@@ -82,7 +84,8 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
                 containerPath: "\(bundledInstallRoot)/bin/container",
                 socktainerPath: socktainerPath,
                 socketPath: socketPath,
-                containerInstallRoot: bundledInstallRoot
+                containerInstallRoot: bundledInstallRoot,
+                sharedRuntimes: sharedRuntimes
             )
         }
 
@@ -90,10 +93,12 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
             containerPath: containerSearchPaths.first(where: exists) ?? containerSearchPaths[0],
             socktainerPath: socktainerPath,
             socketPath: socketPath,
-            containerInstallRoot: nil
+            containerInstallRoot: nil,
+            sharedRuntimes: sharedRuntimes
         )
     }
 
+    public let sharedRuntimes: Bool
     public let containerPath: String
     public let socktainerPath: String
     public let socketPath: String
@@ -107,8 +112,10 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         socktainerPath: String,
         socketPath: String = RuntimeProcessConfiguration.defaultSocketPath,
         expectedContainerVersion: String = RuntimeProcessConfiguration.pinnedContainerVersion,
-        containerInstallRoot: String? = nil
+        containerInstallRoot: String? = nil,
+        sharedRuntimes: Bool = false
     ) {
+        self.sharedRuntimes = sharedRuntimes
         self.containerInstallRoot = containerInstallRoot
         self.containerPath = containerPath
         self.socktainerPath = socktainerPath
@@ -132,7 +139,7 @@ public struct RuntimeProcessConfiguration: Equatable, Sendable {
         [
             "--no-check-compatibility", "--no-docker-context", "--socket", socketPath,
             "--startup-housekeeping",
-        ]
+        ] + (sharedRuntimes ? ["--shared-runtimes"] : [])
     }
 
     /// Environment for the bridge, quieting its request log.

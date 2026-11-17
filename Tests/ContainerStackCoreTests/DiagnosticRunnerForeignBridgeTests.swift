@@ -37,7 +37,7 @@ struct DiagnosticRunnerForeignBridgeTests {
             "/_ping": .success(jsonResponse("OK")),
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(#"{"Containers":0,"Images":0}"#)),
-            "/containers/json": .success(jsonResponse("[]")),
+            "/containers/json?all=1": .success(jsonResponse("[]")),
             "/networks": .success(jsonResponse("[]")),
         ])
     }

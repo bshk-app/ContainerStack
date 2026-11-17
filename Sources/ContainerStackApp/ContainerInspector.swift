@@ -4,6 +4,7 @@ import SwiftUI
 
 struct ContainerInspector: View {
     @State private var isConfirmingDelete = false
+    @State private var confirmingStop = false
     /// "Info", not "Stats": the first tab lists the container's details and no resource usage.
     enum Tab: String, CaseIterable, Identifiable {
         case info = "Info"
@@ -28,12 +29,15 @@ struct ContainerInspector: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.windowBackground)
+        .onChange(of: container?.id) { _, _ in
+            if container?.isSession == true, tab == .ports { tab = .info }
+        }
     }
 
     private func populated(_ container: DockerContainerSummary) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             header(container)
-            tabPicker
+            tabPicker(container)
             Group {
                 switch tab {
                 case .info:
@@ -41,7 +45,11 @@ struct ContainerInspector: View {
                 case .logs:
                     InspectorLogsView(container: container, model: model)
                 case .ports:
-                    portsList(container)
+                    if container.isSession {
+                        InspectorStatBlock(rows: infoRows(container))
+                    } else {
+                        portsList(container)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,21 +64,35 @@ struct ContainerInspector: View {
             pillTint: pillTint(container)
         ) {
             InspectorAction(
-                title: container.isRunning ? "Stop" : "Start",
+                title: container.inspectorActions.contains(.stop) ? "Stop" : "Start",
                 prominent: !container.isRunning
             ) {
-                Task { await model.toggle(container: container) }
+                if container.isSharedContainer {
+                    confirmingStop = true
+                } else {
+                    Task { await model.toggle(container: container) }
+                }
             }
-            InspectorAction(title: "Restart") {
-                Task { await model.restart(container: container) }
+            if container.inspectorActions.contains(.restart) {
+                InspectorAction(title: "Restart") {
+                    Task { await model.restart(container: container) }
+                }
             }
-            InspectorAction(title: "Delete", destructive: true) {
-                isConfirmingDelete = true
+            if container.inspectorActions.contains(.delete) {
+                InspectorAction(title: "Delete", destructive: true) {
+                    isConfirmingDelete = true
+                }
             }
         }
-        .disabled(model.isBusy(container) || !model.canMutate)
+        .disabled(model.isBusy(container) || !model.canMutate || !container.allowsLifecycleAction)
+        .confirmDestructive(
+            $confirmingStop, title: "Stop \(container.name)?", confirmTitle: "Stop Group",
+            message:
+                "This ends \(model.containers.filter { $0.isSession && $0.sessionContainerID == container.id }.count) sessions."
+        ) { Task { await model.stopSharedContainer(container) } }
         .confirmDestructive(
             $isConfirmingDelete,
+
             title: "Delete container \(container.name)?",
             confirmTitle: "Delete Container",
             message: "A running container is stopped first. Its writable layer is deleted; named volumes are kept."
@@ -79,9 +101,9 @@ struct ContainerInspector: View {
         }
     }
 
-    private var tabPicker: some View {
+    private func tabPicker(_ container: DockerContainerSummary) -> some View {
         Picker("Inspector section", selection: $tab) {
-            ForEach(Tab.allCases) { item in
+            ForEach(Tab.allCases.filter { !container.isSession || $0 != .ports }) { item in
                 Text(item.rawValue).tag(item)
             }
         }
@@ -93,8 +115,8 @@ struct ContainerInspector: View {
         .padding(.bottom, 4)
     }
 
-    private func infoRows(_ container: DockerContainerSummary) -> [(key: String, value: String, mono: Bool)] {
-        [
+    func infoRows(_ container: DockerContainerSummary) -> [(key: String, value: String, mono: Bool)] {
+        var rows: [(key: String, value: String, mono: Bool)] = [
             ("Status", container.status ?? container.state ?? "—", false),
             ("Container ID", String(container.id.prefix(12)), true),
             ("Image", container.image ?? "—", true),
@@ -106,9 +128,25 @@ struct ContainerInspector: View {
                 false
             ),
         ]
+        if container.isSession {
+            let parent = model.containers.first { $0.id == container.sessionContainerID }
+            rows.append(("Shared container", parent?.name ?? container.sessionContainerID ?? "—", true))
+            rows.append(("Group", container.sessionGroup ?? "—", false))
+        } else if container.isSharedContainer {
+            rows.append(("Group", container.sharedGroup ?? "—", false))
+            let count = model.containers.filter { $0.isSession && $0.sessionContainerID == container.id }.count
+            rows.append(("Sessions", String(count), false))
+        }
+        if let skipped = container.skippedGroup {
+            rows.append(("Shared runtime", "not used — \(skipped.group): \(skipped.explanation)", false))
+        }
+        return rows
     }
 
-    private func portsList(_ container: DockerContainerSummary) -> some View {
+    private func portsList
+
+        (_ container: DockerContainerSummary) -> some View
+    {
         ScrollView {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Ports")

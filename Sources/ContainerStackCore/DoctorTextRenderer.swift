@@ -16,7 +16,7 @@ public enum DoctorTextRenderer {
     /// The order `cstack doctor` prints (`CStackCommands.swift:24-84`), which is not `CheckID`'s
     /// F-004 precedence order: precedence ranks checks, this only decides what a person reads first.
     public static let printOrder: [CheckID] = [
-        .foreignBridge, .socket, .versions, .appRoot, .routes, .dockerContext, .memoryCommitment,
+        .foreignBridge, .socket, .versions, .appRoot, .routes, .dockerContext, .sharedRuntimes, .memoryCommitment,
     ]
 
     /// Stable, and a check whose id `printOrder` does not name keeps its place at the end rather

@@ -31,7 +31,7 @@ struct DiagnosticRunnerMemoryTests {
             "/_ping": .success(jsonResponse("OK")),
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(#"{"Containers":\#(containers.count),"Images":0}"#)),
-            "/containers/json": containerListing ?? .success(jsonResponse(containerList(containers))),
+            "/containers/json?all=1": containerListing ?? .success(jsonResponse(containerList(containers))),
             DockerAPIClient.runningBuildersPath: builders,
             "/networks": .success(jsonResponse("[]")),
         ]
@@ -304,7 +304,7 @@ struct DiagnosticRunnerMemoryTests {
     func theContainerListingIsPaidForOnce() async {
         let transport = transport(limits: [4_000_000_000])
         _ = await makeRunner(transport: transport, hostMemoryBytes: hostBytes).run(checks: CheckID.cliSet)
-        #expect(await transport.paths.filter { $0 == "/containers/json" }.count == 1)
+        #expect(await transport.paths.filter { $0 == "/containers/json?all=1" }.count == 1)
     }
 
     // F-013, and the first check able to reach `.warning`: until now the rank sat in a unit
@@ -346,7 +346,7 @@ struct DiagnosticRunnerMemoryTests {
             "/_ping": .success(jsonResponse("OK")),
             "/version": .success(jsonResponse(#"{"Version":"1.7.0","ApiVersion":"1.43"}"#)),
             "/info": .success(jsonResponse(#"{"Containers":1,"Images":0}"#)),
-            "/containers/json": .success(jsonResponse(publishing)),
+            "/containers/json?all=1": .success(jsonResponse(publishing)),
             "/networks": .success(jsonResponse(networks)),
             "/containers/c0/json": .success(inspectResponse(id: "c0", memory: 14_000_000_000)),
         ])
@@ -440,5 +440,32 @@ struct DiagnosticRunnerMemoryTests {
         #expect(check?.verdict == .indeterminate)
         #expect(check?.summary != "Container memory limits: no running containers to check")
         #expect(check?.detail == "The image builder could not be listed.")
+    }
+}
+
+extension DiagnosticRunnerMemoryTests {
+    @Test func sharedSessionsHaveNoMemoryInspect() async {
+        let listing = """
+            [
+              {"Id":"parent","State":"running","Labels":{"containerstack.shared.group":"mcp"}},
+              {"Id":"dedicated","State":"running"},
+              {"Id":"s1","State":"running","Labels":{"containerstack.session.group":"mcp","containerstack.session.container":"parent"}},
+              {"Id":"s2","State":"running","Labels":{"containerstack.session.group":"mcp","containerstack.session.container":"parent"}},
+              {"Id":"s3","State":"running","Labels":{"containerstack.session.group":"mcp","containerstack.session.container":"parent"}}
+            ]
+            """
+        let transport = runtime(
+            containers: [],
+            inspects: [
+                "parent": .success(inspectResponse(id: "parent", memory: 8 * 1_073_741_824)),
+                "dedicated": .success(inspectResponse(id: "dedicated", memory: 2 * 1_073_741_824)),
+            ], containerListing: .success(jsonResponse(listing)))
+        let check = await makeRunner(transport: transport, hostMemoryBytes: 64 * 1_073_741_824)
+            .run(checks: [.memoryCommitment]).check(.memoryCommitment)
+        #expect(check?.verdict == .ok)
+        #expect(check?.summary.hasPrefix("Container memory limits: 10.7 GB") == true)
+        #expect(check?.detail == "3 sessions in 1 shared container")
+        let paths = await transport.paths
+        #expect(paths.filter { $0.hasSuffix("/json") } == ["/containers/parent/json", "/containers/dedicated/json"])
     }
 }

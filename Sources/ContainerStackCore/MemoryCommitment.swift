@@ -25,6 +25,8 @@ public struct MemoryCommitment: Equatable, Sendable {
     public static let approachingFraction = 0.5
     public static let exceedingFraction = 0.8
 
+    public let sessions: Int
+    public let sharedContainers: Int
     public let configuredBytes: Int64
     /// The part of `configuredBytes` that is the image builder VM.
     public let builderBytes: Int64
@@ -33,7 +35,12 @@ public struct MemoryCommitment: Equatable, Sendable {
     /// total understates by however many there are — an unknown is not a zero.
     public let containersWithoutLimit: Int
 
-    public init(configuredBytes: Int64, builderBytes: Int64 = 0, hostBytes: Int64, containersWithoutLimit: Int) {
+    public init(
+        configuredBytes: Int64, builderBytes: Int64 = 0, hostBytes: Int64, containersWithoutLimit: Int,
+        sessions: Int = 0, sharedContainers: Int = 0
+    ) {
+        self.sessions = sessions
+        self.sharedContainers = sharedContainers
         self.configuredBytes = configuredBytes
         self.builderBytes = builderBytes
         self.hostBytes = hostBytes
@@ -45,7 +52,9 @@ public struct MemoryCommitment: Equatable, Sendable {
     /// runtime reports none. Docker writes `0` for "no limit", so zero and negative are treated
     /// the same as nil rather than summed as nothing. `builderLimits` is the same for each running
     /// image builder, which socktainer lists apart from the containers.
-    public static func measure(limits: [Int64?], builderLimits: [Int64?] = [], hostBytes: Int64) -> MemoryCommitment {
+    public static func measure(
+        limits: [Int64?], builderLimits: [Int64?] = [], hostBytes: Int64, sessions: Int = 0, sharedContainers: Int = 0
+    ) -> MemoryCommitment {
         let explicit = explicitLimits(limits)
         let builders = explicitLimits(builderLimits)
         let builderBytes = sum(builders)
@@ -53,7 +62,8 @@ public struct MemoryCommitment: Equatable, Sendable {
             configuredBytes: sum([sum(explicit), builderBytes]),
             builderBytes: builderBytes,
             hostBytes: hostBytes,
-            containersWithoutLimit: limits.count + builderLimits.count - explicit.count - builders.count
+            containersWithoutLimit: limits.count + builderLimits.count - explicit.count - builders.count,
+            sessions: sessions, sharedContainers: sharedContainers
         )
     }
 

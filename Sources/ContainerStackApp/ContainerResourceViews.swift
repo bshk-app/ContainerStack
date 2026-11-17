@@ -22,6 +22,7 @@ struct SystemSettingsView: View {
     let settings: ContainerResourceSettings
     let builderSettings: ContainerResourceSettings
     let agentSkill: AgentSkillSettings
+    let sharedRuntimeSettings: SharedRuntimeSettings
     let model: RuntimeViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var restartProblem: String?
@@ -107,15 +108,21 @@ struct SystemSettingsView: View {
                         + " through ContainerStack, not with the container CLI. It links to this app, so it"
                         + " changes when the app updates.")
             }
-            if awaitsBridgeRestart {
+            SharedRuntimeSettingsSection(settings: sharedRuntimeSettings)
+            if awaitsBridgeRestart || restartProblem != nil {
                 Section {
-                    Text("Saved. New Docker API containers and builds use these values after a Docker bridge restart.")
+                    ForEach(
+                        Self.restartMessages(
+                            resourcesAwaitRestart: settings.awaitsBridgeRestart || builderSettings.awaitsBridgeRestart,
+                            sharedRuntimesAwaitRestart: sharedRuntimeSettings.awaitsBridgeRestart), id: \.self
+                    ) { Text($0) }
                     Text(
                         "Restarting interrupts open builds, exec sessions and runner jobs."
                             + " Running containers keep their size and continue running.")
                     Button("Restart Docker Bridge") {
                         Task {
                             restartProblem = nil
+                            sharedRuntimeSettings.beginBridgeRestart()
                             if await model.restartBridge() {
                                 reload()
                             } else {
@@ -135,24 +142,36 @@ struct SystemSettingsView: View {
         .formStyle(.grouped)
         .frame(width: 520, height: 700)
         .onAppear { reload() }
+        .onChange(of: model.snapshot) { _, snapshot in
+            sharedRuntimeSettings.bridgeStatus = snapshot.map { SharedRuntimesStatus.parse(info: $0.info) }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { reload() }
         }
         .onChange(of: model.isRestarting) { _, restarting in
             if !restarting { reload() }
         }
-        .onChange(of: awaitsBridgeRestart) { _, awaitsRestart in
-            if !awaitsRestart { restartProblem = nil }
+    }
+
+    static func restartMessages(resourcesAwaitRestart: Bool, sharedRuntimesAwaitRestart: Bool) -> [String] {
+        var messages: [String] = []
+        if sharedRuntimesAwaitRestart { messages.append("Shared runtimes start after a Docker bridge restart.") }
+        if resourcesAwaitRestart {
+            messages.append(
+                "Saved. New Docker API containers and builds use these values after a Docker bridge restart.")
         }
+        return messages
     }
 
     private var awaitsBridgeRestart: Bool {
-        settings.awaitsBridgeRestart || builderSettings.awaitsBridgeRestart
+        settings.awaitsBridgeRestart || builderSettings.awaitsBridgeRestart || sharedRuntimeSettings.awaitsBridgeRestart
     }
 
     private func reload() {
         settings.reload()
         builderSettings.reload()
+        sharedRuntimeSettings.reload()
+        sharedRuntimeSettings.bridgeStatus = model.snapshot.map { SharedRuntimesStatus.parse(info: $0.info) }
         agentSkill.apply()
     }
 

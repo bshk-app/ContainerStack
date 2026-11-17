@@ -3,9 +3,11 @@ import Foundation
 /// Assembles a `DiagnosticReport` over the Docker API and the external commands
 /// a Docker call cannot answer. Prints nothing and touches no view state.
 public struct DiagnosticRunner: Sendable {
-    private let client: DockerAPIClient
+    let client: DockerAPIClient
     private let probe: any SystemProbe
-    private let socketPath: String
+    let socketPath: String
+    var sharedRuntimeSocketPath: String { socketPath }
+    let sharedRuntimeSocketResponds: @Sendable (String) async -> Bool
     /// Which bridge counts as ours: `lsof` names the pid holding the socket, and only
     /// the process table can say whether that pid is the helper this build ships.
     private let bridgePath: String
@@ -17,7 +19,7 @@ public struct DiagnosticRunner: Sendable {
     private let recordedSocketPath: @Sendable (String) throws -> String?
     /// Injected so the "host memory unknown" branch is reachable in a test; nil is the
     /// sysctl's own answer when it could not be read, never a guess.
-    private let hostMemoryBytes: @Sendable () -> Int64?
+    let hostMemoryBytes: @Sendable () -> Int64?
     /// Injected so `ranAt` is assertable; a report never stamps itself from `Date()`.
     private let now: @Sendable () -> Date
     /// Monotonic and separate from `now`: a wall clock adjusted mid-run would report a check
@@ -64,8 +66,10 @@ public struct DiagnosticRunner: Sendable {
         ticks: @escaping @Sendable () -> Duration = MonotonicTicks.sinceStart,
         log: @escaping @Sendable (String) -> Void = DiagnosticLog.line,
         budget: Duration = DiagnosticRunner.defaultBudget,
+        sharedRuntimeSocketResponds: (@Sendable (String) async -> Bool)? = nil,
         bundleIdentifier: @escaping @Sendable (String) -> String? = BridgeOwnership.bundleIdentifier(atPath:)
     ) {
+        self.sharedRuntimeSocketResponds = sharedRuntimeSocketResponds ?? Self.pingSharedRuntimeSocket
         self.client = client
         self.probe = probe
         self.socketPath = socketPath
@@ -109,6 +113,7 @@ public struct DiagnosticRunner: Sendable {
         let routes: RoutesMeasurement
         let bridge: BridgeMeasurement
         let memory: MemoryMeasurement
+        let sharedRuntimes: DiagnosticCheck?
         let context: ContextMeasurement
         let durations: [CheckID: Duration]
 
@@ -126,6 +131,7 @@ public struct DiagnosticRunner: Sendable {
         var bridge: BridgeMeasurement?
         var routes: RoutesMeasurement?
         var memory: MemoryMeasurement?
+        var sharedRuntimes: DiagnosticCheck?
         var context: ContextMeasurement?
         var durations: [CheckID: Duration] = [:]
 
@@ -139,6 +145,7 @@ public struct DiagnosticRunner: Sendable {
             if bridge == nil { ids.append(.foreignBridge) }
             if routes == nil { ids.append(.routes) }
             if memory == nil { ids.append(.memoryCommitment) }
+            if sharedRuntimes == nil { ids.append(.sharedRuntimes) }
             if context == nil { ids.append(.dockerContext) }
             return ids
         }
@@ -178,6 +185,11 @@ public struct DiagnosticRunner: Sendable {
         func memory(_ value: MemoryMeasurement, took: Duration) {
             partial.memory = value
             partial.durations[.memoryCommitment] = took
+        }
+
+        func sharedRuntimes(_ value: DiagnosticCheck) {
+            partial.sharedRuntimes = value
+            partial.durations[.sharedRuntimes] = value.duration
         }
 
         func context(_ value: ContextMeasurement, took: Duration) {
@@ -287,7 +299,7 @@ public struct DiagnosticRunner: Sendable {
 
     /// One container listing serves both the routes and memory checks: NFR-001 budgets a
     /// single `listContainers` for the run, however many checks want it.
-    private enum ContainersMeasurement {
+    enum ContainersMeasurement {
         case notAsked
         case listed([DockerContainerSummary])
         case unmeasurable(reason: String)
@@ -370,18 +382,31 @@ public struct DiagnosticRunner: Sendable {
         let socket = await timed { await socketMeasurement() }
         await measurements.socket(socket.value, took: socket.elapsed)
         let versions = await timed { () async -> VersionsMeasurement in
-            socket.value.responds && checks.contains(.versions)
+            socket.value.responds && (checks.contains(.versions) || checks.contains(.sharedRuntimes))
                 ? await versionsMeasurement()
                 : .unmeasurable(reason: socket.value.failure ?? RuntimeState.genericFailure)
         }
         await measurements.versions(versions.value, took: versions.elapsed)
         // Every route signal arrives over the socket, so asking a dead one buys nothing but
         // more waiting inside the same budget (NFR-002).
-        let wantsContainers = checks.contains(.routes) || checks.contains(.memoryCommitment)
+        let wantsContainers =
+            checks.contains(.routes) || checks.contains(.memoryCommitment) || checks.contains(.sharedRuntimes)
         let containers = await timed { () async -> ContainersMeasurement in
             socket.value.responds && wantsContainers ? await containersMeasurement() : .notAsked
         }
-        let routes = await timed { () async -> RoutesMeasurement in
+        if checks.contains(.sharedRuntimes) {
+            let shared = await timed {
+                await sharedRuntimesMeasurement(versions: versions.value, containers: containers.value)
+            }
+            let check = shared.value
+            await measurements.sharedRuntimes(
+                DiagnosticCheck(
+                    id: .sharedRuntimes, verdict: check.verdict, summary: check.summary,
+                    detail: check.detail, remedy: check.remedy,
+                    duration: versions.elapsed + containers.elapsed + shared.elapsed))
+        }
+        let routes = await timed {
+            () async -> RoutesMeasurement in
             socket.value.responds && checks.contains(.routes)
                 ? await routesMeasurement(containers.value)
                 : .notAsked
@@ -429,6 +454,7 @@ public struct DiagnosticRunner: Sendable {
             routes: routes,
             bridge: bridge,
             memory: partial.memory ?? .unmeasurable(reason: Self.budgetExpired),
+            sharedRuntimes: partial.sharedRuntimes,
             context: partial.context ?? .unmeasurable(reason: Self.budgetExpired),
             durations: durations
         )
@@ -546,7 +572,7 @@ public struct DiagnosticRunner: Sendable {
             return .listed(
                 try await client.decode(
                     [DockerContainerSummary].self,
-                    response: client.requestRetryingImmediateFailures(path: "/containers/json")
+                    response: client.requestRetryingImmediateFailures(path: "/containers/json?all=1")
                 )
             )
         } catch {
@@ -621,47 +647,6 @@ public struct DiagnosticRunner: Sendable {
     /// Invented, not copied: today `cstack doctor` throws out of `listNetworks` (`CStackCommands.swift:51`)
     /// rather than printing a line here. Same shape as `unmeasuredSummary`, for the same reason.
     private static let unlistedNetworks = "Container routes: UNKNOWN — the Docker API did not answer."
-
-    /// The one check whose cost grows with the container count (NFR-001): one inspect per
-    /// running container, which is why F-002 keeps it out of the UI set.
-    private func memoryMeasurement(_ listing: ContainersMeasurement) async -> MemoryMeasurement {
-        let running: [DockerContainerSummary]
-        switch listing {
-        case .notAsked:
-            return .notAsked
-        case .unmeasurable(let reason):
-            return .unmeasurable(reason: reason)
-        case .listed(let listed):
-            running = listed.filter(\.isRunning)
-        }
-        let builders = try? await client.runningBuilderIDs()
-        if running.isEmpty, builders == nil { return .unmeasurable(reason: "The image builder could not be listed.") }
-        guard !running.isEmpty || !(builders ?? []).isEmpty else { return .nothingRunning }
-
-        var failures = 0
-        let limits = await memoryLimits(of: running.map(\.id), failures: &failures)
-        let builderLimits = await memoryLimits(of: builders ?? [], failures: &failures)
-        guard !limits.isEmpty || !builderLimits.isEmpty else { return .noneInspected(failures: failures) }
-        // 0 is `HostMemory`'s own "could not read", and the one value `fraction` refuses to divide by.
-        let commitment = MemoryCommitment.measure(
-            limits: limits,
-            builderLimits: builderLimits,
-            hostBytes: hostMemoryBytes() ?? 0
-        )
-        return .inspected(commitment, failures: failures, builderUnlisted: builders == nil)
-    }
-
-    private func memoryLimits(of ids: [String], failures: inout Int) async -> [Int64?] {
-        var limits: [Int64?] = []
-        for id in ids {
-            do {
-                limits.append(try await client.memoryLimitBytes(containerID: id))
-            } catch {
-                failures += 1
-            }
-        }
-        return limits
-    }
 
     /// An unheld socket is not a foreign one: with no holder there is nothing to outrank
     /// the local runtime, and a socket that answers while `lsof` names nobody is held out of sight.

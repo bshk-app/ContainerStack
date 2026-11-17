@@ -195,6 +195,7 @@ enum ResourceSearch {
         query: String
     ) -> [ContainerGroup] {
         groups.compactMap { group in
+            if let parent = group.sharedContainer, matches(query, parent.name, parent.sharedGroup) { return group }
             let items = group.containers.filter { container in
                 matches(
                     query,
@@ -206,7 +207,7 @@ enum ResourceSearch {
                 )
             }
             guard !items.isEmpty else { return nil }
-            return ContainerGroup(project: group.project, containers: items)
+            return ContainerGroup(kind: group.kind, containers: items)
         }
     }
 }

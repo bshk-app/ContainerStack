@@ -35,6 +35,7 @@ extension RuntimeViewModel {
     }
 
     func toggle(container: DockerContainerSummary) async {
+        guard !container.isSharedContainer, !container.isSession || container.isRunning else { return }
         // Only a stop escalates to runtime recovery: it is the call measured hanging when Apple
         // Container loses its XPC service, and widening it would relabel an ordinary start or
         // remove failure as a runtime fault.
@@ -53,6 +54,7 @@ extension RuntimeViewModel {
     }
 
     func remove(container: DockerContainerSummary) async {
+        guard container.rowActions.contains(.delete) else { return }
         await withContainer(
             container,
             action: "Removing",

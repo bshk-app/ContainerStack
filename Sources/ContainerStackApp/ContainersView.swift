@@ -87,12 +87,14 @@ private struct ContainerGroupHeader: View {
     let toggle: () -> Void
     @Environment(\.appTheme) private var theme
 
+    @State private var confirmingStop = false
+
     private var runningCount: Int {
         group.containers.filter(\.isRunning).count
     }
 
     private var title: String {
-        group.project ?? "Not in a stack"
+        group.sharedContainer?.sharedGroup ?? group.project ?? "Not in a stack"
     }
 
     var body: some View {
@@ -106,9 +108,15 @@ private struct ContainerGroupHeader: View {
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(theme.textPrimary)
-                    Text("\(runningCount)/\(group.containers.count) running")
-                        .font(.system(size: 11))
-                        .foregroundStyle(theme.textSecondary)
+                    Text(
+                        group.sharedContainer == nil
+                            ? "\(runningCount)/\(group.containers.count) running" : "\(group.containers.count) sessions"
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.textSecondary)
+                    if let parent = group.sharedContainer {
+                        Text(parent.name).font(.system(size: 11)).foregroundStyle(theme.textSecondary)
+                    }
                     Spacer(minLength: 8)
                 }
                 .contentShape(Rectangle())
@@ -117,7 +125,16 @@ private struct ContainerGroupHeader: View {
             .help(isCollapsed ? "Expand group" : "Collapse group")
             .accessibilityLabel(isCollapsed ? "Expand group \(title)" : "Collapse group \(title)")
             .accessibilityValue("\(runningCount) of \(group.containers.count) running")
-            if group.project != nil {
+            if let parent = group.sharedContainer {
+                Button("Stop") { confirmingStop = true }
+                    .disabled(model.busyResource != nil || !model.canMutate || !parent.isRunning)
+                    .confirmDestructive(
+                        $confirmingStop, title: "Stop \(group.title)?", confirmTitle: "Stop Group",
+                        message:
+                            "This ends \(model.containers.filter { $0.isSession && $0.sessionContainerID == parent.id }.count) sessions."
+                    ) { Task { await model.stopSharedContainer(parent) } }
+            } else if group.project != nil {
+
                 Button {
                     Task {
                         if runningCount > 0 {
@@ -160,6 +177,7 @@ extension DockerContainerSummary {
 
 struct ContainerRow: View {
     @State private var isConfirmingDelete = false
+    @State private var confirmingStop = false
     let container: DockerContainerSummary
     let model: RuntimeViewModel
     var onShowLogs: () -> Void = {}
@@ -197,13 +215,19 @@ struct ContainerRow: View {
         } actions: {
             HStack(spacing: 2) {
                 RowActionButton(
-                    icon: container.isRunning ? .square : .play,
-                    help: container.isRunning ? "Stop" : "Start",
-                    accessibilityLabel: "\(container.isRunning ? "Stop" : "Start") \(container.name)"
+                    icon: container.rowActions.contains(.stop) ? .square : .play,
+                    help: container.rowActions.contains(.stop) ? "Stop" : "Start",
+                    accessibilityLabel: "\(container.rowActions.contains(.stop) ? "Stop" : "Start") \(container.name)"
                 ) {
-                    Task { await model.toggle(container: container) }
+                    if container.isSharedContainer {
+                        confirmingStop = true
+                    } else {
+                        Task { await model.toggle(container: container) }
+                    }
                 }
-                .disabled(isBusy || !model.canMutate)
+                .disabled(
+                    isBusy || !model.canMutate
+                        || ((container.isSession || container.isSharedContainer) && !container.isRunning))
                 // Reading, so it survives a bridge that cannot be changed through -
                 // which is when someone most wants to see why.
                 RowActionButton(
@@ -214,18 +238,26 @@ struct ContainerRow: View {
                     onShowLogs()
                 }
                 .disabled(isBusy || !model.isHealthy)
-                RowActionButton(
-                    icon: .trash,
-                    help: "Delete",
-                    accessibilityLabel: "Delete \(container.name)",
-                    destructive: true
-                ) {
-                    isConfirmingDelete = true
+                if container.rowActions.contains(.delete) {
+                    RowActionButton(
+                        icon: .trash,
+                        help: "Delete",
+                        accessibilityLabel: "Delete \(container.name)",
+                        destructive: true
+                    ) {
+                        isConfirmingDelete = true
+                    }
+                    .disabled(isBusy || !model.canMutate)
                 }
-                .disabled(isBusy || !model.canMutate)
             }
             .confirmDestructive(
+                $confirmingStop, title: "Stop \(container.name)?", confirmTitle: "Stop Group",
+                message:
+                    "This ends \(model.containers.filter { $0.isSession && $0.sessionContainerID == container.id }.count) sessions."
+            ) { Task { await model.stopSharedContainer(container) } }
+            .confirmDestructive(
                 $isConfirmingDelete,
+
                 title: "Delete container \(container.name)?",
                 confirmTitle: "Delete Container",
                 message: "A running container is stopped first. Its writable layer is deleted; named volumes are kept."

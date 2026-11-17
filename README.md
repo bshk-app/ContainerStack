@@ -10,6 +10,10 @@ The GUI never replaces `/var/run/docker.sock`. The Docker CLI context
 
 ## Interface
 
+[Shared runtimes](docs/shared-runtimes.md) let matching `docker run -i --rm` sessions
+share one VM. Turn on a group in Settings > Shared Runtimes. Each shared container
+is one trust domain.
+
 [![Container list with runtime actions and inspector](docs/images/containers.png)](docs/images/containers.png)
 
 <p align="center"><sub>Compose-aware container groups, lifecycle actions, logs, ports, and runtime state.</sub></p>

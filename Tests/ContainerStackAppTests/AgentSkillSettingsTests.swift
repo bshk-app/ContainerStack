@@ -90,7 +90,8 @@ struct AgentSkillSettingsTests {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { cleanUp(defaults) }
         let settings = AgentSkillSettings(defaults: defaults, links: try links())
-        settings.apply()
+        settings.isEnabled = true
+        #expect(isLinked())
 
         settings.isEnabled = false
 

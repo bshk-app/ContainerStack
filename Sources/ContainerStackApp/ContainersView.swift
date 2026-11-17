@@ -80,7 +80,7 @@ struct ContainersView: View {
     }
 }
 
-private struct ContainerGroupHeader: View {
+struct ContainerGroupHeader: View {
     let group: ContainerGroup
     let model: RuntimeViewModel
     let isCollapsed: Bool
@@ -88,6 +88,10 @@ private struct ContainerGroupHeader: View {
     @Environment(\.appTheme) private var theme
 
     @State private var confirmingStop = false
+
+    var actionGroup: ContainerGroup {
+        model.containerGroups.first { $0.id == group.id } ?? group
+    }
 
     private var runningCount: Int {
         group.containers.filter(\.isRunning).count
@@ -125,15 +129,14 @@ private struct ContainerGroupHeader: View {
             .help(isCollapsed ? "Expand group" : "Collapse group")
             .accessibilityLabel(isCollapsed ? "Expand group \(title)" : "Collapse group \(title)")
             .accessibilityValue("\(runningCount) of \(group.containers.count) running")
-            if let parent = group.sharedContainer {
+            if let parent = actionGroup.sharedContainer, actionGroup.headerActions.contains(.stop) {
                 Button("Stop") { confirmingStop = true }
                     .disabled(model.busyResource != nil || !model.canMutate || !parent.isRunning)
                     .confirmDestructive(
-                        $confirmingStop, title: "Stop \(group.title)?", confirmTitle: "Stop Group",
-                        message:
-                            "This ends \(model.containers.filter { $0.isSession && $0.sessionContainerID == parent.id }.count) sessions."
+                        $confirmingStop, title: actionGroup.stopConfirmation, confirmTitle: "Stop Group",
+                        message: "The shared container stops."
                     ) { Task { await model.stopSharedContainer(parent) } }
-            } else if group.project != nil {
+            } else if actionGroup.headerActions.contains(.start) {
 
                 Button {
                     Task {

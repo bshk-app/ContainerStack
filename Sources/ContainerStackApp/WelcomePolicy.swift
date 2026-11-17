@@ -70,6 +70,7 @@ enum WelcomeRelease {
 @MainActor @Observable
 final class WelcomeSession {
     static let lastVersionKey = "lastWelcomeVersion"
+    static let earlierInstallKey = "welcomeEarlierInstall"
     let policy: WelcomePolicy
     let defaults: UserDefaults
     var selectedID: String
@@ -105,7 +106,12 @@ final class WelcomeSession {
     func windowClosed() { finish() }
 
     static func hasEarlierInstall(defaults: UserDefaults, links: AgentSkillLinks?) -> Bool {
-        defaults.object(forKey: AgentSkillSettings.linkedSourcesKey) != nil
+        if let recorded = defaults.object(forKey: earlierInstallKey) as? Bool { return recorded }
+        guard defaults.string(forKey: lastVersionKey) == nil else { return false }
+        let earlierInstall =
+            defaults.object(forKey: AgentSkillSettings.linkedSourcesKey) != nil
             || !(links?.existingContainerStackSources().isEmpty ?? true)
+        defaults.set(earlierInstall, forKey: earlierInstallKey)
+        return earlierInstall
     }
 }

@@ -9,7 +9,7 @@ struct WelcomeMigrationTests {
     private let suite = "WelcomeMigrationTests-\(UUID())"
     private let root = FileManager.default.temporaryDirectory.appending(path: "welcome-migration-\(UUID())")
 
-    @Test func closingWelcomeRecordsTheVersionWithoutSkipOrDone() throws {
+    @Test func windowClosedRecordsTheVersion() throws {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let session = WelcomeSession(defaults: defaults, version: "0.12.0")
@@ -25,6 +25,7 @@ struct WelcomeMigrationTests {
         defaults.set([String](), forKey: AgentSkillSettings.linkedSourcesKey)
         let earlierInstall = WelcomeSession.hasEarlierInstall(defaults: defaults, links: nil)
         #expect(earlierInstall)
+        #expect(defaults.object(forKey: "welcomeEarlierInstall") as? Bool == true)
         let session = WelcomeSession(defaults: defaults, version: "0.12.0", earlierInstall: earlierInstall)
         #expect(session.policy.mode == .update)
         #expect(session.policy.lastVersion == "0.10.0")
@@ -33,15 +34,21 @@ struct WelcomeMigrationTests {
         #expect(defaults.string(forKey: WelcomeSession.lastVersionKey) == nil)
     }
 
-    @Test func newInstallUsesTheSnapshotTakenBeforeThisLaunchWritesDefaults() throws {
+    @Test func newInstallDecisionSurvivesStartupWritesAndAnUnfinishedSession() throws {
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let earlierInstall = WelcomeSession.hasEarlierInstall(defaults: defaults, links: nil)
-        #expect(!earlierInstall)
+        let firstLaunchDecision = WelcomeSession.hasEarlierInstall(defaults: defaults, links: nil)
+        #expect(!firstLaunchDecision)
+        #expect(defaults.object(forKey: "welcomeEarlierInstall") as? Bool == false)
+        let firstSession = WelcomeSession(defaults: defaults, version: "0.12.0", earlierInstall: firstLaunchDecision)
+        #expect(firstSession.policy.mode == .first)
         defaults.set([String](), forKey: AgentSkillSettings.linkedSourcesKey)
-        let session = WelcomeSession(defaults: defaults, version: "0.12.0", earlierInstall: earlierInstall)
-        #expect(session.policy.mode == .first)
-        #expect(session.policy.newSteps.isEmpty)
+        #expect(defaults.string(forKey: WelcomeSession.lastVersionKey) == nil)
+        let nextLaunchDecision = WelcomeSession.hasEarlierInstall(defaults: defaults, links: nil)
+        #expect(!nextLaunchDecision)
+        let nextSession = WelcomeSession(defaults: defaults, version: "0.12.0", earlierInstall: nextLaunchDecision)
+        #expect(nextSession.policy.mode == .first)
+        #expect(nextSession.policy.newSteps.isEmpty)
     }
 
     @Test func existingSkillLinksAlsoIdentifyAnEarlierInstall() throws {

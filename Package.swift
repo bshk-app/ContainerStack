@@ -62,7 +62,8 @@ let package = Package(
         ),
         .testTarget(
             name: "ContainerStackCoreTests",
-            dependencies: ["ContainerStackCore", "DiagnosticTestSupport"]
+            dependencies: ["ContainerStackCore", "DiagnosticTestSupport"],
+            exclude: ["Fixtures"]
         ),
         .testTarget(
             name: "ContainerStackAppTests",

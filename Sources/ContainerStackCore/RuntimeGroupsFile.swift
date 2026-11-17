@@ -39,7 +39,9 @@ public enum RuntimeGroupsFile {
         func quote(_ text: String) -> String {
             // A Swift String always has a valid JSON string representation.
             do {
-                return String(decoding: try JSONEncoder().encode(text), as: UTF8.self)
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.withoutEscapingSlashes]
+                return String(decoding: try encoder.encode(text), as: UTF8.self)
             } catch {
                 preconditionFailure("A string must encode as JSON: \(error)")
             }
@@ -59,7 +61,7 @@ public enum RuntimeGroupsFile {
     }
 
     public static func write(_ document: RuntimeGroupsDocument, to url: URL, expecting: Date?) throws {
-        let target = url.resolvingSymlinksInPath()
+        let target = try resolvedTarget(url)
         let current = modificationDate(at: target)
         guard current == expecting else { throw EditError.changed }
         try save(document, to: target)
@@ -67,26 +69,52 @@ public enum RuntimeGroupsFile {
 
     /// Re-read before applying a single edit, preserving all fields the editor does not own.
     public static func edit(at url: URL, change: (inout RuntimeGroupsDocument) -> Void) throws {
-        let target = url.resolvingSymlinksInPath()
+        try edit(at: url, readState: read(at:), change: change)
+    }
+
+    static func edit(
+        at url: URL, readState: (URL) -> State, change: (inout RuntimeGroupsDocument) -> Void
+    ) throws {
+        let target = try resolvedTarget(url)
         let stamp = modificationDate(at: target)
-        guard var document = read(at: target).document else {
-            if case .invalid(let cause) = read(at: target) { throw EditError.invalid(cause) }
-            return
+        var document: RuntimeGroupsDocument
+        switch readState(target) {
+        case .missing: document = .defaults
+        case .valid(let parsed): document = parsed
+        case .invalid(let cause): throw EditError.invalid(cause)
         }
+
         change(&document)
         try write(document, to: target, expecting: stamp)
     }
 
     public static func reset(at url: URL) throws {
-        try save(.defaults, to: url.resolvingSymlinksInPath())
+        try save(.defaults, to: resolvedTarget(url))
     }
 
     public static func modificationDate(at url: URL) -> Date? {
-        (try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path))?[.modificationDate]
+        (try? FileManager.default.attributesOfItem(atPath: resolvedTarget(url).path))?[.modificationDate]
             as? Date
     }
 
-    private static func save(_ document: RuntimeGroupsDocument, to target: URL) throws {
+    private static func resolvedTarget(_ url: URL) throws -> URL {
+        var target = url.standardizedFileURL
+        var seen: Set<String> = []
+        while let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: target.path) {
+            guard seen.insert(target.path).inserted else {
+                throw EditError.invalid("runtime-groups.json cannot be read: symbolic link loop")
+            }
+            target =
+                (destination.hasPrefix("/")
+                ? URL(fileURLWithPath: destination)
+                : target.deletingLastPathComponent().appending(path: destination)).standardizedFileURL
+        }
+        return target.resolvingSymlinksInPath()
+    }
+
+    private static func save(
+        _ document: RuntimeGroupsDocument, to target: URL
+    ) throws {
         let data = encode(document)
         _ = try decode(data)
         try FileManager.default.createDirectory(
@@ -95,7 +123,7 @@ public enum RuntimeGroupsFile {
         try data.write(to: target, options: .atomic)
     }
 
-    public enum EditError: Error, LocalizedError {
+    public enum EditError: Error, LocalizedError, Equatable {
         case changed
         case invalid(String)
         public var errorDescription: String? {

@@ -110,10 +110,56 @@ struct RuntimeGroupsFileTests {
         #expect(RuntimeGroupsFile.read(at: target) == .valid(external))
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target.path)
         try Data("bad".utf8).write(to: target)
-        #expect(throws: (any Error).self) {
+        #expect(throws: RuntimeGroupsFile.EditError.invalid("runtime-groups.json does not parse: not JSON")) {
             try RuntimeGroupsFile.edit(at: link) { $0.groups[0].enabled = false }
         }
         #expect(try String(contentsOf: target, encoding: .utf8) == "bad")
     }
 
+}
+
+extension RuntimeGroupsFileTests {
+    @Test func danglingSymlinksSurviveEveryWritePath() throws {
+        for operation in ["write", "edit", "reset"] {
+            for relative in [false, true] {
+                let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let target = directory.appending(path: "missing/target.json")
+                let link = directory.appending(path: "groups.json")
+                let destination = relative ? "missing/target.json" : target.path
+                try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: destination)
+                switch operation {
+                case "write": try RuntimeGroupsFile.write(.defaults, to: link, expecting: nil)
+                case "edit": try RuntimeGroupsFile.edit(at: link) { $0.groups[0].enabled = true }
+                default: try RuntimeGroupsFile.reset(at: link)
+                }
+                #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: link.path)) == destination)
+                #expect(FileManager.default.fileExists(atPath: target.path))
+            }
+        }
+    }
+
+    @Test func imagePatternsRemainReadable() {
+        let json = String(decoding: RuntimeGroupsFile.encode(.defaults), as: UTF8.self)
+        #expect(json.contains(#""image": "mcp/*""#))
+    }
+}
+
+extension RuntimeGroupsFileTests {
+    @Test func anInvalidReadCannotTurnIntoASilentSuccess() {
+        let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        var reads = 0
+        #expect(throws: RuntimeGroupsFile.EditError.invalid("bad file")) {
+            try RuntimeGroupsFile.edit(
+                at: url,
+                readState: { _ in
+                    reads += 1
+                    return reads == 1 ? .invalid(cause: "bad file") : .missing
+                },
+                change: { $0.groups[0].enabled = true }
+            )
+        }
+        #expect(reads == 1)
+    }
 }

@@ -11,9 +11,11 @@ struct ContainerStackRuntime {
         // Resolved once: the same root decides both which binary runs and
         // whether the daemon is told where its plugins live. Deriving them
         // separately is how they drift apart.
-        let sharedRuntimes = SharedRuntimesFlag.needed(
-            for: RuntimeGroupsFile.read(
-                at: RuntimeGroupsFile.url(home: FileManager.default.homeDirectoryForCurrentUser)))
+        let groupsFile =
+            ProcessInfo.processInfo.environment["CONTAINERSTACK_RUNTIME_GROUPS_FILE"]
+            .map { URL(fileURLWithPath: $0) }
+            ?? RuntimeGroupsFile.url(home: FileManager.default.homeDirectoryForCurrentUser)
+        let sharedRuntimes = SharedRuntimesFlag.needed(for: RuntimeGroupsFile.read(at: groupsFile))
         print("Shared runtimes: flag \(sharedRuntimes ? "on" : "off")")
         let configuration = RuntimeProcessConfiguration.make(
             socktainerPath: socktainerPath(),

@@ -7,13 +7,18 @@ import Testing
 struct RuntimeHelperTerminationTests {
     /// Before #102 SIGTERM to the helper left its `container system start` running, where it could
     /// overlap the app's next `system stop`.
-    @Test("SIGTERM to the helper ends the container system start it is waiting on")
-    func sigtermEndsSystemStart() async throws {
+    @Test("SIGTERM to the helper ends the container system start it is waiting on", arguments: [false, true])
+    func sigtermEndsSystemStart(sharedRuntimes: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory
             .appending(path: "containerstack-helper-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let pidFile = directory.appending(path: "system-start.pid")
+        let groupsFile = directory.appending(path: "runtime-groups.json")
+        var groups = RuntimeGroupsDocument.defaults
+        groups.groups[0].enabled = sharedRuntimes
+        try RuntimeGroupsFile.write(groups, to: groupsFile, expecting: nil)
+        let pidFile =
+            directory.appending(path: "system-start.pid")
         let container = directory.appending(path: "container")
         try """
         #!/bin/sh
@@ -30,6 +35,7 @@ struct RuntimeHelperTerminationTests {
             .deletingLastPathComponent().appending(path: "ContainerStackRuntime")
         helper.environment = ProcessInfo.processInfo.environment.merging([
             "CONTAINERSTACK_CONTAINER_PATH": container.path,
+            "CONTAINERSTACK_RUNTIME_GROUPS_FILE": groupsFile.path,
             "CONTAINERSTACK_RUNTIME_LOG": directory.appending(path: "runtime.log").path,
         ]) { $1 }
         try helper.run()
@@ -42,6 +48,8 @@ struct RuntimeHelperTerminationTests {
             })
         defer { kill(systemStart, SIGKILL) }
 
+        let log = try String(contentsOf: directory.appending(path: "runtime.log"), encoding: .utf8)
+        #expect(log.contains("Shared runtimes: flag \(sharedRuntimes ? "on" : "off")"))
         helper.terminate()
 
         try #require(await Self.poll { helper.isRunning ? nil : true } == true)

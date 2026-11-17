@@ -51,6 +51,7 @@ struct SharedContainerSweepTests {
         await SharedContainerSweep.waitAndRun(
             client: DockerAPIClient(transport: transport), socketPath: "/ours",
             log: { line in lines.withLock { $0.append(line) } })
+        #expect(await transport.timeouts.first == .some(.seconds(1)))
         let messages = lines.withLock { $0 }
         #expect(messages.count == 2)
         #expect(messages.first?.contains("Could not remove shared container first") == true)
@@ -105,11 +106,27 @@ extension SharedContainerSweepTests {
 
 private struct CancellingSweepTransport: DockerAPITransport {
     let base: StubDockerTransport
+    var cancelPrefix = "DELETE "
     func send(request: Data) async throws -> Data {
         let response = try await base.send(request: request)
-        if String(decoding: request, as: UTF8.self).hasPrefix("DELETE ") {
+        if String(decoding: request, as: UTF8.self).hasPrefix(cancelPrefix) {
             withUnsafeCurrentTask { $0?.cancel() }
         }
         return response
+    }
+}
+
+extension SharedContainerSweepTests {
+    @Test func cancellationAfterInfoSendsNoListing() async {
+        let base = StubDockerTransport(byPath: [
+            "/info": .success(jsonResponse("{}")), "/containers/json?all=1": .success(jsonResponse("[]")),
+        ])
+        let task = Task {
+            await SharedContainerSweep.run(
+                client: DockerAPIClient(transport: CancellingSweepTransport(base: base, cancelPrefix: "GET /info ")),
+                socketPath: "/ours", log: { _ in })
+        }
+        await task.value
+        #expect(await base.paths == ["/info"])
     }
 }

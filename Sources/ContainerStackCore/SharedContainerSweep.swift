@@ -14,6 +14,7 @@ public enum SharedContainerSweep {
         do {
             try Task.checkCancellation()
             let info = try await client.decode(DockerInfo.self, response: client.request(path: "/info"))
+            try Task.checkCancellation()
             let status = SharedRuntimesStatus.parse(info: info)
             guard status == .notRunning else { return }
             let containers = try await client.listContainers(all: true)

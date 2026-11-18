@@ -35,10 +35,12 @@ struct WelcomePolicy {
 
 enum WelcomeRelease {
     static var version: String {
-        resource("WelcomeVersion", extension: "txt").trimmingCharacters(in: .whitespacesAndNewlines)
+        version(from: resource("WelcomeVersion", extension: "txt"))
     }
 
     static var notes: String { notes(version: version, changelog: resource("WelcomeChangelog", extension: "md")) }
+
+    static func version(from text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     static func notes(version: String, changelog: String) -> String {
         var collecting = false

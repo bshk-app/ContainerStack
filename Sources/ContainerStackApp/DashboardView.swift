@@ -61,6 +61,8 @@ struct DashboardView: View {
     @State private var resources = ResourceSelection()
     @State private var isConfirmingPrune = false
     @State private var isChoosingImageToRun = false
+    @State private var showsContextLocation = false
+    @AppStorage(DashboardDestination.hiddenItemsKey) private var hiddenSidebarItems = ""
     /// Outlives the section's view, so a run in flight when the section is left is still the one
     /// a return visit joins (F-007), and the 30s window holds across visits (F-011).
     @State private var doctor: DoctorViewModel
@@ -78,6 +80,10 @@ struct DashboardView: View {
                 .navigationTitle("")
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     SidebarRuntimePanel(model: model)
+                        .popover(isPresented: $showsContextLocation) {
+                            Text("Open ⋯ at the bottom of the sidebar, then choose Use as Docker Context.")
+                                .padding(16).frame(width: 260)
+                        }
                 }
         } detail: {
             NavigationStack {
@@ -192,6 +198,16 @@ struct DashboardView: View {
             }
         }
         .modifier(AppThemeInjector())
+        .onChange(of: WelcomeSidebarNavigation.shared.destination, initial: true) { _, step in
+            guard let step else { return }
+            let destination: DashboardDestination = step == "doctor" ? .doctor : step == "stacks" ? .stacks : .overview
+            var hidden = DashboardDestination.hiddenItems(from: hiddenSidebarItems)
+            hidden.remove(destination)
+            hiddenSidebarItems = DashboardDestination.storedValue(hiding: hidden)
+            navigation.open(destination)
+            showsContextLocation = step == "socket"
+            WelcomeSidebarNavigation.shared.destination = nil
+        }
         .confirmationDialog(
             "Remove stopped containers and unused images?",
             isPresented: $isConfirmingPrune,

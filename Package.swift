@@ -36,7 +36,10 @@ let package = Package(
                 "ContainerStackCore",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
-            resources: [.copy("Resources/Lucide")],
+            resources: [
+                .copy("Resources/Lucide"), .copy("Resources/WelcomeVersion.txt"),
+                .copy("Resources/WelcomeChangelog.md"),
+            ],
             linkerSettings: [
                 // SwiftPM links the XCFramework from its build cache, which does
                 // not exist on a user's machine. The staged bundle carries the

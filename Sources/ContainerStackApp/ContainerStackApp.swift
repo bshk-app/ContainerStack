@@ -5,21 +5,37 @@ import SwiftUI
 @main
 struct ContainerStackApp: App {
     @NSApplicationDelegateAdaptor(ContainerStackAppDelegate.self) private var appDelegate
-    @State private var model = RuntimeViewModel(
-        dockerContextStore: .live,
-        dockerContextTakeoverPreference: DockerContextTakeoverPreference()
-    )
-    @State private var updates = AppUpdates()
-    @State private var resourceSettings = ContainerResourceSettings()
-    @State private var builderSettings = ContainerResourceSettings(table: .build)
-    @State private var sharedRuntimeSettings = SharedRuntimeSettings()
-    @State private var agentSkill = AgentSkillSettings()
+    @State private var model: RuntimeViewModel
+    @State private var updates: AppUpdates
+    @State private var resourceSettings: ContainerResourceSettings
+    @State private var builderSettings: ContainerResourceSettings
+    @State private var sharedRuntimeSettings: SharedRuntimeSettings
+    @State private var agentSkill: AgentSkillSettings
+    @State private var commandLine: CommandLineSettings
+    @State private var welcome: WelcomeSession
+
+    init() {
+        let earlierInstall = WelcomeSession.hasEarlierInstall(defaults: .standard, links: .bundled())
+        _welcome = State(initialValue: WelcomeSession(earlierInstall: earlierInstall))
+        _model = State(
+            initialValue: RuntimeViewModel(
+                dockerContextStore: .live,
+                dockerContextTakeoverPreference: DockerContextTakeoverPreference()))
+        _updates = State(initialValue: AppUpdates())
+        _resourceSettings = State(initialValue: ContainerResourceSettings())
+        _builderSettings = State(initialValue: ContainerResourceSettings(table: .build))
+        _sharedRuntimeSettings = State(initialValue: SharedRuntimeSettings())
+        _agentSkill = State(initialValue: AgentSkillSettings())
+        _commandLine = State(initialValue: CommandLineSettings())
+    }
 
     var body: some Scene {
         Window("ContainerStack", id: "dashboard") {
             DashboardView(model: model, resourceSettings: resourceSettings)
+                .modifier(OnboardingLaunch(session: welcome))
         }
         .commands {
+            OnboardingCommands()
             // The app menu is where macOS users look for this, and the menu bar
             // extra is the only surface visible when no window is open.
             CommandGroup(after: .appInfo) {
@@ -28,13 +44,29 @@ struct ContainerStackApp: App {
             }
         }
 
+        Window("Welcome to ContainerStack", id: "welcome") {
+            WelcomeWindowContent(
+                session: welcome, model: model, resources: resourceSettings, builder: builderSettings,
+                shared: sharedRuntimeSettings, commandLine: commandLine, skill: agentSkill)
+        }
+        .defaultSize(width: 760, height: 520)
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+
+        Window("What's New in ContainerStack", id: "whats-new") {
+            WhatsNewWindowContent(session: welcome)
+        }
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+
         Settings {
             SystemSettingsView(
                 settings: resourceSettings,
                 builderSettings: builderSettings,
                 agentSkill: agentSkill,
                 sharedRuntimeSettings: sharedRuntimeSettings,
-                model: model
+                model: model,
+                commandLine: commandLine
             )
         }
 

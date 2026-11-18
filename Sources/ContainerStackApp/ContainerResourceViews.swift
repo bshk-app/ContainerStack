@@ -1,7 +1,7 @@
 import ContainerStackCore
 import SwiftUI
 
-private struct ResourceLimitFields: View {
+struct ResourceLimitFields: View {
     @Binding var cpus: Int
     @Binding var memoryGiB: Int
     let memoryDescription: String

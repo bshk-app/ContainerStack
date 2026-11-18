@@ -37,23 +37,61 @@ struct AgentSkillSettingsTests {
         #expect(!isLinked())
     }
 
-    @Test func applyingLinksTheSkillByDefault() throws {
+    @Test func newInstallNeedsConsent() throws {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { cleanUp(defaults) }
         let settings = AgentSkillSettings(defaults: defaults, links: try links())
 
         settings.apply()
 
-        #expect(settings.isEnabled)
+        #expect(!settings.isEnabled)
+        #expect(!isLinked())
+        settings.isEnabled = true
         #expect(isLinked())
         #expect(settings.results.first { $0.agent == "Claude Code" }?.outcome == .linked)
+    }
+
+    @Test func existingSkillLinksKeepConsentAfterUpdate() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let old = try links(app: "Old/ContainerStack.app")
+        _ = old.install()
+        let current = try links()
+        let updated = AgentSkillSettings(defaults: defaults, links: current)
+        #expect(updated.isEnabled)
+        updated.apply()
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: claudeLink.path) == current.source.path)
+    }
+
+    @Test func explicitOptOutWinsOverExistingLink() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let existing = try links()
+        _ = existing.install()
+        defaults.set(false, forKey: AgentSkillSettings.key)
+        let settings = AgentSkillSettings(defaults: defaults, links: existing)
+        #expect(!settings.isEnabled)
+        settings.apply()
+        #expect(!isLinked())
+    }
+
+    @Test func userSkillCopyDoesNotCountAsConsent() throws {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { cleanUp(defaults) }
+        let current = try links()
+        try FileManager.default.createDirectory(
+            at: claudeLink.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            atPath: claudeLink.path, withDestinationPath: root.appending(path: "mine").path)
+        #expect(!AgentSkillSettings(defaults: defaults, links: current).isEnabled)
     }
 
     @Test func turningItOffRemovesTheLinksAndStaysOff() throws {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { cleanUp(defaults) }
         let settings = AgentSkillSettings(defaults: defaults, links: try links())
-        settings.apply()
+        settings.isEnabled = true
+        #expect(isLinked())
 
         settings.isEnabled = false
 
@@ -68,7 +106,7 @@ struct AgentSkillSettingsTests {
     @Test func aMovedAppRepointsItsOwnLink() throws {
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer { cleanUp(defaults) }
-        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).apply()
+        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).isEnabled = true
         let moved = try links()
 
         AgentSkillSettings(defaults: defaults, links: moved).apply()
@@ -85,7 +123,7 @@ struct AgentSkillSettingsTests {
             cleanUp(defaults)
         }
         try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
-        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).apply()
+        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).isEnabled = true
         let moved = try links()
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: skills.path)
 
@@ -113,7 +151,7 @@ struct AgentSkillSettingsTests {
         try FileManager.default.createDirectory(at: home.appending(path: ".codex"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: claudeSkills, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: claudeSkills.path)
-        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).apply()
+        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).isEnabled = true
         let moved = try links()
 
         AgentSkillSettings(defaults: defaults, links: moved).apply()
@@ -129,7 +167,7 @@ struct AgentSkillSettingsTests {
             try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: claudeSkills.path)
             cleanUp(defaults)
         }
-        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).apply()
+        AgentSkillSettings(defaults: defaults, links: try links(app: "Old/ContainerStack.app")).isEnabled = true
         let moved = AgentSkillSettings(defaults: defaults, links: try links())
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: claudeSkills.path)
 

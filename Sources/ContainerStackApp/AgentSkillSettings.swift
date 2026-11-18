@@ -3,7 +3,7 @@ import Foundation
 import Observation
 
 /// Whether ContainerStack links its `containerstack` skill into the coding agents' skill folders.
-/// On by default. The app applies the choice after launch and when Settings opens, so a new app
+/// Off until consent, unless a previous install already linked the skill. The app applies the choice after launch, so a new app
 /// version, or an app that moved, repairs its links. Making the settings links nothing: a second
 /// copy of the app makes them before it finds the first copy and quits.
 @MainActor
@@ -16,6 +16,7 @@ final class AgentSkillSettings {
 
     private let defaults: UserDefaults
     private let links: AgentSkillLinks?
+    private let migratedSources: Set<String>
     private(set) var results: [AgentSkillLinks.Result] = []
 
     var isEnabled: Bool {
@@ -31,7 +32,8 @@ final class AgentSkillSettings {
     init(defaults: UserDefaults = .standard, links: AgentSkillLinks? = .bundled()) {
         self.defaults = defaults
         self.links = links
-        isEnabled = defaults.object(forKey: Self.key) as? Bool ?? true
+        migratedSources = links?.existingContainerStackSources() ?? []
+        isEnabled = defaults.object(forKey: Self.key) as? Bool ?? !migratedSources.isEmpty
     }
 
     func apply() {
@@ -39,7 +41,7 @@ final class AgentSkillSettings {
         let recorded = AgentSkillLinks(
             source: links.source,
             home: links.home,
-            ownedSources: Set(defaults.stringArray(forKey: Self.linkedSourcesKey) ?? [])
+            ownedSources: Set(defaults.stringArray(forKey: Self.linkedSourcesKey) ?? []).union(migratedSources)
         )
         results = isEnabled ? recorded.install() : recorded.remove()
         defaults.set(recorded.linkedSources().sorted(), forKey: Self.linkedSourcesKey)

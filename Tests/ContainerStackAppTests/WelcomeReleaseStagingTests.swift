@@ -5,6 +5,29 @@ import Testing
 @testable import ContainerStackApp
 
 struct WelcomeReleaseStagingTests {
+    @Test func readsReleaseFilesFromStagedApp() throws {
+        let files = FileManager.default
+        let root = files.temporaryDirectory.appending(path: "welcome-release-loading-\(UUID())")
+        defer { try? files.removeItem(at: root) }
+
+        let mainResourceURL = root.appending(path: "Staged.app/Contents/Resources", directoryHint: .isDirectory)
+        let contents = mainResourceURL.appending(path: "ContainerStack_ContainerStackApp.bundle/Contents")
+        let resources = contents.appending(path: "Resources", directoryHint: .isDirectory)
+        try files.createDirectory(at: resources, withIntermediateDirectories: true)
+        let info = [
+            "CFBundleIdentifier": "app.bshk.containerstack.tests.welcome",
+            "CFBundlePackageType": "BNDL",
+        ]
+        let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try plist.write(to: contents.appending(path: "Info.plist"))
+        try Data("9.8.7\n".utf8).write(to: resources.appending(path: "WelcomeVersion.txt"))
+        try Data("## [9.8.7]\n\n### Features\n\nStaged notes\n".utf8)
+            .write(to: resources.appending(path: "WelcomeChangelog.md"))
+
+        #expect(WelcomeRelease.version(mainResourceURL: mainResourceURL) == "9.8.7")
+        #expect(WelcomeRelease.notes(mainResourceURL: mainResourceURL) == "### Features\n\nStaged notes")
+    }
+
     @Test func stagesRealReleaseFilesWithoutBuildingOrSigning() throws {
         let files = FileManager.default
         let root = files.temporaryDirectory.appending(path: "welcome-release-staging-\(UUID())")

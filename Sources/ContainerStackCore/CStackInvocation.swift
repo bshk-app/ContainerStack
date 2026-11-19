@@ -13,6 +13,7 @@ public struct CStackInvocation: Equatable, Sendable {
     public let passthrough: [String]
     public let options: [String: String]
     public let flags: Set<String>
+    private let hasGlobalHelpFlag: Bool
 
     public var socketPath: String? {
         options["socket"]
@@ -25,6 +26,7 @@ public struct CStackInvocation: Equatable, Sendable {
         var passthrough: [String] = []
         var options: [String: String] = [:]
         var flags: Set<String> = []
+        var hasGlobalHelpFlag = false
 
         var index = 0
         while index < arguments.count {
@@ -58,6 +60,8 @@ public struct CStackInvocation: Equatable, Sendable {
                 flags.insert(name)
                 if command != nil {
                     passthrough.append(argument)
+                } else if name == "help" {
+                    hasGlobalHelpFlag = true
                 }
             }
         }
@@ -68,6 +72,7 @@ public struct CStackInvocation: Equatable, Sendable {
         self.passthrough = passthrough
         self.options = options
         self.flags = flags
+        self.hasGlobalHelpFlag = hasGlobalHelpFlag
     }
 
     public func isSet(_ flag: String) -> Bool {
@@ -75,7 +80,7 @@ public struct CStackInvocation: Equatable, Sendable {
     }
 
     public var wantsHelp: Bool {
-        command == "help" || (isSet("help") && command != "compose")
+        command == "help" || hasGlobalHelpFlag || (isSet("help") && command != "compose")
     }
 
     public func value(_ option: String) -> String? {

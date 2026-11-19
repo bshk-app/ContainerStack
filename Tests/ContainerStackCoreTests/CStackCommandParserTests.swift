@@ -23,6 +23,16 @@ struct CStackCommandParserTests {
         #expect(CStackInvocation(arguments: ["help"]).wantsHelp)
     }
 
+    @Test(arguments: [
+        ["-h", "compose", "up", "-d"],
+        ["--help", "compose", "down", "-v"],
+        ["-h", "compose", "up", "--help"],
+        ["--help", "compose", "run", "service", "--", "--help"],
+    ])
+    func helpBeforeComposeAsksForCStackHelp(arguments: [String]) {
+        #expect(CStackInvocation(arguments: arguments).wantsHelp)
+    }
+
     @Test(
         "a command without a help flag runs",
         arguments: [
@@ -33,12 +43,22 @@ struct CStackCommandParserTests {
         #expect(!CStackInvocation(arguments: arguments).wantsHelp)
     }
 
-    @Test(arguments: ["-h", "--help"])
-    func composePassesItsHelpFlagToDockerCompose(flag: String) {
-        let invocation = CStackInvocation(arguments: ["compose", flag])
+    @Test(arguments: [[], ["up"]], ["-h", "--help"])
+    func composePassesItsHelpFlagToDockerCompose(arguments: [String], flag: String) {
+        let invocation = CStackInvocation(arguments: ["compose"] + arguments + [flag])
 
         #expect(!invocation.wantsHelp)
-        #expect(invocation.passthrough == [flag])
+        #expect(invocation.passthrough == arguments + [flag])
+    }
+
+    @Test
+    func composeKeepsHelpAfterArgumentSeparator() {
+        let invocation = CStackInvocation(arguments: ["compose", "run", "service", "--", "--help"])
+
+        #expect(!invocation.wantsHelp)
+        #expect(!invocation.isSet("help"))
+        #expect(invocation.trailing == ["--help"])
+        #expect(invocation.passthrough == ["run", "service", "--help"])
     }
 
     @Test(arguments: ["-h", "--help"])

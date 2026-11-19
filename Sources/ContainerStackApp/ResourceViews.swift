@@ -39,7 +39,7 @@ struct VolumesView: View {
                             .tag(volume.name)
                     }
                 }
-                .listStyle(.inset)
+                .resourceListStyle()
                 .focusesOnClick()
             }
 
@@ -115,7 +115,7 @@ struct NetworksView: View {
                             .tag(network.id)
                     }
                 }
-                .listStyle(.inset)
+                .resourceListStyle()
                 .focusesOnClick()
             }
 

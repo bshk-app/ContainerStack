@@ -193,7 +193,7 @@ struct ContainerInspector: View {
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 9)
-        .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .background(theme.cardBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(theme.hairline, lineWidth: 0.5)
@@ -240,7 +240,7 @@ private struct InspectorLogsView: View {
                         .padding(10)
                 }
                 .defaultScrollAnchor(.bottom)
-                .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(theme.cardBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .strokeBorder(theme.hairline, lineWidth: 0.5)

@@ -23,6 +23,12 @@ extension View {
     func fitsSplitColumn() -> some View {
         frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    /// The list's own background is a system color, different from the inspector's.
+    /// Hidden, it shows the theme's `windowBackground` behind the list.
+    func resourceListStyle() -> some View {
+        listStyle(.inset).scrollContentBackground(.hidden)
+    }
 }
 
 struct ResourceInspector: View {
@@ -190,7 +196,7 @@ struct InspectorStatBlock: View {
                     }
                 }
             }
-            .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(theme.cardBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(theme.hairline, lineWidth: 0.5)

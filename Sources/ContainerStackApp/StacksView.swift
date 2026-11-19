@@ -47,7 +47,7 @@ struct StacksView: View {
                             }
                     }
                 }
-                .listStyle(.inset)
+                .resourceListStyle()
                 .focusesOnClick()
             }
 

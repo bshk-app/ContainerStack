@@ -2,8 +2,10 @@ import ContainerStackCore
 import SwiftUI
 
 struct AppTheme: Equatable {
+    /// The toolbar, all three columns and the window behind them.
     let windowBackground: Color
-    let sidebarBackground: Color
+    let groupHeaderBackground: Color
+    let cardBackground: Color
     let hairline: Color
     let textPrimary: Color
     let textSecondary: Color
@@ -14,8 +16,9 @@ struct AppTheme: Equatable {
 
     static let dark = AppTheme(
         windowBackground: Color(uiHex: 0x1E1E1E),
-        sidebarBackground: Color(uiHex: 0x262628),
-        hairline: Color.white.opacity(0.07),
+        groupHeaderBackground: Color(uiHex: 0x232325),
+        cardBackground: Color(uiHex: 0x262628),
+        hairline: Color.white.opacity(0.08),
         textPrimary: Color(uiHex: 0xEBEBF5),
         textSecondary: Color(uiHex: 0xEBEBF5).opacity(0.60),
         textTertiary: Color(uiHex: 0xEBEBF5).opacity(0.35),
@@ -25,9 +28,10 @@ struct AppTheme: Equatable {
     )
 
     static let light = AppTheme(
-        windowBackground: Color(uiHex: 0xF5F5F7),
-        sidebarBackground: Color(uiHex: 0xECECEE),
-        hairline: Color.black.opacity(0.08),
+        windowBackground: Color(uiHex: 0xFFFFFF),
+        groupHeaderBackground: Color(uiHex: 0xF7F7F8),
+        cardBackground: Color(uiHex: 0xF5F5F7),
+        hairline: Color.black.opacity(0.09),
         textPrimary: Color(uiHex: 0x1D1D1F),
         textSecondary: Color(uiHex: 0x1D1D1F).opacity(0.55),
         textTertiary: Color(uiHex: 0x1D1D1F).opacity(0.35),
@@ -57,6 +61,53 @@ struct AppThemeInjector: ViewModifier {
 
     func body(content: Content) -> some View {
         content.environment(\.appTheme, .resolve(colorScheme))
+    }
+}
+
+/// Without it, rows that scroll up show through the toolbar.
+struct ThemedToolbarBackground: ViewModifier {
+    @Environment(\.appTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .toolbarBackground(theme.windowBackground, for: .windowToolbar)
+            .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+    }
+}
+
+/// As thick as the separators a `List` draws between its rows.
+struct Hairline: View {
+    var axis: Axis = .horizontal
+    @Environment(\.appTheme) private var theme
+
+    var body: some View {
+        Rectangle()
+            .fill(theme.hairline)
+            .frame(width: axis == .vertical ? 1 : nil, height: axis == .horizontal ? 1 : nil)
+    }
+}
+
+extension View {
+    /// The split view draws no line under the toolbar and none between its columns.
+    /// The sidebar's system material takes its tint from the wallpaper, so each column paints the theme's color.
+    func columnChrome(separator edge: HorizontalEdge? = nil) -> some View {
+        modifier(ColumnChrome(separatorEdge: edge))
+    }
+}
+
+private struct ColumnChrome: ViewModifier {
+    let separatorEdge: HorizontalEdge?
+    @Environment(\.appTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .safeAreaInset(edge: .top, spacing: 0) { Hairline() }
+            .overlay(alignment: separatorEdge == .leading ? .leading : .trailing) {
+                if separatorEdge != nil {
+                    Hairline(axis: .vertical).ignoresSafeArea()
+                }
+            }
+            .background(theme.windowBackground)
     }
 }
 
@@ -119,6 +170,7 @@ struct DashboardSidebar: View {
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
         .focusesOnClick()
         .contextMenu {
             Section("Show in Sidebar") {

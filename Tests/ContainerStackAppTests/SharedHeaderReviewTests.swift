@@ -23,7 +23,8 @@ import Testing
         let model = RuntimeViewModel(socketPath: "/unused-test.sock")
         model.containers = [parent, first, second]
         let filtered = ContainerGroup(kind: .shared(container: parent), containers: [first])
-        let header = ContainerGroupHeader(group: filtered, model: model, isCollapsed: false, toggle: {})
+        let header = ContainerGroupHeader(
+            group: filtered, model: model, isCollapsed: false, showsTopLine: true, toggle: {})
         #expect(header.actionGroup.headerActions == [.stop])
         #expect(header.actionGroup.stopConfirmation == "Stop mcp? This ends 2 sessions.")
     }

@@ -85,6 +85,7 @@ struct DashboardView: View {
                                 .padding(16).frame(width: 260)
                         }
                 }
+                .columnChrome(separator: .trailing)
         } detail: {
             NavigationStack {
                 Group {
@@ -135,16 +136,20 @@ struct DashboardView: View {
                 .searchable(text: $navigation.searchText, placement: .toolbar, prompt: "Search")
                 .toolbar {
                     ToolbarItem {
-                        Button("Run\u{2026}") { isChoosingImageToRun = true }
-                            .help(
-                                model.images.isEmpty
-                                    ? "Pull an image in Images first"
-                                    : "Run a container from a local image"
-                            )
-                            .disabled(
-                                !model.canMutate || model.busyResource != nil || model.isRunningContainer
-                                    || model.images.isEmpty
-                            )
+                        Button {
+                            isChoosingImageToRun = true
+                        } label: {
+                            LucideLabel(title: "Run\u{2026}", icon: .play)
+                        }
+                        .help(
+                            model.images.isEmpty
+                                ? "Pull an image in Images first"
+                                : "Run a container from a local image"
+                        )
+                        .disabled(
+                            !model.canMutate || model.busyResource != nil || model.isRunningContainer
+                                || model.images.isEmpty
+                        )
                     }
                     ToolbarItem {
                         Menu {
@@ -157,6 +162,8 @@ struct DashboardView: View {
                         } label: {
                             LucideLabel(title: "More", icon: .ellipsis)
                         }
+                        // The indicator makes the menu wider than the round icon buttons next to it.
+                        .menuIndicator(.hidden)
                         // The toolbar does not take the label's title and reads "chevron.pulldown" instead.
                         .accessibilityLabel("More")
                     }
@@ -170,6 +177,7 @@ struct DashboardView: View {
                     }
                 }
             }
+            .columnChrome()
         }
         // Only on the split view does the inspector get its own part of the toolbar.
         .inspector(isPresented: inspectorPresented) {
@@ -179,6 +187,7 @@ struct DashboardView: View {
                 selection: $resources,
                 openedStackID: $navigation.openedStackID
             )
+            .columnChrome(separator: .leading)
             // A drag on the divider of a resizable inspector makes the split view loop and throw.
             .inspectorColumnWidth(404)
             .toolbar {
@@ -197,6 +206,7 @@ struct DashboardView: View {
                 }
             }
         }
+        .modifier(ThemedToolbarBackground())
         .modifier(AppThemeInjector())
         .onChange(of: WelcomeSidebarNavigation.shared.destination, initial: true) { _, step in
             guard let step else { return }

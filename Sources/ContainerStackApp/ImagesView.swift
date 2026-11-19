@@ -85,7 +85,7 @@ struct ImagesView: View {
                         .tag(image.id)
                     }
                 }
-                .listStyle(.inset)
+                .resourceListStyle()
                 .focusesOnClick()
             }
 

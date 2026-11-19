@@ -26,31 +26,34 @@ struct ContainersView: View {
             } else {
                 List(selection: selection) {
                     ForEach(filteredGroups) { group in
-                        Section {
-                            if !collapsed.contains(group.id) {
-                                ForEach(group.containers) { container in
-                                    ContainerRow(
-                                        container: container,
-                                        model: model,
-                                        onShowLogs: {
-                                            model.selectedContainerID = container.id
-                                            resources.showContainerLogs()
-                                        }
-                                    )
-                                    .tag(container.id)
-                                }
+                        ContainerGroupHeader(
+                            group: group,
+                            model: model,
+                            isCollapsed: collapsed.contains(group.id)
+                        ) {
+                            if collapsed.contains(group.id) {
+                                collapsed.remove(group.id)
+                            } else {
+                                collapsed.insert(group.id)
                             }
-                        } header: {
-                            ContainerGroupHeader(
-                                group: group,
-                                model: model,
-                                isCollapsed: collapsed.contains(group.id)
-                            ) {
-                                if collapsed.contains(group.id) {
-                                    collapsed.remove(group.id)
-                                } else {
-                                    collapsed.insert(group.id)
-                                }
+                        }
+                        .frame(minHeight: 21)
+                        .padding(.bottom, 4)
+                        .overlay(alignment: .bottom) { Divider() }
+                        .selectionDisabled()
+                        .listRowSeparator(.hidden)
+
+                        if !collapsed.contains(group.id) {
+                            ForEach(group.containers) { container in
+                                ContainerRow(
+                                    container: container,
+                                    model: model,
+                                    onShowLogs: {
+                                        model.selectedContainerID = container.id
+                                        resources.showContainerLogs()
+                                    }
+                                )
+                                .tag(container.id)
                             }
                         }
                     }

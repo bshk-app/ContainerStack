@@ -83,7 +83,11 @@ struct WelcomePolicyTests {
         let text = "## [0.12.0] - today\n\n### Features\n\nNew feature\n\n## [0.11.0]\nOld feature"
         #expect(WelcomeRelease.notes(version: "0.12.0", changelog: text) == "### Features\n\nNew feature")
         #expect(WelcomeRelease.notes(version: "0.9.0", changelog: text).isEmpty)
-        #expect(!WelcomeRelease.version.isEmpty)
-        #expect(!WelcomeRelease.notes.isEmpty)
+        #expect(WelcomeRelease.notes(version: "0.12.0", changelog: "").isEmpty)
+    }
+
+    @Test(arguments: [(" \n0.12.0\n", "0.12.0"), ("", ""), ("\n\t", "")])
+    func readsVersionFromInjectedText(text: String, expected: String) {
+        #expect(WelcomeRelease.version(from: text) == expected)
     }
 }

@@ -34,11 +34,22 @@ struct WelcomePolicy {
 }
 
 enum WelcomeRelease {
-    static var version: String {
-        resource("WelcomeVersion", extension: "txt").trimmingCharacters(in: .whitespacesAndNewlines)
+    static var version: String { version(mainResourceURL: Bundle.main.resourceURL) }
+
+    static var notes: String { notes(mainResourceURL: Bundle.main.resourceURL) }
+
+    static func version(mainResourceURL: URL?) -> String {
+        version(from: resource("WelcomeVersion", extension: "txt", mainResourceURL: mainResourceURL))
     }
 
-    static var notes: String { notes(version: version, changelog: resource("WelcomeChangelog", extension: "md")) }
+    static func notes(mainResourceURL: URL?) -> String {
+        notes(
+            version: version(mainResourceURL: mainResourceURL),
+            changelog: resource("WelcomeChangelog", extension: "md", mainResourceURL: mainResourceURL)
+        )
+    }
+
+    static func version(from text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     static func notes(version: String, changelog: String) -> String {
         var collecting = false
@@ -54,12 +65,8 @@ enum WelcomeRelease {
         return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func resource(_ name: String, extension suffix: String) -> String {
-        #if SWIFT_PACKAGE
-            let bundle = Bundle.module
-        #else
-            let bundle = Bundle.main
-        #endif
+    private static func resource(_ name: String, extension suffix: String, mainResourceURL: URL?) -> String {
+        let bundle = AppResources.bundle(mainResourceURL: mainResourceURL)
         guard let url = bundle.url(forResource: name, withExtension: suffix),
             let text = try? String(contentsOf: url, encoding: .utf8)
         else { return "" }

@@ -66,22 +66,6 @@ struct LucideLabel: View {
 }
 
 extension Lucide {
-    static func stagedResourceBundle(mainResourceURL: URL?) -> Bundle? {
-        guard let mainResourceURL else { return nil }
-        return Bundle(
-            url: mainResourceURL.appending(
-                path: "ContainerStack_ContainerStackApp.bundle",
-                directoryHint: .isDirectory
-            )
-        )
-    }
-
-    /// The bundle icons are loaded from: the staged app's own resource bundle when running from
-    /// `Contents/Resources`, and the SwiftPM one otherwise.
-    static var resourceBundle: Bundle {
-        stagedResourceBundle(mainResourceURL: Bundle.main.resourceURL) ?? .module
-    }
-
     func assetURL(in bundle: Bundle) -> URL? {
         bundle.url(forResource: rawValue, withExtension: "svg", subdirectory: "Lucide")
             ?? bundle.url(forResource: rawValue, withExtension: "svg")
@@ -100,7 +84,7 @@ extension Lucide {
     /// A blank image reads as a control that has no icon, which is how an unstaged asset used to
     /// pass for a design choice. Debug builds stop; release builds draw something visibly wrong.
     var templateImage: NSImage {
-        let bundle = Self.resourceBundle
+        let bundle = AppResources.bundle()
         guard let url = assetURL(in: bundle), let image = NSImage(contentsOf: url) else {
             assertionFailure("Lucide asset \(rawValue).svg did not resolve in \(bundle.bundleURL.path)")
             return Self.unresolvedPlaceholder

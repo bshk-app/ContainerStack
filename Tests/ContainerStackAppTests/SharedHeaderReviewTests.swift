@@ -29,4 +29,17 @@ import Testing
         #expect(header.actionGroup.stopConfirmation == "Stop mcp? This ends 2 sessions.")
     }
 
+    @Test func emptyExpandedSharedGroupUsesOneDividerBeforeTheNextHeader() throws {
+        let parent = try summary("parent", labels: ["containerstack.shared.group": "mcp"])
+        let standalone = try summary("standalone", labels: [:])
+        let groups = ContainerGroup.grouped([parent, standalone])
+        let previous = try #require(groups.first)
+        try #require(groups.count == 2)
+        try #require(previous.sharedContainer?.id == parent.id)
+        try #require(previous.containers.isEmpty)
+
+        let drawsTopLine = ContainersView.showsTopLine(after: previous, collapsed: [])
+        #expect(!drawsTopLine, "The preceding header already draws the divider.")
+    }
+
 }

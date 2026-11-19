@@ -31,8 +31,8 @@ struct ContainersView: View {
                             group: group,
                             model: model,
                             isCollapsed: collapsed.contains(group.id),
-                            // Under a collapsed group the line would double that group's bottom line.
-                            showsTopLine: index == 0 || !collapsed.contains(groups[index - 1].id)
+                            showsTopLine: Self.showsTopLine(
+                                after: index > 0 ? groups[index - 1] : nil, collapsed: collapsed)
                         ) {
                             if collapsed.contains(group.id) {
                                 collapsed.remove(group.id)
@@ -40,6 +40,7 @@ struct ContainersView: View {
                                 collapsed.insert(group.id)
                             }
                         }
+                        .listRowInsets(.horizontal, 8)
                         if !collapsed.contains(group.id) {
                             ForEach(group.containers) { container in
                                 ContainerRow(
@@ -50,12 +51,15 @@ struct ContainersView: View {
                                         resources.showContainerLogs()
                                     }
                                 )
+                                .listRowInsets(.horizontal, 8)
                                 .tag(container.id)
                             }
                         }
                     }
                 }
-                .resourceListStyle()
+                // The inset list reserves space above its first row.
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .focusesOnClick()
             }
 
@@ -66,6 +70,11 @@ struct ContainersView: View {
             }
         }
         .background(theme.windowBackground)
+    }
+
+    static func showsTopLine(after previous: ContainerGroup?, collapsed: Set<String>) -> Bool {
+        // The toolbar divider borders the first header.
+        previous.map { !$0.containers.isEmpty && !collapsed.contains($0.id) } ?? false
     }
 
     private var filteredGroups: [ContainerGroup] {

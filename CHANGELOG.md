@@ -14,35 +14,28 @@ releases belong in that section — move them there while reviewing.
 
 ## [0.12.0](https://github.com/bshk-app/ContainerStack/compare/v0.11.0...v0.12.0) (2026-11-20)
 
+A Welcome window shows the features of ContainerStack on the first launch and after an update that adds a feature. Settings has a sidebar, and the main window uses one background color. You can install the `cstack` command and the coding agent skill from the app.
 
 ### Added
 
-* add onboarding windows and command line setup ([e870014](https://github.com/bshk-app/ContainerStack/commit/e870014ed7eb3a78f8e255b41353f49100b76af7))
-* add onboarding windows and command line setup ([0a3edb1](https://github.com/bshk-app/ContainerStack/commit/0a3edb13c9de5d121c85a460616a7519fe64c79a))
-* add settings pane navigation API ([c003fe3](https://github.com/bshk-app/ContainerStack/commit/c003fe3bda5f1782af2f91933de88c786ae88aeb))
-* **app:** apply the 1c window palette ([bb3ffc6](https://github.com/bshk-app/ContainerStack/commit/bb3ffc670fb20d672f70a7f9aec047fb03b861cd))
-* **app:** apply the 1c window palette ([7b20344](https://github.com/bshk-app/ContainerStack/commit/7b20344d835be30683de5cceaa0e405b60a7dfa7))
-* organize settings into sidebar panes ([cbc18eb](https://github.com/bshk-app/ContainerStack/commit/cbc18ebdce241264a8c7f1060d960c5b1ac1c560))
-* organize settings into sidebar panes ([51674a3](https://github.com/bshk-app/ContainerStack/commit/51674a31c55074843984cd2fc56400d253b6aa17))
+- **Welcome window.** It shows the features step by step: the Docker context, the container size, idle builders, stacks, Doctor, shared runtimes, and the command line. It opens on the first launch, and once after an update to a major version or to a release with new steps. After an update, the new steps come first with a "New in" tag. Skip, Done, or closing the window marks the release as seen.
+- Help > Welcome to ContainerStack and Help > What's New in ContainerStack open the two windows again. What's New shows the release notes of the installed version.
+- **`cstack` from the app.** Settings > Command Line and Agents and the Welcome window can install the `cstack` command as a link in `/usr/local/bin`. The install asks for an administrator password and does not overwrite a file. The row shows which `cstack` your PATH finds: none, this app, Homebrew, or another copy.
+- **Coding agent skill.** A switch links the ContainerStack skill into `~/.claude/skills` and `~/.agents/skills`. It is off on a new install. An update keeps the links that an earlier version made. Turn the switch off to remove the links.
+- **Settings sidebar.** Settings has four panes: Containers, Image Builder, Shared Runtimes, and Command Line and Agents. One bar at the bottom shows the Docker bridge restart notice and the Restart button for all panes.
 
+### Changed
+
+- **One window color.** The toolbar, sidebar, list and inspector use one background color, with 1 pt lines under the toolbar and between the columns. Group headers in Containers and the inspector cards keep a slightly different tone.
+- Lists show their rows and the selection across the full column width.
 
 ### Fixed
 
-* **app:** align container group dividers ([1930ec6](https://github.com/bshk-app/ContainerStack/commit/1930ec60edf85767899aa935d2a38772c2360e92))
-* **app:** unify resource list styling ([a28df36](https://github.com/bshk-app/ContainerStack/commit/a28df361b7c8546d87ebd3353e2b0ad31c6d40e4))
-* **cli:** honor help flags before compose ([02f46a1](https://github.com/bshk-app/ContainerStack/commit/02f46a1b966668977c3a38aa3d6a82b204bea802))
-* **cli:** print usage for --help instead of running the command ([6574ff8](https://github.com/bshk-app/ContainerStack/commit/6574ff8ae306dcd6cf0ec3a220fd9a37b247aa98))
-* **cli:** print usage for --help instead of running the command ([6252a55](https://github.com/bshk-app/ContainerStack/commit/6252a55f6fe04cc43aa6119d4fef4fa9aff32565))
-* derive welcome locations from settings panes ([30e2992](https://github.com/bshk-app/ContainerStack/commit/30e29924a6ddbd91a124683025bef298999db963))
-* detect prior installs from agentSkillLinkedSources ([ce3498c](https://github.com/bshk-app/ContainerStack/commit/ce3498ccecd16a196be69db091c610ef2afca381))
-* handle cstack path fallback and prompt cancellation ([9e07314](https://github.com/bshk-app/ContainerStack/commit/9e07314416ec2abdd8b911f051d86f92b3f3fa0a))
-* keep settings errors visible across panes ([f400eea](https://github.com/bshk-app/ContainerStack/commit/f400eea420c59b53370f91fd2e9e94720998983b))
-* load Welcome release files from the staged app bundle ([e88b9dd](https://github.com/bshk-app/ContainerStack/commit/e88b9ddf28c8ede8d485142f2abbed8a1c96e8cc))
-* persist the initial welcome install decision ([b8542f6](https://github.com/bshk-app/ContainerStack/commit/b8542f68b16031b238d2e4584f4a9f3a15c8ac1c))
-* refine welcome progress and command setup ([ce3f641](https://github.com/bshk-app/ContainerStack/commit/ce3f6413a171a30f6f0984cffd2c845017b9e6ca))
-* repair stale cstack links and recognize this app ([64b366f](https://github.com/bshk-app/ContainerStack/commit/64b366f9d40446a6c9d2b1656489ce5e62d69946))
-* stage welcome release resources as regular files ([6bdf243](https://github.com/bshk-app/ContainerStack/commit/6bdf243d8b85835e0cb3b5e99d9e3b3ddb684f63))
-* stage welcome release resources as regular files ([61c3af1](https://github.com/bshk-app/ContainerStack/commit/61c3af1de95f8bb49d3fb8c6a0216d614b2f8ab9))
+- `cstack --help` and `-h` on any command print the usage and do nothing else. Before, `cstack runtime --help` restarted the Docker bridge and Apple Container, and `cstack --help` ran Doctor. `cstack compose up --help` still shows the Docker Compose help.
+
+### Known limitations
+
+- The `cstack` install does not work when ContainerStack runs from a disk image or from a translocated path. Move the app to the Applications folder first.
 
 ## [0.11.0](https://github.com/bshk-app/ContainerStack/compare/v0.10.0...v0.11.0) (2026-11-17)
 

@@ -82,6 +82,7 @@ struct ImagesView: View {
                             model: model,
                             onRun: { runImage = RunImage(image: image.displayName) }
                         )
+                        .listRowInsets(.horizontal, 8)
                         .tag(image.id)
                     }
                 }

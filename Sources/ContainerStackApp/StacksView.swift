@@ -33,6 +33,7 @@ struct StacksView: View {
                 List(selection: $selectedStackID) {
                     ForEach(filteredStacks) { stack in
                         StackRow(stack: stack, model: model)
+                            .listRowInsets(.horizontal, 8)
                             .tag(stack.id)
                             .contextMenu {
                                 Button("Edit") { openedStackID = stack.id }

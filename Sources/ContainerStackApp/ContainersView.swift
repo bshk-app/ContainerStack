@@ -57,9 +57,7 @@ struct ContainersView: View {
                         }
                     }
                 }
-                // The inset list reserves space above its first row.
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                .resourceListStyle()
                 .focusesOnClick()
             }
 

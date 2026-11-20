@@ -24,10 +24,8 @@ extension View {
         frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// The list's own background is a system color, different from the inspector's.
-    /// Hidden, it shows the theme's `windowBackground` behind the list.
     func resourceListStyle() -> some View {
-        listStyle(.inset).scrollContentBackground(.hidden)
+        listStyle(.plain).scrollContentBackground(.hidden)
     }
 }
 

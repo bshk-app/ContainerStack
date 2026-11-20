@@ -3,7 +3,79 @@ import Testing
 
 @testable import ContainerStackCore
 
+private final class CStackTestBundleToken {}
+
 struct CStackCommandParserTests {
+    @Test(
+        "help flags bypass commands with default actions",
+        arguments: [
+            [], ["doctor"], ["ping"], ["version"], ["df"], ["prune"], ["context"], ["runtime"],
+            ["ps"], ["images"], ["volume"], ["volumes"], ["network"], ["networks"], ["runtime", "restart"],
+        ],
+        ["-h", "--help"]
+    )
+    func helpFlagAsksForHelp(arguments: [String], flag: String) {
+        #expect(CStackInvocation(arguments: arguments + [flag]).wantsHelp)
+    }
+
+    @Test
+    func helpCommandAsksForHelp() {
+        #expect(CStackInvocation(arguments: ["help"]).wantsHelp)
+    }
+
+    @Test(arguments: [
+        ["-h", "compose", "up", "-d"],
+        ["--help", "compose", "down", "-v"],
+        ["-h", "compose", "up", "--help"],
+        ["--help", "compose", "run", "service", "--", "--help"],
+    ])
+    func helpBeforeComposeAsksForCStackHelp(arguments: [String]) {
+        #expect(CStackInvocation(arguments: arguments).wantsHelp)
+    }
+
+    @Test(
+        "a command without a help flag runs",
+        arguments: [
+            [], ["runtime"], ["runtime", "restart"], ["ps", "--all"], ["doctor"], ["run", "alpine", "--", "--help"],
+        ]
+    )
+    func commandWithoutHelpFlagRuns(arguments: [String]) {
+        #expect(!CStackInvocation(arguments: arguments).wantsHelp)
+    }
+
+    @Test(arguments: [[], ["up"]], ["-h", "--help"])
+    func composePassesItsHelpFlagToDockerCompose(arguments: [String], flag: String) {
+        let invocation = CStackInvocation(arguments: ["compose"] + arguments + [flag])
+
+        #expect(!invocation.wantsHelp)
+        #expect(invocation.passthrough == arguments + [flag])
+    }
+
+    @Test
+    func composeKeepsHelpAfterArgumentSeparator() {
+        let invocation = CStackInvocation(arguments: ["compose", "run", "service", "--", "--help"])
+
+        #expect(!invocation.wantsHelp)
+        #expect(!invocation.isSet("help"))
+        #expect(invocation.trailing == ["--help"])
+        #expect(invocation.passthrough == ["run", "service", "--help"])
+    }
+
+    @Test(arguments: ["-h", "--help"])
+    func pruneHelpPrintsUsageWithoutContactingDocker(flag: String) throws {
+        let testBundle = Bundle(for: CStackTestBundleToken.self)
+        let executable = testBundle.bundleURL.deletingLastPathComponent().appending(path: "cstack")
+        let result = try ProcessRunner.run(
+            executablePath: executable.path,
+            arguments: ["--socket", "/dev/null", "prune", flag],
+            output: .capture(includingStandardError: true),
+            timeout: .seconds(10)
+        )
+
+        #expect(result.status == 0)
+        #expect(result.output.hasPrefix("Usage: cstack"))
+    }
+
     @Test
     func defaultsToDoctorWithoutArguments() {
         let invocation = CStackInvocation(arguments: [])

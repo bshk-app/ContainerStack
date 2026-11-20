@@ -24,16 +24,22 @@ extension RuntimeViewModel {
     /// From inside Start, which restarts under its own token: a request from inside an operation
     /// would be dropped or wait on itself (#102).
     func adoptBridgeIfStale(during token: Int) async {
-        await adoptBridgeIfStale(restart: {
-            let restarted = await self.performRestart(replacingSibling: false, token: token)
-            return self.lifecycle.isCurrent(token) ? .completed(restarted) : .superseded
-        })
+        await adoptBridgeIfStale(
+            canCheck: { self.lifecycle.isCurrent(token) },
+            restart: {
+                let restarted = await self.performRestart(replacingSibling: false, token: token)
+                return self.lifecycle.isCurrent(token) ? .completed(restarted) : .superseded
+            })
     }
 
-    private func adoptBridgeIfStale(restart: () async -> RuntimeOperationOutcome) async {
+    private func adoptBridgeIfStale(
+        canCheck: () -> Bool = { true },
+        restart: () async -> RuntimeOperationOutcome
+    ) async {
         await adoptBridgeIfStale(
             loadRecorded: { RuntimeHelperIdentityStore().load() },
             loadCurrent: { self.bundledBridgeIdentity() },
+            canCheck: canCheck,
             restart: restart,
             recordIdentity: { self.recordBridgeIdentity() },
             foreignBridge: { await self.currentForeignBridge() }
@@ -43,18 +49,30 @@ extension RuntimeViewModel {
     func adoptBridgeIfStale(
         loadRecorded: () -> RuntimeHelperIdentity?,
         loadCurrent: () -> RuntimeHelperIdentity?,
+        canCheck: () -> Bool = { true },
         restart: () async -> RuntimeOperationOutcome,
         recordIdentity: () -> Void,
         foreignBridge: () async -> ForeignBridge? = { nil }
     ) async {
-        guard !hasCheckedBridgeIdentity else { return }
-        await adoptBridgeIfStale(
+        while bridgeIdentityCheckWaiters != nil {
+            await withCheckedContinuation { bridgeIdentityCheckWaiters?.append($0) }
+        }
+        guard !hasCheckedBridgeIdentity, canCheck(), runtimeState.isHealthy else { return }
+        bridgeIdentityCheckWaiters = []
+        defer {
+            let waiters = bridgeIdentityCheckWaiters ?? []
+            bridgeIdentityCheckWaiters = nil
+            for waiter in waiters { waiter.resume() }
+        }
+        if await checkBridgeIdentity(
             recorded: loadRecorded(),
             current: loadCurrent(),
             restart: restart,
             recordIdentity: recordIdentity,
             foreignBridge: foreignBridge
-        )
+        ) {
+            hasCheckedBridgeIdentity = true
+        }
     }
 
     func adoptBridgeIfStale(
@@ -64,26 +82,33 @@ extension RuntimeViewModel {
         recordIdentity: () -> Void,
         foreignBridge: () async -> ForeignBridge? = { nil }
     ) async {
-        guard !hasCheckedBridgeIdentity else { return }
-        hasCheckedBridgeIdentity = true
+        await adoptBridgeIfStale(
+            loadRecorded: { recorded }, loadCurrent: { current }, restart: restart,
+            recordIdentity: recordIdentity, foreignBridge: foreignBridge
+        )
+    }
 
+    private func checkBridgeIdentity(
+        recorded: RuntimeHelperIdentity?,
+        current: RuntimeHelperIdentity?,
+        restart: () async -> RuntimeOperationOutcome,
+        recordIdentity: () -> Void,
+        foreignBridge: () async -> ForeignBridge?
+    ) async -> Bool {
         // Ownership first, and independent of build staleness. `needsRestart` is
         // `recorded != current`, and the app records its own helper whenever it
         // launches one - so on a stable build the identities match and this
         // routine would return before ever asking who is actually serving. That
         // is the reported case: a foreign bridge takes the socket, every check
         // passes, and lifecycle calls hang with nothing to look at.
-        guard runtimeState.isHealthy else { return }
-
         let observedLifecycle = (lifecycle.generation, lifecycle.latest)
         let initialOwner = await foreignBridge()
         guard observedLifecycle == (lifecycle.generation, lifecycle.latest), runtimeState.isHealthy else {
-            hasCheckedBridgeIdentity = false
-            return
+            return false
         }
         if let foreign = initialOwner {
             serviceMessage = Self.foreignBridgeMessage(foreign)
-            return
+            return true
         }
 
         guard
@@ -93,7 +118,7 @@ extension RuntimeViewModel {
                 current: current
             )
         else {
-            return
+            return true
         }
 
         let progressMessage =
@@ -103,13 +128,9 @@ extension RuntimeViewModel {
         if serviceMessage == progressMessage {
             serviceMessage = nil
         }
-        // A dropped restart replaced nothing, so the check is unspent again: left spent, Start's own
-        // adoption would skip it and the outdated bridge would serve for the rest of the session.
-        if outcome == .dropped {
-            hasCheckedBridgeIdentity = false
-        }
-        // Superseded, it ran under an operation that no longer publishes (#102).
-        guard outcome == .completed(true) else { return }
+        // A dropped or superseded restart leaves the check available to the next caller.
+        guard case .completed(let restarted) = outcome else { return false }
+        guard restarted else { return true }
 
         // A restart stops only the bridge this build ships, deliberately - a
         // socktainer someone runs from elsewhere is theirs. So a restart can
@@ -117,17 +138,17 @@ extension RuntimeViewModel {
         // and recording our identity there would declare the mismatch resolved.
         let restartedLifecycle = (lifecycle.generation, lifecycle.latest)
         let currentOwner = await foreignBridge()
-        guard restartedLifecycle == (lifecycle.generation, lifecycle.latest) else { return }
+        guard restartedLifecycle == (lifecycle.generation, lifecycle.latest) else { return false }
         if let foreign = currentOwner {
             serviceMessage = Self.foreignBridgeMessage(foreign)
-            return
+            return true
         }
 
         recordIdentity()
-        guard !Task.isCancelled else { return }
-        if serviceMessage == nil {
+        if !Task.isCancelled, serviceMessage == nil {
             serviceMessage = "Runtime restarted on the current build."
         }
+        return true
     }
 
     /// The banner owns this wording; the launch-time discovery reuses it so the
@@ -146,12 +167,17 @@ extension RuntimeViewModel {
         let bridgePath = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL).bridgePath
         return await ProcessRunner.offCooperativePool {
             let output = RuntimeShell.output(executablePath: "/usr/sbin/lsof", arguments: ["-Fpcn", "--", socketPath])
-            guard let holder = BridgeOwnership.holder(lsofOutput: output) else { return nil }
+            let holder = BridgeOwnership.holder(lsofOutput: output)
+            let listing =
+                holder == nil
+                ? ""
+                : RuntimeShell.output(
+                    executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
             return BridgeOwnership.foreignBridge(
                 socketPath: socketPath,
                 holder: holder,
                 ourBridgePath: bridgePath,
-                listing: RuntimeShell.output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
+                listing: listing
             )
         }
     }

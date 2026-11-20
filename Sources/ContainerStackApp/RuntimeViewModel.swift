@@ -53,6 +53,8 @@ final class RuntimeViewModel {
     @ObservationIgnored var runtimeRecoveryRequested = false
     /// One bridge-identity check per launch; see `adoptBridgeIfStale`.
     internal(set) var hasCheckedBridgeIdentity = false
+    // Non-nil while a bridge identity check is in flight.
+    @ObservationIgnored var bridgeIdentityCheckWaiters: [CheckedContinuation<Void, Never>]?
     private(set) var runtimeState: RuntimeState = .unknown
     private(set) var snapshot: RuntimeHealthSnapshot?
     internal(set) var images: [DockerImageSummary] = []

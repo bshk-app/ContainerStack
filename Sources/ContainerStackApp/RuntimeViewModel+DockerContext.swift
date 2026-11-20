@@ -129,7 +129,7 @@ extension RuntimeViewModel {
     func refreshDockerContext(includeInstalledContext: Bool = true) async -> Bool {
         let generation = dockerContextRefreshSequencer.begin()
         let read = dockerContextStore.read
-        let state = await Task.detached { await read(includeInstalledContext) }.value
+        let state = await read(includeInstalledContext)
         guard dockerContextRefreshSequencer.isCurrent(generation) else { return false }
         activeDockerContext = state.active
         dockerContextTakeoverPreference.preserveActiveContextIfUnconfigured(state.active)
@@ -205,9 +205,9 @@ extension RuntimeViewModel {
             activeDockerContext != DockerContext.name
         else { return false }
         let currentSocketPath = socketPath
-        let recorded = await Task.detached {
+        let recorded = await ProcessRunner.offCooperativePool {
             try? recordedSocketPath(DockerContext.name)
-        }.value
+        }
         guard
             DockerContext.shouldRepairStaleRecord(
                 activeContext: activeDockerContext,
@@ -227,7 +227,7 @@ extension RuntimeViewModel {
             preference.isEnabled
         else { return false }
         do {
-            try await Task.detached { try repairRecord(currentSocketPath) }.value
+            try await ProcessRunner.offCooperativePool { try repairRecord(currentSocketPath) }
             serviceMessage =
                 "Docker context '\(DockerContext.name)' pointed at a retired socket; repaired the record without switching to it."
             return true
@@ -282,7 +282,7 @@ extension RuntimeViewModel {
         let socketPath = socketPath
         let install = dockerContextStore.install
         do {
-            try await Task.detached { try install(socketPath) }.value
+            try await ProcessRunner.offCooperativePool { try install(socketPath) }
             await refreshDockerContext()
             if isDockerContextActive {
                 serviceMessage = "Docker context '\(DockerContext.name)' is active."
@@ -301,7 +301,7 @@ extension RuntimeViewModel {
     private func uninstallDockerContext() async {
         let uninstall = dockerContextStore.uninstall
         do {
-            let removed = try await Task.detached { try uninstall() }.value
+            let removed = try await ProcessRunner.offCooperativePool { try uninstall() }
             serviceMessage =
                 removed
                 ? "Docker context '\(DockerContext.name)' removed."

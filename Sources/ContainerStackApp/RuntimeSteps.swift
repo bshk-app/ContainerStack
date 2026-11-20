@@ -36,10 +36,8 @@ struct RuntimeSteps {
                 guard FileManager.default.isExecutableFile(atPath: helper) else {
                     return "Runtime helper is missing: \(helper)"
                 }
-                // Detached because this waits on `container --version` and the diagnostic deadline
-                // is ten seconds: run on the main actor, a wedged binary freezes the window for all
-                // of it.
-                return await Task.detached { ContainerVersionCheck.run(configuration) }.value.userFacingMessage
+                return await ProcessRunner.offCooperativePool { ContainerVersionCheck.run(configuration) }
+                    .userFacingMessage
             },
             spawnHelper: {
                 let plan = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL)
@@ -55,12 +53,10 @@ struct RuntimeSteps {
                 try process.run()
                 return LaunchedHelper(process: process, log: log, logPath: logURL.path)
             },
-            // Off the main thread for the same reason: spawning the CLI blocks until it exits, and
-            // the resolutions this feeds also run inside a sixty-attempt wait loop.
             systemStatus: { containerPath in
-                await Task.detached {
+                await ProcessRunner.offCooperativePool {
                     RuntimeShell.output(executablePath: containerPath, arguments: ["system", "status"])
-                }.value
+                }
             },
             endHelper: { process, grace in
                 process.terminate()
@@ -70,7 +66,7 @@ struct RuntimeSteps {
                 }
             },
             agentRegistered: {
-                await Task.detached { RuntimeShell.agentRegistered() }.value
+                await ProcessRunner.offCooperativePool { RuntimeShell.agentRegistered() }
             }
         )
     }

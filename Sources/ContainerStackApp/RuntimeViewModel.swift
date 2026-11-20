@@ -312,6 +312,7 @@ final class RuntimeViewModel {
             }
             let unroutable = await unroutablePublishingNetworks()
             let missingAppRoot = await throttledMissingAppRoot()
+            let foreignBridge = await throttledForeignBridge()
             // `responds` was read before all of those awaits. If the runtime has been declared dead
             // since, publishing it as responding puts a healthy verdict over the offline state (#43).
             guard inventoryEpochIsCurrent(epoch) else { return }
@@ -319,7 +320,7 @@ final class RuntimeViewModel {
                 socketResponds: true,
                 unroutableNetworks: unroutable,
                 missingAppRoot: missingAppRoot,
-                foreignBridge: throttledForeignBridge()
+                foreignBridge: foreignBridge
             )
         } else {
             applyState(socketResponds: false)
@@ -456,14 +457,15 @@ final class RuntimeViewModel {
             // Supplied here as well as in the poll: a full refresh that left it out would clear the
             // banner it had just raised and put it back on the next tick.
             let missingAppRoot = await freshMissingAppRoot()
-            // Re-checked, because the line above is another await: publishing `socketResponds: true`
+            let foreignBridge = await freshForeignBridge()
+            // Re-checked after the probes: publishing `socketResponds: true`
             // after the runtime died would overwrite the offline state with a healthy verdict, which
             // is worse than stale rows and equally permanent.
             guard inventoryEpochIsCurrent(epoch) else { return }
             applyState(
                 socketResponds: true,
                 missingAppRoot: missingAppRoot,
-                foreignBridge: freshForeignBridge()
+                foreignBridge: foreignBridge
             )
             // One epoch for every list: each fetch capturing its own let a supersede during the
             // images fetch discard images and still publish the containers fetched after it (#102).

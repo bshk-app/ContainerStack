@@ -42,6 +42,18 @@ public enum ProcessRunner {
     /// a measured restart takes ~6.4s and a stop waits out the container's grace period first.
     public static let lifecycleTimeout: Duration = .seconds(120)
 
+    /// Runs synchronous process work on a queue that can block while the caller suspends.
+    public static func offCooperativePool<Value: Sendable, Failure: Error>(
+        _ work: @escaping @Sendable () throws(Failure) -> Value
+    ) async throws(Failure) -> Value {
+        let result: Swift.Result<Value, Failure> = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: Swift.Result(catching: work))
+            }
+        }
+        return try result.get()
+    }
+
     /// The children currently being waited on with a deadline.
     ///
     /// A deadline protects the *wait*, not the child: when the waiting process

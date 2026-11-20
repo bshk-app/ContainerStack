@@ -7,7 +7,7 @@ import Testing
 
 @MainActor @Suite(.serialized)
 struct WelcomeRenderTests {
-    @Test func rendersEveryStepInBothThemesOffscreen() throws {
+    @Test func rendersEveryStepInBothThemesOffscreen() async throws {
         let root = FileManager.default.temporaryDirectory.appending(path: "welcome-render-\(UUID())")
         let suite = "WelcomeRenderTests-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -42,6 +42,8 @@ struct WelcomeRenderTests {
             if mode == "update" { defaults.set("0.10.0", forKey: WelcomeSession.lastVersionKey) }
             for scheme in [ColorScheme.light, .dark] {
                 for step in WelcomeCatalog.steps {
+                    // Give other MainActor tests a turn between renders.
+                    await Task.yield()
                     let session = WelcomeSession(
                         defaults: defaults, version: "0.12.0")
                     session.select(step.id)

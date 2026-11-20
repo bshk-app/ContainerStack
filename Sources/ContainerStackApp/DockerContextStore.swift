@@ -13,7 +13,11 @@ struct DockerContextStore: Sendable {
     var repairRecord: @Sendable (_ socketPath: String) throws -> Void
 
     static let live = DockerContextStore(
-        read: { RuntimeViewModel.readDockerContextFromCLI(includeInstalledContext: $0) },
+        read: { includeInstalledContext in
+            await ProcessRunner.offCooperativePool {
+                RuntimeViewModel.readDockerContextFromCLI(includeInstalledContext: includeInstalledContext)
+            }
+        },
         install: { try DockerCLI.installContext(socketPath: $0) },
         uninstall: { try DockerCLI.uninstallContext() },
         recordedSocketPath: { try DockerCLI.recordedSocketPath(for: $0) },

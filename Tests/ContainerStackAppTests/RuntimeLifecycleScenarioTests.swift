@@ -310,9 +310,7 @@ struct RuntimeLifecycleScenarioTests {
 }
 
 /// The task's result, or nil when it has not settled within `limit`: a regression in how requests
-/// settle fails the test instead of hanging the suite behind a gate it never releases. A guard, not
-/// a timing: the limit is generous because a refresh runs `lsof` and `ps` on the main actor, which
-/// every test in the process shares.
+/// settle fails the test instead of hanging the suite behind a gate it never releases.
 @MainActor
 func settled<Value: Sendable>(_ task: Task<Value, Never>, within limit: Duration = .seconds(30)) async -> Value? {
     let race = SettleRace<Value>()

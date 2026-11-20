@@ -55,7 +55,7 @@ public struct ShellSystemProbe: SystemProbe {
     /// its own branch: dropping it here is exactly how a dead command reads healthy.
     private func result(executablePath: String, arguments: [String]) async -> ProbeResult {
         let spawn = self.spawn
-        return await Task.detached {
+        return await ProcessRunner.offCooperativePool {
             do {
                 let completed = try spawn(executablePath, arguments, ProcessRunner.diagnosticTimeout)
                 guard completed.status == 0 else {
@@ -65,7 +65,7 @@ public struct ShellSystemProbe: SystemProbe {
             } catch {
                 return .failed(reason: "\(executablePath) could not be run: \(error)")
             }
-        }.value
+        }
     }
 
     /// stderr is dropped rather than merged: `netstat`/`lsof`/`ps` output is parsed

@@ -81,8 +81,8 @@ struct InventoryPollingTests {
         model.steps = FakeRuntime().steps()
         model.steps.ping = { true }
         model.applyState(socketResponds: true)
-        _ = await model.appRootAdvisory.freshAsync { nil }
-        _ = model.bridgeOwnerAdvisory.fresh { nil }
+        _ = await model.appRootAdvisory.fresh { nil }
+        _ = await model.bridgeOwnerAdvisory.fresh { nil }
         return model
     }
 }

@@ -9,11 +9,11 @@ import Testing
 @MainActor
 struct CachedAdvisoryTests {
     @Test("the first throttled read probes")
-    func firstThrottledReadProbes() {
+    func firstThrottledReadProbes() async {
         let advisory = CachedAdvisory<String>(interval: .seconds(30))
         var probes = 0
 
-        let answer = advisory.throttled {
+        let answer = await advisory.throttled {
             probes += 1
             return "banner"
         }
@@ -23,16 +23,16 @@ struct CachedAdvisoryTests {
     }
 
     @Test("a second read inside the interval serves the cache instead of probing again")
-    func secondReadServesCache() {
+    func secondReadServesCache() async {
         let advisory = CachedAdvisory<String>(interval: .seconds(30))
         var probes = 0
-        let probe = {
+        let probe: () async -> String? = {
             probes += 1
             return "banner"
         }
 
-        _ = advisory.throttled(probe)
-        let second = advisory.throttled(probe)
+        _ = await advisory.throttled(probe)
+        let second = await advisory.throttled(probe)
 
         #expect(second == "banner")
         #expect(probes == 1)
@@ -42,27 +42,27 @@ struct CachedAdvisoryTests {
     /// probed without feeding the cache would raise a banner, and the next poll -- still holding
     /// the pre-refresh answer -- would clear it again.
     @Test("a fresh probe feeds the same cache the throttled read serves")
-    func freshProbeFeedsTheCache() {
+    func freshProbeFeedsTheCache() async {
         let advisory = CachedAdvisory<String>(interval: .seconds(30))
 
-        _ = advisory.throttled { nil }
-        let fresh = advisory.fresh { "bridge held elsewhere" }
-        let afterFresh = advisory.throttled { "should not be asked" }
+        _ = await advisory.throttled { nil }
+        let fresh = await advisory.fresh { "bridge held elsewhere" }
+        let afterFresh = await advisory.throttled { "should not be asked" }
 
         #expect(fresh == "bridge held elsewhere")
         #expect(afterFresh == "bridge held elsewhere")
     }
 
     @Test("a fresh probe resets the cadence, so the next read does not immediately re-probe")
-    func freshProbeResetsTheCadence() {
+    func freshProbeResetsTheCadence() async {
         let advisory = CachedAdvisory<String>(interval: .seconds(30))
         var probes = 0
 
-        _ = advisory.fresh {
+        _ = await advisory.fresh {
             probes += 1
             return "banner"
         }
-        _ = advisory.throttled {
+        _ = await advisory.throttled {
             probes += 1
             return "re-probed"
         }
@@ -70,19 +70,16 @@ struct CachedAdvisoryTests {
         #expect(probes == 1)
     }
 
-    @Test("the async pair caches on the same terms as the sync one")
-    func asyncPairCachesTheSameWay() async {
+    @Test("a slow probe cannot replace the result of a newer refresh")
+    func overtakenProbeDoesNotReplaceCache() async {
         let advisory = CachedAdvisory<String>(interval: .seconds(30))
-        var probes = 0
-        let probe: () async -> String? = {
-            probes += 1
-            return "app root gone"
+        let answer = await advisory.throttled {
+            _ = await advisory.fresh { "new owner" }
+            return "old owner"
         }
+        let cached = await advisory.throttled { "unexpected probe" }
 
-        _ = await advisory.throttledAsync(probe)
-        let second = await advisory.throttledAsync(probe)
-
-        #expect(second == "app root gone")
-        #expect(probes == 1)
+        #expect(answer == "new owner")
+        #expect(cached == "new owner")
     }
 }

@@ -36,7 +36,7 @@ extension RuntimeViewModel {
             loadCurrent: { self.bundledBridgeIdentity() },
             restart: restart,
             recordIdentity: { self.recordBridgeIdentity() },
-            foreignBridge: { self.currentForeignBridge() }
+            foreignBridge: { await self.currentForeignBridge() }
         )
     }
 
@@ -45,7 +45,7 @@ extension RuntimeViewModel {
         loadCurrent: () -> RuntimeHelperIdentity?,
         restart: () async -> RuntimeOperationOutcome,
         recordIdentity: () -> Void,
-        foreignBridge: () -> ForeignBridge? = { nil }
+        foreignBridge: () async -> ForeignBridge? = { nil }
     ) async {
         guard !hasCheckedBridgeIdentity else { return }
         await adoptBridgeIfStale(
@@ -62,7 +62,7 @@ extension RuntimeViewModel {
         current: RuntimeHelperIdentity?,
         restart: () async -> RuntimeOperationOutcome,
         recordIdentity: () -> Void,
-        foreignBridge: () -> ForeignBridge? = { nil }
+        foreignBridge: () async -> ForeignBridge? = { nil }
     ) async {
         guard !hasCheckedBridgeIdentity else { return }
         hasCheckedBridgeIdentity = true
@@ -75,7 +75,13 @@ extension RuntimeViewModel {
         // passes, and lifecycle calls hang with nothing to look at.
         guard runtimeState.isHealthy else { return }
 
-        if let foreign = foreignBridge() {
+        let observedLifecycle = (lifecycle.generation, lifecycle.latest)
+        let initialOwner = await foreignBridge()
+        guard observedLifecycle == (lifecycle.generation, lifecycle.latest), runtimeState.isHealthy else {
+            hasCheckedBridgeIdentity = false
+            return
+        }
+        if let foreign = initialOwner {
             serviceMessage = Self.foreignBridgeMessage(foreign)
             return
         }
@@ -109,7 +115,10 @@ extension RuntimeViewModel {
         // socktainer someone runs from elsewhere is theirs. So a restart can
         // "succeed" while a foreign bridge has taken the socket in the meantime,
         // and recording our identity there would declare the mismatch resolved.
-        if let foreign = foreignBridge() {
+        let restartedLifecycle = (lifecycle.generation, lifecycle.latest)
+        let currentOwner = await foreignBridge()
+        guard restartedLifecycle == (lifecycle.generation, lifecycle.latest) else { return }
+        if let foreign = currentOwner {
             serviceMessage = Self.foreignBridgeMessage(foreign)
             return
         }
@@ -132,21 +141,19 @@ extension RuntimeViewModel {
     /// The Docker API cannot answer this - every socktainer replies the same - and
     /// neither can "is our binary running", since the bridge takes a `--socket`
     /// argument and ours may be serving a different path.
-    func currentForeignBridge() -> ForeignBridge? {
-        BridgeOwnership.foreignBridge(
-            socketPath: socketPath,
-            holder: BridgeOwnership.holder(
-                lsofOutput: RuntimeShell.output(
-                    executablePath: "/usr/sbin/lsof",
-                    arguments: ["-Fpcn", "--", socketPath]
-                )
-            ),
-            ourBridgePath: RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL).bridgePath,
-            listing: RuntimeShell.output(
-                executablePath: "/bin/ps",
-                arguments: ["-A", "-o", "pid=,command="]
+    func currentForeignBridge() async -> ForeignBridge? {
+        let socketPath = socketPath
+        let bridgePath = RuntimeLaunchPlan(appBundleURL: Bundle.main.bundleURL).bridgePath
+        return await ProcessRunner.offCooperativePool {
+            let output = RuntimeShell.output(executablePath: "/usr/sbin/lsof", arguments: ["-Fpcn", "--", socketPath])
+            guard let holder = BridgeOwnership.holder(lsofOutput: output) else { return nil }
+            return BridgeOwnership.foreignBridge(
+                socketPath: socketPath,
+                holder: holder,
+                ourBridgePath: bridgePath,
+                listing: RuntimeShell.output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
             )
-        )
+        }
     }
 
     /// Records the bridge this app just launched, so a later launch can tell it apart from one it

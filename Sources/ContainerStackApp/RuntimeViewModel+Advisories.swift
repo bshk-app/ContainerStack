@@ -11,27 +11,27 @@ extension RuntimeViewModel {
     /// 200 — but reaching that state takes deliberate damage to the runtime's data directory,
     /// and every user-initiated refresh still asks immediately.
     func throttledMissingAppRoot() async -> String? {
-        await appRootAdvisory.throttledAsync { await self.missingAppRoot() }
+        await appRootAdvisory.throttled { await self.missingAppRoot() }
     }
 
     /// The bridge holding the socket when it is not ours, otherwise nil.
     /// Re-asked on the cadence so the banner clears by itself once the other
     /// bridge is gone - the reported case sat there for hours with nothing to see.
-    func throttledForeignBridge() -> ForeignBridge? {
-        bridgeOwnerAdvisory.throttled { self.currentForeignBridge() }
+    func throttledForeignBridge() async -> ForeignBridge? {
+        await bridgeOwnerAdvisory.throttled { await self.currentForeignBridge() }
     }
 
     /// Probes now and feeds the same cache, for the same reason `freshMissingAppRoot`
     /// does: a refresh that answered from nothing would clear the banner the poll
     /// had just raised.
-    func freshForeignBridge() -> ForeignBridge? {
-        bridgeOwnerAdvisory.fresh { self.currentForeignBridge() }
+    func freshForeignBridge() async -> ForeignBridge? {
+        await bridgeOwnerAdvisory.fresh { await self.currentForeignBridge() }
     }
 
     /// Probes now and feeds the cache, so the next poll does not revert to a stale answer.
     /// Without sharing the cache, a refresh that raised the banner would have it cleared again
     /// on the following tick — the failure the comment in `refresh(health:)` already warns of.
     func freshMissingAppRoot() async -> String? {
-        await appRootAdvisory.freshAsync { await self.missingAppRoot() }
+        await appRootAdvisory.fresh { await self.missingAppRoot() }
     }
 }

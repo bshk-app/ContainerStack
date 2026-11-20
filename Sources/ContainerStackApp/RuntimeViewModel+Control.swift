@@ -124,7 +124,7 @@ extension RuntimeViewModel {
         let candidates = NetworkRouteHealth.publishingNetworks(containers: containers, networks: networks)
         guard !candidates.isEmpty else { return [] }
 
-        let routes = await Task.detached { RuntimeShell.routingTable() }.value
+        let routes = await ProcessRunner.offCooperativePool { RuntimeShell.routingTable() }
         guard NetworkRouteHealth.canJudgeRoutes(routes) else { return [] }
         return NetworkRouteHealth.unroutableNetworks(candidates, routes: routes)
     }
@@ -159,33 +159,33 @@ enum RuntimeShell {
     static func perform(_ step: RuntimeControlStep) async throws {
         switch step {
         case .stopBridge(let executablePath, let socketPath):
-            try await Task.detached {
+            try await ProcessRunner.offCooperativePool {
                 try RuntimeShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
-            }.value
+            }
         case .stopContainers(let executablePath, let graceSeconds):
             // `try?`, not `try`: `restartRuntime` abandons the sequence on a throw, and this step
             // throws exactly when the runtime is wedged — which is when the steps after it are the
             // ones that repair it. A container that will not exit must not cost the user the fix.
-            try? await Task.detached {
+            try? await ProcessRunner.offCooperativePool {
                 try RuntimeShell.run(
                     executablePath: executablePath,
                     arguments: RuntimeControlStep.stopContainersArguments(graceSeconds: graceSeconds),
                     timeout: .seconds(graceSeconds + 10)
                 )
-            }.value
+            }
         case .run(let executablePath, let arguments):
-            try await Task.detached {
+            try await ProcessRunner.offCooperativePool {
                 try RuntimeShell.run(executablePath: executablePath, arguments: arguments)
-            }.value
+            }
         case .startBridge:
             preconditionFailure("The view model launches the helper; see RuntimeViewModel.perform(_:).")
         case .kickstartAgent(let label):
-            try await Task.detached {
+            try await ProcessRunner.offCooperativePool {
                 try RuntimeShell.run(
                     executablePath: "/bin/launchctl",
                     arguments: ["kickstart", "-k", "gui/\(getuid())/\(label)"]
                 )
-            }.value
+            }
         }
     }
 

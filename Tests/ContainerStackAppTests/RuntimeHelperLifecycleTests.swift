@@ -21,10 +21,10 @@ struct RuntimeHelperLifecycleTests {
         defer { if process.isRunning { kill(process.processIdentifier, SIGKILL) } }
         try #require(
             await Self.eventually {
-                ProcessTable.pids(
-                    forExecutable: bridge.path,
-                    in: RuntimeShell.output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
-                ).contains(process.processIdentifier)
+                let listing = await ProcessRunner.offCooperativePool {
+                    RuntimeShell.output(executablePath: "/bin/ps", arguments: ["-A", "-o", "pid=,command="])
+                }
+                return ProcessTable.pids(forExecutable: bridge.path, in: listing).contains(process.processIdentifier)
             })
 
         try await RuntimeShell.perform(.stopBridge(executablePath: bridge.path, socketPath: nil))
@@ -136,10 +136,10 @@ struct RuntimeHelperLifecycleTests {
     }
 
     private static func eventually(
-        within limit: Duration = .seconds(10), _ condition: () -> Bool
+        within limit: Duration = .seconds(10), _ condition: () async -> Bool
     ) async -> Bool {
         let deadline = ContinuousClock.now + limit
-        while !condition() {
+        while await !condition() {
             guard ContinuousClock.now < deadline else { return false }
             try? await Task.sleep(for: .milliseconds(50))
         }

@@ -10,42 +10,32 @@ import Foundation
 final class CachedAdvisory<Value> {
     private var cadence: DiagnosticCadence
     private var last: Value?
+    private var generation = 0
 
     init(interval: Duration) {
         cadence = DiagnosticCadence(interval: interval)
     }
 
     /// The cached answer, re-probing at most once per interval.
-    func throttled(_ probe: () -> Value?) -> Value? {
-        if cadence.shouldRun() {
-            last = probe()
-        }
-        return last
+    func throttled(_ probe: () async -> Value?) async -> Value? {
+        guard cadence.shouldRun() else { return last }
+        return await update(probe)
     }
 
     /// Probes now and feeds the same cache, so the next throttled read does not revert to a stale
     /// answer: a refresh that raised a banner would otherwise have the following poll clear it.
-    func fresh(_ probe: () -> Value?) -> Value? {
-        last = probe()
+    func fresh(_ probe: () async -> Value?) async -> Value? {
         cadence.recordRun()
-        return last
+        return await update(probe)
     }
 
-    // Async twins of the two above, named apart rather than overloaded: swift-format rejects a
-    // sync/async pair that a trailing closure cannot tell apart. Both shapes have to exist --
-    // `throttledForeignBridge` is read inline in an `applyState(...)` argument list that sits
-    // directly after an inventory-epoch guard, so making it async would open a suspension point
-    // between the guard and the publish, which is the stale-state race #70 is about.
-    func throttledAsync(_ probe: () async -> Value?) async -> Value? {
-        if cadence.shouldRun() {
-            last = await probe()
+    private func update(_ probe: () async -> Value?) async -> Value? {
+        generation &+= 1
+        let started = generation
+        let value = await probe()
+        if started == generation {
+            last = value
         }
-        return last
-    }
-
-    func freshAsync(_ probe: () async -> Value?) async -> Value? {
-        last = await probe()
-        cadence.recordRun()
         return last
     }
 }

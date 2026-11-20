@@ -477,7 +477,7 @@ public struct DiagnosticRunner: Sendable {
         }
         let recorded: String?
         do {
-            recorded = try await Self.offTheCooperativePool { [recordedSocketPath] in
+            recorded = try await ProcessRunner.offCooperativePool { [recordedSocketPath] in
                 try recordedSocketPath(DockerContext.name)
             }
         } catch {
@@ -507,18 +507,6 @@ public struct DiagnosticRunner: Sendable {
             recordedSocketPath: recorded,
             currentSocketPath: socketPath
         )
-    }
-
-    /// `ProcessRunner.run` holds its thread until the child exits. On the cooperative pool that can
-    /// be the thread the budget's timer needs, and the run outlasts its own deadline (NFR-002).
-    private static func offTheCooperativePool<T: Sendable>(
-        _ work: @escaping @Sendable () throws -> T
-    ) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(with: Result { try work() })
-            }
-        }
     }
 
     /// `ping` retries only what costs a syscall to re-ask (`DockerAPIClient.failsImmediately`), so

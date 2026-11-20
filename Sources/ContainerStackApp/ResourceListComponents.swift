@@ -23,6 +23,10 @@ extension View {
     func fitsSplitColumn() -> some View {
         frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
     }
+
+    func resourceListStyle() -> some View {
+        listStyle(.plain).scrollContentBackground(.hidden)
+    }
 }
 
 struct ResourceInspector: View {
@@ -190,7 +194,7 @@ struct InspectorStatBlock: View {
                     }
                 }
             }
-            .background(theme.sidebarBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(theme.cardBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .strokeBorder(theme.hairline, lineWidth: 0.5)

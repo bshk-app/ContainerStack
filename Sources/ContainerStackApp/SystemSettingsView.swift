@@ -25,7 +25,7 @@ struct SystemSettingsView: View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 sidebar.frame(width: 210)
-                theme.hairline.frame(width: 1)
+                Hairline(axis: .vertical)
                 VStack(alignment: .leading, spacing: 16) {
                     Text(navigation.selection.title).font(.title2.weight(.semibold))
                     ScrollView {
@@ -40,7 +40,7 @@ struct SystemSettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             if Self.showsRestartBar(awaitsRestart: awaitsBridgeRestart, problem: restartProblem) {
-                theme.hairline.frame(height: 1)
+                Hairline()
                 restartBar
             }
         }
@@ -75,7 +75,6 @@ struct SystemSettingsView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .background(theme.windowBackground)
         .focusesOnClick()
         .accessibilityLabel("Settings panes")
     }

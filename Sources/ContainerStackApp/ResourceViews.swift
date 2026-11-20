@@ -36,10 +36,11 @@ struct VolumesView: View {
                 List(selection: $selectedVolumeName) {
                     ForEach(filteredVolumes) { volume in
                         VolumeRow(volume: volume, model: model)
+                            .listRowInsets(.horizontal, 8)
                             .tag(volume.name)
                     }
                 }
-                .listStyle(.inset)
+                .resourceListStyle()
                 .focusesOnClick()
             }
 
@@ -112,10 +113,11 @@ struct NetworksView: View {
                 List(selection: $selectedNetworkID) {
                     ForEach(filteredNetworks) { network in
                         NetworkRow(network: network, model: model)
+                            .listRowInsets(.horizontal, 8)
                             .tag(network.id)
                     }
                 }
-                .listStyle(.inset)
+                .resourceListStyle()
                 .focusesOnClick()
             }
 

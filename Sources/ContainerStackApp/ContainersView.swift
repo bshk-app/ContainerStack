@@ -24,38 +24,40 @@ struct ContainersView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                let groups = filteredGroups
                 List(selection: selection) {
-                    ForEach(filteredGroups) { group in
-                        Section {
-                            if !collapsed.contains(group.id) {
-                                ForEach(group.containers) { container in
-                                    ContainerRow(
-                                        container: container,
-                                        model: model,
-                                        onShowLogs: {
-                                            model.selectedContainerID = container.id
-                                            resources.showContainerLogs()
-                                        }
-                                    )
-                                    .tag(container.id)
-                                }
+                    ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                        ContainerGroupHeader(
+                            group: group,
+                            model: model,
+                            isCollapsed: collapsed.contains(group.id),
+                            showsTopLine: Self.showsTopLine(
+                                after: index > 0 ? groups[index - 1] : nil, collapsed: collapsed)
+                        ) {
+                            if collapsed.contains(group.id) {
+                                collapsed.remove(group.id)
+                            } else {
+                                collapsed.insert(group.id)
                             }
-                        } header: {
-                            ContainerGroupHeader(
-                                group: group,
-                                model: model,
-                                isCollapsed: collapsed.contains(group.id)
-                            ) {
-                                if collapsed.contains(group.id) {
-                                    collapsed.remove(group.id)
-                                } else {
-                                    collapsed.insert(group.id)
-                                }
+                        }
+                        .listRowInsets(.horizontal, 8)
+                        if !collapsed.contains(group.id) {
+                            ForEach(group.containers) { container in
+                                ContainerRow(
+                                    container: container,
+                                    model: model,
+                                    onShowLogs: {
+                                        model.selectedContainerID = container.id
+                                        resources.showContainerLogs()
+                                    }
+                                )
+                                .listRowInsets(.horizontal, 8)
+                                .tag(container.id)
                             }
                         }
                     }
                 }
-                .listStyle(.inset)
+                .resourceListStyle()
                 .focusesOnClick()
             }
 
@@ -66,6 +68,11 @@ struct ContainersView: View {
             }
         }
         .background(theme.windowBackground)
+    }
+
+    static func showsTopLine(after previous: ContainerGroup?, collapsed: Set<String>) -> Bool {
+        // The toolbar divider borders the first header.
+        previous.map { !$0.containers.isEmpty && !collapsed.contains($0.id) } ?? false
     }
 
     private var filteredGroups: [ContainerGroup] {
@@ -84,6 +91,7 @@ struct ContainerGroupHeader: View {
     let group: ContainerGroup
     let model: RuntimeViewModel
     let isCollapsed: Bool
+    let showsTopLine: Bool
     let toggle: () -> Void
     @Environment(\.appTheme) private var theme
 
@@ -158,6 +166,21 @@ struct ContainerGroupHeader: View {
                 .disabled(model.busyResource != nil || !model.canMutate)
             }
         }
+        .frame(minHeight: 28)
+        // A row, not a section header: a pinned header gets a system background
+        // that also fills the area under the toolbar.
+        .listRowSeparator(.hidden)
+        .listRowBackground(background)
+        .selectionDisabled()
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private var background: some View {
+        theme.groupHeaderBackground
+            .overlay(alignment: .top) {
+                if showsTopLine { Hairline() }
+            }
+            .overlay(alignment: .bottom) { Hairline() }
     }
 }
 

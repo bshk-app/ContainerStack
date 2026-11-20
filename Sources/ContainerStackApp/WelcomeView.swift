@@ -8,22 +8,20 @@ struct WelcomeView<Controls: View>: View {
     @Environment(\.colorScheme) private var scheme
 
     private var theme: AppTheme { .resolve(scheme) }
-    private var surface: Color { scheme == .dark ? Color(uiHex: 0x1E1E1E) : .white }
-    private var card: Color { scheme == .dark ? Color(uiHex: 0x262628) : Color(uiHex: 0xF5F5F7) }
     private var newIDs: Set<String> { Set(session.policy.newSteps.map(\.id)) }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 sidebar.frame(width: 216)
-                Rectangle().fill(theme.hairline).frame(width: 1)
+                Hairline(axis: .vertical)
                 detail.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            Rectangle().fill(theme.hairline).frame(height: 1)
+            Hairline()
             footer.frame(height: 51)
         }
         .frame(width: 760, height: 520)
-        .background(surface)
+        .background(theme.windowBackground)
         .foregroundStyle(theme.textPrimary)
         .environment(\.appTheme, theme)
         .navigationTitle(session.title)
@@ -80,7 +78,7 @@ struct WelcomeView<Controls: View>: View {
                 controls(session.selected)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
-                    .background(card, in: .rect(cornerRadius: 10))
+                    .background(theme.cardBackground, in: .rect(cornerRadius: 10))
                     .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(theme.hairline, lineWidth: 1) }
                     .id(session.selectedID)
                 if newIDs.contains(session.selectedID) {
@@ -144,6 +142,9 @@ struct WelcomeView<Controls: View>: View {
 struct WhatsNewView: View {
     let session: WelcomeSession
     let openStep: (String) -> Void
+    @Environment(\.colorScheme) private var scheme
+
+    private var theme: AppTheme { .resolve(scheme) }
 
     private var steps: [WelcomeStep] {
         session.policy.steps.filter {
@@ -163,7 +164,7 @@ struct WhatsNewView: View {
                         Button("Show in Welcome") { openStep(step.id) }.buttonStyle(.link)
                     }
                 }
-                Divider()
+                Hairline()
                 Text("Release notes").font(.headline)
                 if WelcomeRelease.notes.isEmpty {
                     Text("No release notes are available for this version.").foregroundStyle(.secondary)
@@ -174,6 +175,8 @@ struct WhatsNewView: View {
             .padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(width: 560, height: 500)
+        .background(theme.windowBackground)
+        .modifier(AppThemeInjector())
     }
 }
 

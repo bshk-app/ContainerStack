@@ -108,7 +108,8 @@ struct ClusterCLITests {
         "usage errors exit 64 and run nothing",
         arguments: [
             [], ["unknown"], ["start"], ["start", "a", "b"], ["create"], ["create", "dev", "--rm"],
-            ["create", "dev", "--cpus"], ["ls", "--all"], ["rm"], ["kubeconfig"],
+            ["create", "dev", "--cpus"], ["create", "dev", "--cpus", "--shared-image-store"], ["ls", "--all"], ["rm"],
+            ["kubeconfig"],
         ])
     func usageErrors(arguments: [String]) async throws {
         let recorder = runtime()

@@ -145,7 +145,9 @@ public struct ClusterCLI: Sendable {
             let argument = arguments[index]
             index += 1
             if createValueOptions.contains(argument) {
-                guard index < arguments.count else { throw UsageError(message: "\(argument) needs a value") }
+                guard index < arguments.count, !arguments[index].hasPrefix("-") else {
+                    throw UsageError(message: "\(argument) needs a value")
+                }
                 options += [argument, arguments[index]]
                 index += 1
             } else if argument == "--shared-image-store" {

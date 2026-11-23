@@ -11,9 +11,13 @@ Changes since 1.0 (the spec follows the code of slices S2, bridge `feat/cluster-
 `0e06f99`, and S3, `feat/k8s-core-cstack` at `c6e5807`):
 
 - F-101: no node check on create (the Runtime refuses the name) or on network connect and
-  disconnect (they change no container); attach to a stopped node streams its log; prune skips a
+  disconnect (they change no container); prune skips a
   candidate only when its new lookup shows a node; the first lookup of stop, kill, restart and
   start fails open; a new rule for the DNS sidecar name.
+- F-101 (bridge `47d12b9`): an attach, HTTP or WebSocket, to a stopped node gets 409 in the lookup
+  step; an attach to a running node is allowed. The start preparation refuses a node before it
+  rebuilds a container. DNS sidecar removal looks the name up again before the stop and each
+  delete, and treats only "not found" as absent.
 - §12: network members are counted without nodes.
 - F-201: the API endpoint rule. F-202: the alias check also at file creation; the home directory
   is the user's home, not `$HOME`. F-203: the usage line rule, a running runtime first, no cache of
@@ -230,18 +234,23 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   | `POST /containers/{id}/rename` | the same-name fast return and the delete and recreate (`ContainerRenameRoute.swift:100-110,183-229`). The source is checked; the target name is checked against nodes too, with the route's case-alias rule (`ContainerRenameRoute.swift:124-135`) | 409 when the source or the target name is a node |
   | `POST /containers/create` | no check. The Runtime refuses a name that a node holds, and the route answers the Docker name-conflict 409 (`ContainerCreateRoute.swift:798-799`). The create-option and volume writes before that refusal (`ContainerCreateRoute.swift:761-797`) change nothing that a node owns | 409 (name conflict) |
   | `PUT /containers/{id}/archive` | the file system write | 409 |
-  | `POST /containers/{id}/attach`, `GET .../attach/ws` | the start preparation of a stopped container (`ContainerAttachRoute.swift:93-102`, `ContainerAttachWSRoute.swift:28-35`) | allowed; an attach to a stopped node streams the node's log, with no start preparation, no DNS sidecar and no parked stdio |
+  | `POST /containers/{id}/attach`, `GET .../attach/ws` | the lookup step of both routes (`ContainerAttachRoute.swift:93-104`, `ContainerAttachWSRoute.swift:34-38`) | an attach (HTTP or WebSocket) to a stopped node gets 409 "You cannot attach to a stopped container, start it first" in the lookup step, before any start preparation, DNS sidecar, parked stdio or upgrade; an attach to a running node is allowed as before |
   | `POST /networks/{id}/connect`, `/disconnect` | no check: 200 as before; these routes change no container (`Routes/Networks/NetworkConnectRoute.swift:8-14`). A node check is needed when a route gets an effect on a container | 200 |
   | `POST /containers/prune` | each delete (`Clients/ClientContainerService.swift:850-852,915-938`) | a node is never a candidate, also with a label filter on the plugin label; a candidate is skipped only when its new lookup at its delete shows a node, and the prune continues; a failed lookup does not skip it; a skipped candidate is not in `ContainersDeleted` |
 
-  Allowed for nodes: inspect, logs, stats, wait, export, archive GET and HEAD, exec, attach
-  (without preparation), resize. Unchanged: pause, unpause, top, changes, commit (not supported or
+  Allowed for nodes: inspect, logs, stats, wait, export, archive GET and HEAD, exec, attach to a
+  running node, resize. Unchanged: pause, unpause, top, changes, commit (not supported or
   not implemented).
 
   DNS sidecar name: the bridge uses, replaces or removes a container named
   `socktainer-dns-<network>` only when it has the labels `socktainer.role=dns` and
   `socktainer.network=<network>`. Any other container with that name is left alone
-  (`DNS/NetworkDNSManager.swift`, `occupant`).
+  (`DNS/NetworkDNSManager.swift`, `occupant`). Sidecar removal looks the name up again before the
+  stop and before each delete, and treats only "not found" as absent.
+
+  Start preparation: when the preparation would rebuild a stopped container, it looks the name up
+  again and refuses a node before the rebuild (`Clients/ClientContainerService.swift:488-500`,
+  `prepareRefreshed`).
 - **Limit (replacement window).** The check and the native calls are separate steps: the routes
   resolve again in the client and act by native name (`ContainerStopRoute.swift:26-36`,
   `Clients/ClientContainerService.swift:583-590`), and `VMLifecycleAdmission` admits several

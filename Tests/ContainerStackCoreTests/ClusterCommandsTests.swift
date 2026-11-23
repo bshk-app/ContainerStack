@@ -236,8 +236,24 @@ struct ClusterCommandsTests {
             launches.map(\.timeout) == [
                 .seconds(20), .seconds(15 * 60), .seconds(10 * 60), .seconds(2 * 60), .seconds(5 * 60), .seconds(30),
             ])
-        #expect(launches.first?.output == .capture(includingStandardError: false))
+        #expect(launches.first?.output == .captureSeparately)
         #expect(launches.dropFirst().allSatisfy { $0.output == .inherit })
+    }
+
+    @Test("a failed list carries the runtime's error text")
+    func failedListCarriesTheErrorText() async throws {
+        let home = try TemporaryHome()
+        let recorder = ClusterSpawnRecorder { _ in
+            .init(status: 1, output: "", errorOutput: "Error: cluster service is not available\n")
+        }
+
+        await #expect(
+            throws: ClusterCommandError.failed(
+                command: "cluster list", status: 1, message: "Error: cluster service is not available")
+        ) { _ = try await commands(home, spawn: recorder.spawn).list() }
+        #expect(
+            ClusterCommandError.failed(command: "cluster list", status: 1, message: "Error: x").description
+                == "container cluster list exited with status 1: Error: x")
     }
 
     @Test("a command that exits non-zero is an error with its status")
@@ -245,7 +261,7 @@ struct ClusterCommandsTests {
         let home = try TemporaryHome()
         let recorder = ClusterSpawnRecorder { _ in .init(status: 3, output: "") }
 
-        await #expect(throws: ClusterCommandError.failed(command: "cluster start", status: 3)) {
+        await #expect(throws: ClusterCommandError.failed(command: "cluster start", status: 3, message: "")) {
             try await commands(home, spawn: recorder.spawn).start(name: "dev")
         }
     }

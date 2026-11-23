@@ -4,7 +4,7 @@ import Foundation
 public enum ClusterCommandError: Error, Equatable, Sendable, CustomStringConvertible {
     case kubeconfigAlias
     case kubeconfigNotCreated(path: String, errno: Int32)
-    case failed(command: String, status: Int32)
+    case failed(command: String, status: Int32, message: String)
 
     public var description: String {
         switch self {
@@ -12,8 +12,8 @@ public enum ClusterCommandError: Error, Equatable, Sendable, CustomStringConvert
             "~/.containerstack/kubeconfig is the same file as ~/.kube/config; remove the link"
         case .kubeconfigNotCreated(let path, let code):
             "cannot create \(path): \(String(cString: strerror(code)))"
-        case .failed(let command, let status):
-            "container \(command) exited with status \(status)"
+        case .failed(let command, let status, let message):
+            "container \(command) exited with status \(status)" + (message.isEmpty ? "" : ": \(message)")
         }
     }
 }
@@ -70,7 +70,7 @@ public struct ClusterCommands: Sendable {
 
     public func list() async throws -> String {
         try await run(
-            ["list", "--format", "json"], timeout: .seconds(20), output: .capture(includingStandardError: false),
+            ["list", "--format", "json"], timeout: .seconds(20), output: .captureSeparately,
             changesState: false)
     }
 
@@ -107,7 +107,9 @@ public struct ClusterCommands: Sendable {
         }
         let result = try await changesState ? lock.run(execute) : execute()
         guard result.status == 0 else {
-            throw ClusterCommandError.failed(command: "cluster \(arguments[0])", status: result.status)
+            throw ClusterCommandError.failed(
+                command: "cluster \(arguments[0])", status: result.status,
+                message: result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return result.output
     }

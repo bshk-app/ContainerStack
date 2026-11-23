@@ -154,6 +154,27 @@ struct ClusterCLITests {
         )
     }
 
+    @Test("a failed list exits 1 and shows the runtime's error text")
+    func failedListShowsTheErrorText() async throws {
+        let recorder = ClusterSpawnRecorder { launch in
+            switch launch.arguments {
+            case ["cluster", "list", "--format", "json"]:
+                return .init(status: 1, output: "", errorOutput: "Error: cluster service is not available\n")
+            case let help where help.last == "--help":
+                return .init(status: 0, output: Self.capableHelp[help[1]] ?? "")
+            default: return .init(status: 0, output: "")
+            }
+        }
+
+        let (status, output, _) = try await run(["ls"], recorder)
+
+        #expect(status == 1)
+        #expect(
+            output.standardError
+                == "cstack cluster: container cluster list exited with status 1: Error: cluster service is not available\n"
+        )
+    }
+
     @Test("a list that does not decode exits 1 and names the key")
     func undecodableListExits1() async throws {
         let (status, output, _) = try await run(["ls"], runtime(listJSON: #"[{"configuration":{}}]"#))

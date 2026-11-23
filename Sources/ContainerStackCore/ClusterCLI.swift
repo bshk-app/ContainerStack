@@ -24,6 +24,7 @@ public struct ClusterCLI: Sendable {
 
     public struct ReadyWait: Sendable {
         let interval: Duration
+        let probe: Duration
         let limit: Duration
     }
 
@@ -36,7 +37,7 @@ public struct ClusterCLI: Sendable {
     let commands: ClusterCommands
     let write: @Sendable (String) -> Void
     let writeError: @Sendable (String) -> Void
-    let apiReady: @Sendable (KubernetesCluster) async -> Bool
+    let apiReady: @Sendable (KubernetesCluster, Duration) async -> Bool
     let readyWait: ReadyWait
 
     public init(
@@ -47,18 +48,18 @@ public struct ClusterCLI: Sendable {
         let kubeconfig = commands.managedKubeconfig
         self.init(
             commands: commands, write: write, writeError: writeError,
-            apiReady: { cluster in
+            apiReady: { cluster, limit in
                 await ClusterAPIReady.isReady(
-                    endpoint: cluster.apiEndpoint, context: cluster.name, kubeconfig: kubeconfig)
+                    endpoint: cluster.apiEndpoint, context: cluster.name, kubeconfig: kubeconfig, timeout: limit)
             },
-            readyWait: ReadyWait(interval: .seconds(5), limit: .seconds(30)))
+            readyWait: ReadyWait(interval: .seconds(5), probe: .seconds(3), limit: .seconds(30)))
     }
 
     init(
         commands: ClusterCommands,
         write: @escaping @Sendable (String) -> Void,
         writeError: @escaping @Sendable (String) -> Void,
-        apiReady: @escaping @Sendable (KubernetesCluster) async -> Bool,
+        apiReady: @escaping @Sendable (KubernetesCluster, Duration) async -> Bool,
         readyWait: ReadyWait
     ) {
         self.commands = commands
@@ -126,22 +127,30 @@ public struct ClusterCLI: Sendable {
 
     private func apiReadyAfterStart(_ name: String) async throws -> Bool {
         let cluster = try await KubernetesCluster.decodeList(Data(commands.list().utf8)).first { $0.name == name }
-        if let cluster, cluster.apiEndpoint == nil {
+        let recovery = "To recover, run 'cstack cluster stop \(name)', then 'cstack cluster start \(name)'."
+        guard let cluster else {
+            printError("cstack cluster: cluster \(name) started, but it is not in the cluster list. \(recovery)")
+            return false
+        }
+        if cluster.apiEndpoint == nil {
             printError(
                 "cstack cluster: cluster \(name) has no published API port and no FQDN; the API check is skipped.")
             return true
         }
-        let deadline = ContinuousClock.now + readyWait.limit
-        while let cluster {
-            if await apiReady(cluster) { return true }
-            guard ContinuousClock.now + readyWait.interval < deadline else { break }
-            try await Task.sleep(for: readyWait.interval)
+        let clock = ContinuousClock()
+        let deadline = clock.now + readyWait.limit
+        var tick = clock.now
+        while tick < deadline {
+            try await clock.sleep(until: tick)
+            let left = clock.now.duration(to: deadline)
+            guard left > .zero else { break }
+            if await apiReady(cluster, min(readyWait.probe, left)) { return true }
+            tick += readyWait.interval
         }
         let limit = Double(readyWait.limit.components.seconds) + Double(readyWait.limit.components.attoseconds) / 1e18
         let seconds = limit == limit.rounded() ? String(Int(limit)) : String(limit)
         printError(
-            "cstack cluster: cluster \(name) started, but its API is not ready after \(seconds) s. "
-                + "To recover, run 'cstack cluster stop \(name)', then 'cstack cluster start \(name)'.")
+            "cstack cluster: cluster \(name) started, but its API is not ready after \(seconds) s. \(recovery)")
         return false
     }
 

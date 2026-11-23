@@ -15,6 +15,14 @@ private final class Output: @unchecked Sendable {
     func writeError(_ text: String) { lock.withLock { err.append(text) } }
 }
 
+private actor Timeline {
+    private(set) var entries: [(offset: Duration, limit: Duration)] = []
+
+    func add(_ offset: Duration, _ limit: Duration) {
+        entries.append((offset, limit))
+    }
+}
+
 private actor Counter {
     private(set) var names: [String] = []
 
@@ -52,8 +60,9 @@ struct ClusterCLITests {
         _ arguments: [String],
         _ recorder: ClusterSpawnRecorder,
         environment: [String: String] = [:],
-        apiReady: @escaping @Sendable (KubernetesCluster) async -> Bool = { _ in true },
-        readyWait: ClusterCLI.ReadyWait = .init(interval: .milliseconds(10), limit: .milliseconds(50))
+        apiReady: @escaping @Sendable (KubernetesCluster, Duration) async -> Bool = { _, _ in true },
+        readyWait: ClusterCLI.ReadyWait = .init(
+            interval: .milliseconds(10), probe: .milliseconds(5), limit: .milliseconds(200))
     ) async throws -> (Int32, Output, URL) {
         let home = try TemporaryHome()
         let output = Output()
@@ -174,7 +183,7 @@ struct ClusterCLITests {
 
         let (status, output, _) = try await run(
             [subcommand, "cs-spec"], runtime(),
-            apiReady: { cluster in
+            apiReady: { cluster, _ in
                 await checked.add(cluster.name)
                 return true
             })
@@ -190,7 +199,7 @@ struct ClusterCLITests {
 
         let (status, _, _) = try await run(
             ["start", "cs-spec"], runtime(),
-            apiReady: { cluster in
+            apiReady: { cluster, _ in
                 await checked.add(cluster.name)
                 return await checked.names.count >= 3
             })
@@ -206,7 +215,7 @@ struct ClusterCLITests {
 
         let (status, output, _) = try await run(
             [subcommand, "cs-spec"], runtime(),
-            apiReady: { cluster in
+            apiReady: { cluster, _ in
                 await checked.add(cluster.name)
                 return false
             })
@@ -216,7 +225,42 @@ struct ClusterCLITests {
         #expect(started.duration(to: .now) < .seconds(2))
         #expect(
             output.standardError
-                == "cstack cluster: cluster cs-spec started, but its API is not ready after 0.05 s. "
+                == "cstack cluster: cluster cs-spec started, but its API is not ready after 0.2 s. "
+                + "To recover, run 'cstack cluster stop cs-spec', then 'cstack cluster start cs-spec'.\n")
+    }
+
+    @Test("probes start on fixed ticks and never run past the limit")
+    func probesFollowTicks() async throws {
+        let calls = Timeline()
+        let started = ContinuousClock.now
+
+        let (status, _, _) = try await run(
+            ["start", "cs-spec"], runtime(),
+            apiReady: { _, limit in
+                await calls.add(started.duration(to: .now), limit)
+                try? await Task.sleep(for: .milliseconds(150))
+                return false
+            },
+            readyWait: .init(interval: .milliseconds(200), probe: .milliseconds(300), limit: .milliseconds(700)))
+
+        let entries = await calls.entries
+        #expect(status == 1)
+        #expect(entries.count == 4)
+        for (index, entry) in entries.enumerated().dropFirst() {
+            #expect(entry.offset - entries[index - 1].offset < .milliseconds(330))
+        }
+        #expect(entries.allSatisfy { $0.limit <= .milliseconds(300) })
+        #expect(entries.last.map { $0.limit <= .milliseconds(700) - ($0.offset - entries[0].offset) } == true)
+    }
+
+    @Test("a cluster that is not in the list after start exits 1 and says so")
+    func missingClusterExits1() async throws {
+        let (status, output, _) = try await run(["start", "cs-spec"], runtime(listJSON: "[]"))
+
+        #expect(status == 1)
+        #expect(
+            output.standardError
+                == "cstack cluster: cluster cs-spec started, but it is not in the cluster list. "
                 + "To recover, run 'cstack cluster stop cs-spec', then 'cstack cluster start cs-spec'.\n")
     }
 
@@ -227,7 +271,7 @@ struct ClusterCLITests {
 
         let (status, output, _) = try await run(
             ["start", "cs-spec"], runtime(listJSON: noPort),
-            apiReady: { cluster in
+            apiReady: { cluster, _ in
                 await checked.add(cluster.name)
                 return false
             })
@@ -245,7 +289,7 @@ struct ClusterCLITests {
 
         let (status, _, _) = try await run(
             [subcommand, "cs-spec"], runtime(),
-            apiReady: { cluster in
+            apiReady: { cluster, _ in
                 await checked.add(cluster.name)
                 return false
             })

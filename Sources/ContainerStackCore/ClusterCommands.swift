@@ -140,6 +140,10 @@ public struct ClusterCommands: Sendable {
             throw ClusterCommandError.kubeconfigNotCreated(path: managedKubeconfig.path, errno: errno)
         }
         let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        guard Self.fileID(managedKubeconfig.path) != Self.fileID(userKubeconfig.path) else {
+            unlink(managedKubeconfig.path)
+            throw ClusterCommandError.kubeconfigAlias
+        }
         try handle.write(contentsOf: Data("apiVersion: v1\nkind: Config\n".utf8))
     }
 

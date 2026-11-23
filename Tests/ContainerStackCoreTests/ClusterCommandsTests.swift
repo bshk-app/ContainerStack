@@ -181,6 +181,22 @@ struct ClusterCommandsTests {
                 == "~/.containerstack/kubeconfig is the same file as ~/.kube/config; remove the link")
     }
 
+    @Test("a link from ~/.kube/config to an app file that does not exist yet is refused")
+    func danglingAliasIsRefused() async throws {
+        let home = try TemporaryHome()
+        try FileManager.default.createSymbolicLink(at: home.userDefault, withDestinationURL: home.managed)
+        let before = try home.snapshot()
+        let recorder = ClusterSpawnRecorder()
+
+        await #expect(throws: ClusterCommandError.kubeconfigAlias) {
+            _ = try await commands(home, spawn: recorder.spawn).list()
+        }
+
+        #expect(recorder.launches.isEmpty)
+        #expect(try home.snapshot() == before)
+        #expect(!FileManager.default.fileExists(atPath: home.managed.path))
+    }
+
     @Test("write-config into ~/.kube/config names that file only")
     func writeConfigIntoTheUserFile() async throws {
         let home = try TemporaryHome()

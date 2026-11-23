@@ -38,6 +38,7 @@ public struct ClusterCommands: Sendable {
     private let environment: [String: String]
     private let spawn: Spawn
     let capabilityCache: ClusterCapabilityCache
+    private let lock: ClusterOperationLock
 
     public init(containerPath: String, home: URL, environment: [String: String]) {
         self.init(containerPath: containerPath, home: home, environment: environment, spawn: Self.processRunnerSpawn)
@@ -48,13 +49,15 @@ public struct ClusterCommands: Sendable {
         home: URL,
         environment: [String: String],
         spawn: @escaping Spawn,
-        capabilityCache: ClusterCapabilityCache = .shared
+        capabilityCache: ClusterCapabilityCache = .shared,
+        lock: ClusterOperationLock = .shared
     ) {
         self.containerPath = containerPath
         self.home = home
         self.environment = environment
         self.spawn = spawn
         self.capabilityCache = capabilityCache
+        self.lock = lock
     }
 
     public var managedKubeconfig: URL {
@@ -67,7 +70,8 @@ public struct ClusterCommands: Sendable {
 
     public func list() async throws -> String {
         try await run(
-            ["list", "--format", "json"], timeout: .seconds(20), output: .capture(includingStandardError: false))
+            ["list", "--format", "json"], timeout: .seconds(20), output: .capture(includingStandardError: false),
+            changesState: false)
     }
 
     public func create(name: String, options: [String]) async throws {
@@ -95,9 +99,13 @@ public struct ClusterCommands: Sendable {
         _ arguments: [String],
         timeout: Duration,
         output: ProcessRunner.OutputMode = .inherit,
-        kubeconfig: Kubeconfig = .managed
+        kubeconfig: Kubeconfig = .managed,
+        changesState: Bool = true
     ) async throws -> String {
-        let result = try await launch(["cluster"] + arguments, timeout: timeout, output: output, kubeconfig: kubeconfig)
+        let execute = { @Sendable in
+            try await launch(["cluster"] + arguments, timeout: timeout, output: output, kubeconfig: kubeconfig)
+        }
+        let result = try await changesState ? lock.run(execute) : execute()
         guard result.status == 0 else {
             throw ClusterCommandError.failed(command: "cluster \(arguments[0])", status: result.status)
         }

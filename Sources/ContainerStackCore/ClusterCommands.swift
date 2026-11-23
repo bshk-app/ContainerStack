@@ -37,16 +37,24 @@ public struct ClusterCommands: Sendable {
     public let home: URL
     private let environment: [String: String]
     private let spawn: Spawn
+    let capabilityCache: ClusterCapabilityCache
 
     public init(containerPath: String, home: URL, environment: [String: String]) {
         self.init(containerPath: containerPath, home: home, environment: environment, spawn: Self.processRunnerSpawn)
     }
 
-    init(containerPath: String, home: URL, environment: [String: String], spawn: @escaping Spawn) {
+    init(
+        containerPath: String,
+        home: URL,
+        environment: [String: String],
+        spawn: @escaping Spawn,
+        capabilityCache: ClusterCapabilityCache = .shared
+    ) {
         self.containerPath = containerPath
         self.home = home
         self.environment = environment
         self.spawn = spawn
+        self.capabilityCache = capabilityCache
     }
 
     public var managedKubeconfig: URL {
@@ -89,18 +97,27 @@ public struct ClusterCommands: Sendable {
         output: ProcessRunner.OutputMode = .inherit,
         kubeconfig: Kubeconfig = .managed
     ) async throws -> String {
-        try prepareKubeconfig()
-        var environment = environment
-        environment["KUBECONFIG"] = (kubeconfig == .managed ? managedKubeconfig : userKubeconfig).path
-        let launch = Launch(
-            executablePath: containerPath, arguments: ["cluster"] + arguments, environment: environment,
-            output: output, timeout: timeout)
-        let spawn = spawn
-        let result = try await Task.detached { try spawn(launch) }.value
+        let result = try await launch(["cluster"] + arguments, timeout: timeout, output: output, kubeconfig: kubeconfig)
         guard result.status == 0 else {
             throw ClusterCommandError.failed(command: "cluster \(arguments[0])", status: result.status)
         }
         return result.output
+    }
+
+    func launch(
+        _ arguments: [String],
+        timeout: Duration,
+        output: ProcessRunner.OutputMode = .capture(includingStandardError: true),
+        kubeconfig: Kubeconfig = .managed
+    ) async throws -> ProcessRunner.Result {
+        try prepareKubeconfig()
+        var environment = environment
+        environment["KUBECONFIG"] = (kubeconfig == .managed ? managedKubeconfig : userKubeconfig).path
+        let launch = Launch(
+            executablePath: containerPath, arguments: arguments, environment: environment, output: output,
+            timeout: timeout)
+        let spawn = spawn
+        return try await Task.detached { try spawn(launch) }.value
     }
 
     func prepareKubeconfig() throws {

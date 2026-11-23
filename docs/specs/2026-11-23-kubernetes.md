@@ -1,11 +1,24 @@
 # Spec: Kubernetes clusters, version 1
 
-Version: 1.0, accepted for implementation. History: 0.1 to 0.4 and four design reviews
+Version: 1.1, accepted for implementation. History: 0.1 to 0.4 and four design reviews
 (`reviews/2026-11-23-kubernetes-review-1.md` to `-review-4.md`). 1.0 simplifies the bridge guard
 (F-101), fixes the capability probe to the real help output (F-203), gives the restart step one
 deadline (F-213, F-217) and checks the kubeconfig alias before any write (F-202). Precision past
 this point is checked in the code review of each slice.
 Date: 2026-11-23
+
+Changes since 1.0 (the spec follows the code of slices S2, bridge `feat/cluster-node-guard` at
+`0e06f99`, and S3, `feat/k8s-core-cstack` at `c6e5807`):
+
+- F-101: no node check on create (the Runtime refuses the name) or on network connect and
+  disconnect (they change no container); attach to a stopped node streams its log; prune skips a
+  candidate only when its new lookup shows a node; the first lookup of stop, kill, restart and
+  start fails open; a new rule for the DNS sidecar name.
+- §12: network members are counted without nodes.
+- F-201: the API endpoint rule. F-202: the alias check also at file creation; the home directory
+  is the user's home, not `$HOME`. F-203: the usage line rule, a running runtime first, no cache of
+  a failed call. F-205: two limits. F-206: the API check after `start` and `create`, `ls` columns,
+  usage errors and exit codes.
 
 Sources: the live check of 2026-11-23 (`report.md` and logs in the local directory `k8s-live`,
 cited as "k8s-live"), a second live check (logs in the local directory `k8s-spec`, cited by file
@@ -215,15 +228,20 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   | `DELETE /containers/{id}` | the health-check stop and DNS alias removal (`ContainerDeleteRoute.swift:84-111`) | 409 |
   | `POST /containers/{id}/update` | the restart-policy store write (`ContainerUpdateRoute.swift:34-60`) | 409 |
   | `POST /containers/{id}/rename` | the same-name fast return and the delete and recreate (`ContainerRenameRoute.swift:100-110,183-229`). The source is checked; the target name is checked against nodes too, with the route's case-alias rule (`ContainerRenameRoute.swift:124-135`) | 409 when the source or the target name is a node |
-  | `POST /containers/create` | the create-option and volume writes (`ContainerCreateRoute.swift:761-799`): when the requested name, by the same case rule, is a node | 409 with the Docker name-conflict text, before those writes |
+  | `POST /containers/create` | no check. The Runtime refuses a name that a node holds, and the route answers the Docker name-conflict 409 (`ContainerCreateRoute.swift:798-799`). The create-option and volume writes before that refusal (`ContainerCreateRoute.swift:761-797`) change nothing that a node owns | 409 (name conflict) |
   | `PUT /containers/{id}/archive` | the file system write | 409 |
-  | `POST /containers/{id}/attach`, `GET .../attach/ws` | the preparation that can delete and recreate a stopped container (`ContainerAttachRoute.swift:93-102`, `ContainerAttachWSRoute.swift:28-35`) | allowed; for a node the preparation is not run |
-  | `POST /networks/{id}/connect`, `/disconnect` with a node | the no-op 200 (`Routes/Networks/NetworkConnectRoute.swift:8-14`) | 409 |
-  | `POST /containers/prune` | each delete (`Clients/ClientContainerService.swift:850-852,915-938`) | a node is never a candidate, also with a label filter on the plugin label; a candidate that is a node when its delete starts is skipped and the prune continues; it is not in `ContainersDeleted` |
+  | `POST /containers/{id}/attach`, `GET .../attach/ws` | the start preparation of a stopped container (`ContainerAttachRoute.swift:93-102`, `ContainerAttachWSRoute.swift:28-35`) | allowed; an attach to a stopped node streams the node's log, with no start preparation, no DNS sidecar and no parked stdio |
+  | `POST /networks/{id}/connect`, `/disconnect` | no check: 200 as before; these routes change no container (`Routes/Networks/NetworkConnectRoute.swift:8-14`). A node check is needed when a route gets an effect on a container | 200 |
+  | `POST /containers/prune` | each delete (`Clients/ClientContainerService.swift:850-852,915-938`) | a node is never a candidate, also with a label filter on the plugin label; a candidate is skipped only when its new lookup at its delete shows a node, and the prune continues; a failed lookup does not skip it; a skipped candidate is not in `ContainersDeleted` |
 
   Allowed for nodes: inspect, logs, stats, wait, export, archive GET and HEAD, exec, attach
   (without preparation), resize. Unchanged: pause, unpause, top, changes, commit (not supported or
   not implemented).
+
+  DNS sidecar name: the bridge uses, replaces or removes a container named
+  `socktainer-dns-<network>` only when it has the labels `socktainer.role=dns` and
+  `socktainer.network=<network>`. Any other container with that name is left alone
+  (`DNS/NetworkDNSManager.swift`, `occupant`).
 - **Limit (replacement window).** The check and the native calls are separate steps: the routes
   resolve again in the client and act by native name (`ContainerStopRoute.swift:26-36`,
   `Clients/ClientContainerService.swift:583-590`), and `VMLifecycleAdmission` admits several
@@ -233,6 +251,9 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   work (§12). Inside the Runtime, a force delete also cleans up by name
   (`ContainersService.swift:498-507,850-890,1022-1030`); upstream issue 2453 moves cluster work into
   the daemon.
+- **Limit (failed first lookup).** When the first lookup of stop, kill, restart or start fails, the
+  route goes on without the check (fail open), as before the guard. Delete checks its second lookup
+  too.
 
 ## 6. Requirements: ContainerStack
 
@@ -244,30 +265,34 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   `stopped`); `status.nodes[].name`, `status.nodes[].status`. Optional: `cni`, `fqdn`,
   `status.nodes[].addresses`, `ports`. Unknown keys are ignored; a missing required key or an
   unknown state is an error that names the key, shown in place of the list. The fixture is the
-  array of §2.1. API endpoint: `https://127.0.0.1:<host>` from the port `<host>-><6443>`, or
-  `https://<fqdn>:6443`.
+  array of §2.1. API endpoint: `https://<fqdn>:6443` when the record has an FQDN, else
+  `https://127.0.0.1:<host>` with the published host port `<host>-><6443>`.
 - **[F-202] Command wrapper.** `ClusterCommands` runs `<containerPath> cluster ...` with
   `containerPath` from `RuntimeProcessConfiguration.make` (`RuntimeProcessConfiguration.swift:62-99`),
-  never `container` on `PATH`. Every call sets `KUBECONFIG` to one expanded absolute path,
-  `$HOME/.containerstack/kubeconfig`, and nothing else (no list of paths), except the explicit
-  action of F-207. Precondition, before any initialization of the managed file and before any
-  plugin call (F-207 included): follow both `$HOME/.containerstack/kubeconfig` and
-  `$HOME/.kube/config` to their files; when both exist and have the same device and inode
-  (symbolic link or hard link, from either side), refuse with "~/.containerstack/kubeconfig is the
-  same file as ~/.kube/config; remove the link", write nothing and start no child process. After
-  the precondition, the wrapper creates the managed file when it is missing, with mode 0600 and
-  `apiVersion: v1`, `kind: Config` (the plugin keeps the mode of an existing file, §2.3). Process limits: `list` 20 s, `create` 15 min, `start` 10 min,
+  never `container` on `PATH`. The home directory is `FileManager.homeDirectoryForCurrentUser`,
+  not `$HOME`. Every call sets `KUBECONFIG` to one absolute path, `<home>/.containerstack/kubeconfig`,
+  and nothing else (no list of paths), except the explicit action of F-207. Precondition, before
+  any initialization of the managed file and before any plugin call (F-207 included): follow both
+  `<home>/.containerstack/kubeconfig` and `<home>/.kube/config` to their files; when both exist and
+  have the same device and inode (symbolic link or hard link, from either side), refuse with
+  "~/.containerstack/kubeconfig is the same file as ~/.kube/config; remove the link", write nothing
+  and start no child process. After the precondition, the wrapper creates the managed file when it
+  is missing (exclusive create), with mode 0600 and `apiVersion: v1`, `kind: Config` (the plugin
+  keeps the mode of an existing file, §2.3). When the new file turns out to be the same file as
+  `<home>/.kube/config` (a dangling link from `~/.kube/config` to the managed path), the wrapper
+  removes it and refuses the same way. Process limits: `list` 20 s, `create` 15 min, `start` 10 min,
   `delete` 5 min, `write-config` 30 s; `stop` as F-213 gives it, else 2 min.
 - **[F-203] Capability.** The Kubernetes section and `cstack cluster` work only when the runtime
-  has the commands: with the runtime running (the plugin loader needs the API server, §2.4),
-  `container cluster start --help` and `container cluster stop --help` each print a line that
-  starts with `USAGE:` followed by the tokens `cluster start` (or `cluster stop`); trailing options
-  are allowed. The patched plugin prints `USAGE: cluster start [--name <name>]` and `USAGE: cluster
+  has the commands. First `container system status` must succeed (the plugin loader needs the API
+  server, §2.4); else the result is "runtime not running" (`cstack` exit 69). Then `container
+  cluster start --help` and `container cluster stop --help` each print a line that starts with
+  `USAGE:` and whose command tokens end with `cluster start` (or `cluster stop`), so both `USAGE:
+  cluster start` and `USAGE: container cluster start` pass; trailing options are allowed. The patched plugin prints `USAGE: cluster start [--name <name>]` and `USAGE: cluster
   stop [--name <name>] [--signal <signal>] [--time <time>]` [L `probe-help.txt`, plugin binary of
   `feat/cluster-start-stop` at `b9aee43`, run directly]; through `container`, the same plugin
   binary prints it [I; the live probe is in §11]. An exit status of 0 alone is not proof: the old
-  plugin prints its top-level help with 0 (§2.5). The result is kept
-  for the running build (`container --version` commit). Without it, the section says "This runtime has
+  plugin prints its top-level help with 0 (§2.5). The result is kept for the running build
+  (`container --version` output); a help call that fails is not kept. Without it, the section says "This runtime has
   no cluster start; update ContainerStack" and offers nothing else.
 - **[F-204] One operation at a time per process.** `ClusterOperationLock` (an actor in Core) runs
   the cluster commands that change state (create, start, stop, delete, write-config) one at a time
@@ -280,6 +305,9 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   the API server only: a start can fail after the API is ready, on leases, node readiness, DNS or
   routes (§2.5). It runs after each create and start, and every 5 s for running clusters while the
   Kubernetes section shows.
+- **Limits of F-205.** The kubeconfig reader reads the shape that the plugin writes; a file of
+  another shape reads as no context (API not ready). The request uses the system proxy settings, so
+  a proxy that does not exempt `127.0.0.1` or the FQDN can make the check fail.
 
 ### 6.2 `cstack cluster` (`Sources/CStackCLI/`)
 
@@ -287,14 +315,19 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
 
   | Command | Runs |
   |---|---|
-  | `cstack cluster ls [--json]` | `cluster list --format json`. Table `NAME STATE API-READY VERSION NODES API`. `--json` prints the runtime JSON unchanged. |
+  | `cstack cluster ls [--json]` | `cluster list --format json`. Table `NAME STATE API-READY VERSION NODES API`: API-READY is `yes` or `no` for a running cluster and `-` for any other; NODES is the count of nodes in the record. `--json` prints the runtime JSON unchanged. A failed list prints the runtime's error text. |
   | `cstack cluster create <name> [--cpus N] [--memory SIZE] [--workers ...]... [--node-image REF] [--cni PATH\|NONE] [--shared-image-store]` | `cluster create` |
   | `cstack cluster start <name>` / `stop <name>` / `rm <name>` | `cluster start` / `stop` / `delete` (no prompt) |
   | `cstack cluster kubeconfig <name>` | `cluster write-config`, then prints the two lines of F-207 |
 
   `cstack` uses `~/.containerstack/kubeconfig` and ignores the shell's `KUBECONFIG`. Progress on
-  stderr unchanged. Exit codes: 0 done; 1 the Runtime command failed; 64 usage; 69 the runtime does
-  not run or has no cluster start (F-203).
+  stderr unchanged. After `start` and `create` exit 0, `cstack` checks F-205: a probe every 5 s,
+  each with a 3 s limit, for at most 30 s. When the API is not ready, it prints "To recover, run
+  'cstack cluster stop <name>', then 'cstack cluster start <name>'." and exits 1. A cluster with no
+  published API port and no FQDN skips the check, and `cstack` says so. An option written as
+  `--opt=value` is a usage error. Exit codes: 0 done; 1 the Runtime command failed, the API is not
+  ready, or the kubeconfig alias refusal (F-202); 64 usage; 69 the runtime does not run or has no
+  cluster start (F-203).
 
 ### 6.3 App (`Sources/ContainerStackApp/`)
 
@@ -459,7 +492,7 @@ SHA-256 as before.
 |---|---|---|---|
 | F-001 | [P] fork live check: create 1 node and 1 + 2 workers, NodePort Service and a PVC, `system stop`, `system start`, `cluster start`: a new boot, NodePort answers, the PVC data is there. A start cut part way: state `running`; `stop` then `start` recovers. | live | Runtime |
 | F-002 | The release payload check fails on a package without the shim; `make container BUILD_CONFIGURATION=release` without a shim exits non-zero. | CI | Runtime |
-| F-101 | One route test per row of the table with a fake node: the answer, and no side effect happened (no restart-state reset, no 304, no health-check stop, no DNS alias removal, no restart-policy write, no create-option or volume write, no delete or recreate); rename with the node as source, as target, and as a target that differs only in case; create with a node's name; HTTP and WebSocket attach to a stopped node with staged files run no preparation; exec runs, archive GET returns bytes; a node found by ID prefix and by retired ID is refused; prune with the plugin label filter deletes nothing; a candidate replaced by a node after the listing is not deleted, is not in `ContainersDeleted`, and the prune answers 200; network connect and disconnect with and without `--shared-runtimes`. | route | Bridge |
+| F-101 | One route test per row of the table with a fake node: the answer, and no side effect happened (no restart-state reset, no 304, no health-check stop, no DNS alias removal, no restart-policy write, no delete or recreate); rename with the node as source, as target, and as a target that differs only in case; create with a node's name; HTTP and WebSocket attach to a stopped node with staged files run no preparation; exec runs, archive GET returns bytes; a node found by ID prefix and by retired ID is refused; prune with the plugin label filter deletes nothing; a candidate replaced by a node after the listing is not deleted, is not in `ContainersDeleted`, and the prune answers 200. | route | Bridge |
 | F-201 | Decode the fixture; an extra key passes; a missing `status.state` or `state: "paused"` fails and names the key. | unit | App |
 | F-202 | A fake `container` first on `PATH` is not run; with an inherited `KUBECONFIG` that lists several paths, every call (create, failed create with rollback, start, delete, write-config) has exactly the app file, and after each call `$HOME/.kube/config` and the other listed files are byte-equal to before; the file exists with mode 0600 before the first call. Alias: a symbolic link from the default path to the managed file, a symbolic link the other way, and a hard link: each refusal leaves both files byte-equal, creates no file, and starts no child process (the fake records no launch), also for the F-207 action. | unit | App |
 | F-203 | Fixtures from `probe-help.txt`: `USAGE: cluster start [--name <name>]` and `USAGE: cluster stop ...` give capable; the old plugin's top-level help with exit 0 gives not capable; `start` present and `stop` missing gives not capable. | unit | App |
@@ -521,6 +554,11 @@ Not in version 1 (D5). A later version that restarts the stopped clusters needs,
    every cluster left stopped or unknown (finding 3).
 4. One time budget for the stop side and the start side (finding 6), and the `--rm` and
    pre-stable-endpoint rules of F-217 (finding 1).
+
+Also later: network members are counted from a listing that hides plugin containers
+(`Clients/ClientNetworkService.swift:22`), so a network that holds only nodes looks empty to the
+startup network reaper and to `network prune`. Today nodes use the built-in `default` network,
+which is exempt (`Utilities/OrphanedNetworkReaper.swift:17`).
 
 Also later: serialization of bridge mutations per native name for the whole operation, which closes
 the replacement window of F-101 (review 4, issues 1 and 2).

@@ -16,7 +16,9 @@ public enum ClusterCapability: Equatable, Sendable, CustomStringConvertible {
     static func usageNames(_ subcommand: String, in help: String) -> Bool {
         help.split(whereSeparator: \.isNewline).contains { line in
             let tokens = line.split(whereSeparator: \.isWhitespace)
-            return tokens.count >= 3 && tokens[0] == "USAGE:" && tokens[1] == "cluster" && tokens[2] == subcommand
+            guard tokens.first == "USAGE:" else { return false }
+            let command = tokens.dropFirst().prefix { !"[<-".contains($0.first ?? "-") }
+            return command.suffix(2).elementsEqual(["cluster", Substring(subcommand)])
         }
     }
 }

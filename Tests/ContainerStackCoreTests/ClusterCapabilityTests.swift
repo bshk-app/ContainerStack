@@ -105,12 +105,16 @@ struct ClusterCapabilityTests {
             try await probe(home, runtime(version: "v1", start: startHelp, stop: stopHelp), cache: cache) == .capable)
     }
 
-    @Test("a usage line must name the subcommand right after USAGE:")
+    @Test("the command tokens of a usage line must end with cluster and the subcommand")
     func usageLineRule() {
         #expect(ClusterCapability.usageNames("start", in: "USAGE: cluster start"))
         #expect(ClusterCapability.usageNames("start", in: "x\n  USAGE: cluster start [--name <name>]\n"))
         #expect(!ClusterCapability.usageNames("start", in: "USAGE: cluster <subcommand>"))
         #expect(!ClusterCapability.usageNames("start", in: "USAGE: cluster started"))
         #expect(!ClusterCapability.usageNames("start", in: "  $ container cluster start --name my-cluster"))
+        #expect(ClusterCapability.usageNames("start", in: "USAGE: container cluster start [--name <name>]"))
+        #expect(ClusterCapability.usageNames("stop", in: "USAGE: container cluster stop [--time <time>]"))
+        #expect(!ClusterCapability.usageNames("start", in: "USAGE: container cluster <subcommand>"))
+        #expect(!ClusterCapability.usageNames("start", in: "USAGE: container cluster start-all"))
     }
 }

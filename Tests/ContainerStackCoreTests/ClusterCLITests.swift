@@ -349,6 +349,26 @@ struct ClusterCLITests {
         )
     }
 
+    @Test(
+        "ls prints one row for each live output of the patched runtime",
+        arguments: [
+            ("running", "running\tno"), ("stopped", "stopped\t-"), ("degraded", "degraded\t-"),
+            ("running-after-interrupted-start", "running\tno"),
+        ])
+    func tableOfLiveOutputs(fixture: String, stateAndReady: String) async throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appending(path: "Fixtures/cluster-list-\(fixture).json")
+        let json = try String(contentsOf: url, encoding: .utf8)
+
+        let (status, output, _) = try await run(["ls"], runtime(listJSON: json))
+
+        #expect(status == 0)
+        #expect(
+            output.standardOutput
+                == "NAME\tSTATE\tAPI-READY\tVERSION\tNODES\tAPI\n"
+                + "cs-b\t\(stateAndReady)\tv1.35.5\t3\thttps://127.0.0.1:6445\n")
+    }
+
     @Test("a running cluster that the app kubeconfig does not know is not API ready")
     func runningWithoutContextIsNotReady() async throws {
         let (_, output, _) = try await run(["ls"], runtime())

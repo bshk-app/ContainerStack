@@ -92,3 +92,53 @@ struct KubernetesClusterTests {
         #expect(cluster.apiEndpoint == URL(string: "https://cs-spec.test:6443"))
     }
 }
+
+private func liveFixture(_ name: String) -> Data {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(
+        path: "Fixtures/cluster-list-\(name).json")
+    return (try? Data(contentsOf: url)) ?? Data()
+}
+
+struct KubernetesClusterLiveFixtureTests {
+    struct Expected: Sendable, CustomTestStringConvertible {
+        let fixture: String
+        let state: KubernetesCluster.State
+        let nodeStatus: [String]
+        let addresses: [[String]?]
+
+        var testDescription: String { fixture }
+    }
+
+    @Test(
+        "each live output of the patched runtime decodes",
+        arguments: [
+            Expected(
+                fixture: "running", state: .running, nodeStatus: ["running", "running", "running"],
+                addresses: [["192.168.64.14"], ["192.168.64.16"], ["192.168.64.15"]]),
+            Expected(
+                fixture: "stopped", state: .stopped, nodeStatus: ["stopped", "stopped", "stopped"],
+                addresses: [nil, nil, nil]),
+            Expected(
+                fixture: "degraded", state: .degraded, nodeStatus: ["running", "stopped", "stopped"],
+                addresses: [["192.168.64.11"], nil, nil]),
+            Expected(
+                fixture: "running-after-interrupted-start", state: .running,
+                nodeStatus: ["running", "running", "running"],
+                addresses: [["192.168.64.5"], ["192.168.64.6"], ["192.168.64.7"]]),
+        ])
+    func liveOutputDecodes(expected: Expected) throws {
+        let clusters = try KubernetesCluster.decodeList(liveFixture(expected.fixture))
+
+        let cluster = try #require(clusters.first)
+        #expect(clusters.count == 1)
+        #expect(cluster.name == "cs-b")
+        #expect(cluster.state == expected.state)
+        #expect(cluster.nodes.map(\.name) == ["cs-b", "cs-b-worker-1", "cs-b-worker-2"])
+        #expect(cluster.nodes.map(\.roles) == [["control-plane"], ["worker"], ["worker"]])
+        #expect(cluster.nodeStatuses.map(\.name) == ["cs-b", "cs-b-worker-1", "cs-b-worker-2"])
+        #expect(cluster.nodeStatuses.map(\.status) == expected.nodeStatus)
+        #expect(cluster.nodeStatuses.map(\.addresses) == expected.addresses)
+        #expect(cluster.nodeStatuses.map(\.ports) == [["6445->6443"], nil, nil])
+        #expect(cluster.apiEndpoint == URL(string: "https://127.0.0.1:6445"))
+    }
+}

@@ -21,6 +21,7 @@ public actor ClusterOperationLock {
                 waiters.removeFirst().resume()
             }
         }
+        try Task.checkCancellation()
         return try await operation()
     }
 }

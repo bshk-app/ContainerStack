@@ -87,6 +87,27 @@ struct ClusterOperationLockTests {
         #expect(await log.events == ["1", "2", "3"])
     }
 
+    @Test("a waiting operation that is cancelled does not run and the next one does")
+    func cancelledWaiterDoesNotRun() async throws {
+        let lock = ClusterOperationLock()
+        let log = EventLog()
+        let gate = Gate()
+
+        let first = Task { try await lock.run { await gate.wait() } }
+        try await Task.sleep(for: .milliseconds(50))
+        let cancelled = Task { try await lock.run { await log.append("cancelled ran") } }
+        try await Task.sleep(for: .milliseconds(50))
+        let next = Task { try await lock.run { await log.append("next ran") } }
+        try await Task.sleep(for: .milliseconds(50))
+        cancelled.cancel()
+        await gate.open()
+        try await first.value
+        await #expect(throws: CancellationError.self) { try await cancelled.value }
+        try await next.value
+
+        #expect(await log.events == ["next ran"])
+    }
+
     @Test("an operation that throws releases the lock")
     func throwingOperationReleases() async throws {
         let lock = ClusterOperationLock()
@@ -96,7 +117,7 @@ struct ClusterOperationLockTests {
         #expect(try await lock.run { 7 } == 7)
     }
 
-    @Test("two cluster start requests in one process do not overlap")
+    @Test("two cluster start requests in one process do not overlap, also through two wrappers")
     func twoStartsDoNotOverlap() async throws {
         let home = try TemporaryHome()
         let intervals = NSLock()
@@ -108,12 +129,13 @@ struct ClusterOperationLockTests {
             intervals.withLock { spans.append((begin, end)) }
             return .init(status: 0, output: "")
         }
-        let commands = ClusterCommands(
-            containerPath: "/opt/runtime/bin/container", home: home.url, environment: [:], spawn: recorder.spawn,
-            lock: ClusterOperationLock())
+        func commands() -> ClusterCommands {
+            ClusterCommands(
+                containerPath: "/opt/runtime/bin/container", home: home.url, environment: [:], spawn: recorder.spawn)
+        }
 
-        async let one: Void = commands.start(name: "a")
-        async let two: Void = commands.start(name: "b")
+        async let one: Void = commands().start(name: "a")
+        async let two: Void = commands().start(name: "b")
         _ = try await (one, two)
 
         let sorted = intervals.withLock { spans.sorted { $0.0 < $1.0 } }

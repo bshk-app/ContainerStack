@@ -32,7 +32,7 @@ public enum ClusterAPIReady {
     }
 }
 
-private final class AnchorTrust: NSObject, URLSessionDelegate, Sendable {
+private final class AnchorTrust: NSObject, URLSessionTaskDelegate, Sendable {
     private let anchor: SecCertificate
 
     init(anchor: SecCertificate) {
@@ -50,6 +50,15 @@ private final class AnchorTrust: NSObject, URLSessionDelegate, Sendable {
         SecTrustSetAnchorCertificatesOnly(trust, true)
         guard SecTrustEvaluateWithError(trust, nil) else { return (.cancelAuthenticationChallenge, nil) }
         return (.useCredential, URLCredential(trust: trust))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        nil
     }
 }
 

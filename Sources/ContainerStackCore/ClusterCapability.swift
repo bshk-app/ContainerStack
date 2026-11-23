@@ -49,8 +49,9 @@ extension ClusterCommands {
         }
         var capability = ClusterCapability.capable
         for subcommand in ["start", "stop"] {
-            let help = try await launch(["cluster", subcommand, "--help"], timeout: probe).output
-            if !ClusterCapability.usageNames(subcommand, in: help) {
+            let help = try await launch(["cluster", subcommand, "--help"], timeout: probe)
+            guard help.status == 0 else { return .noClusterStart }
+            if !ClusterCapability.usageNames(subcommand, in: help.output) {
                 capability = .noClusterStart
             }
         }

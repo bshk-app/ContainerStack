@@ -91,6 +91,20 @@ struct ClusterCapabilityTests {
         #expect(same.launches.map(\.arguments) == [["system", "status"], ["--version"]])
     }
 
+    @Test("a help call that fails is not kept for the build")
+    func failedHelpIsNotKept() async throws {
+        let home = try TemporaryHome()
+        let cache = ClusterCapabilityCache()
+        let failing = ClusterSpawnRecorder { launch in
+            launch.arguments.last == "--help"
+                ? .init(status: 1, output: "Error: XPC connection error") : .init(status: 0, output: "v1")
+        }
+
+        #expect(try await probe(home, failing, cache: cache) == .noClusterStart)
+        #expect(
+            try await probe(home, runtime(version: "v1", start: startHelp, stop: stopHelp), cache: cache) == .capable)
+    }
+
     @Test("a usage line must name the subcommand right after USAGE:")
     func usageLineRule() {
         #expect(ClusterCapability.usageNames("start", in: "USAGE: cluster start"))

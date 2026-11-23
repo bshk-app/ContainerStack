@@ -15,6 +15,14 @@ private final class Output: @unchecked Sendable {
     func writeError(_ text: String) { lock.withLock { err.append(text) } }
 }
 
+private actor Counter {
+    private(set) var names: [String] = []
+
+    func add(_ name: String) {
+        names.append(name)
+    }
+}
+
 struct ClusterCLITests {
     private static let capableHelp: [String: String] = [
         "start": "USAGE: cluster start [--name <name>]",
@@ -43,15 +51,19 @@ struct ClusterCLITests {
     private func run(
         _ arguments: [String],
         _ recorder: ClusterSpawnRecorder,
-        environment: [String: String] = [:]
+        environment: [String: String] = [:],
+        apiReady: @escaping @Sendable (KubernetesCluster) async -> Bool = { _ in true },
+        readyWait: ClusterCLI.ReadyWait = .init(interval: .milliseconds(10), limit: .milliseconds(50))
     ) async throws -> (Int32, Output, URL) {
         let home = try TemporaryHome()
         let output = Output()
         let commands = ClusterCommands(
             containerPath: "/opt/runtime/bin/container", home: home.url, environment: environment,
             spawn: recorder.spawn, capabilityCache: ClusterCapabilityCache(), lock: ClusterOperationLock())
-        let status = await ClusterCLI(commands: commands, write: output.write, writeError: output.writeError)
-            .run(arguments)
+        let status = await ClusterCLI(
+            commands: commands, write: output.write, writeError: output.writeError, apiReady: apiReady,
+            readyWait: readyWait
+        ).run(arguments)
         return (status, output, home.url)
     }
 
@@ -84,12 +96,14 @@ struct ClusterCLITests {
             (["kubeconfig", "dev"], ["cluster", "write-config", "--name", "dev"]),
         ])
     func argumentMapping(arguments: [String], expected: [String]) async throws {
-        let recorder = runtime()
+        let recorder = runtime(listJSON: String(decoding: clusterListJSON([("cs-spec", "dev")]), as: UTF8.self))
+        let startsCluster = ["create", "start"].contains(arguments[0])
 
         let (status, _, _) = try await run(arguments, recorder)
 
         #expect(status == 0)
-        #expect(clusterLaunches(recorder) == [expected])
+        #expect(
+            clusterLaunches(recorder) == [expected] + (startsCluster ? [["cluster", "list", "--format", "json"]] : []))
     }
 
     @Test("the shell's KUBECONFIG is not passed")
@@ -98,7 +112,7 @@ struct ClusterCLITests {
 
         let (_, _, home) = try await run(["start", "dev"], recorder, environment: ["KUBECONFIG": "/tmp/shell-config"])
 
-        #expect(recorder.launches.count == 5)
+        #expect(recorder.launches.count == 6)
         #expect(
             Set(recorder.launches.map { $0.environment["KUBECONFIG"] })
                 == [home.appending(path: ".containerstack/kubeconfig").path])
@@ -152,6 +166,92 @@ struct ClusterCLITests {
             output.standardError
                 == "cstack cluster: container cluster \(arguments[0] == "rm" ? "delete" : arguments[0]) exited with status 1\n"
         )
+    }
+
+    @Test("start and create check the API after the runtime command", arguments: ["start", "create"])
+    func startChecksTheAPI(subcommand: String) async throws {
+        let checked = Counter()
+
+        let (status, output, _) = try await run(
+            [subcommand, "cs-spec"], runtime(),
+            apiReady: { cluster in
+                await checked.add(cluster.name)
+                return true
+            })
+
+        #expect(status == 0)
+        #expect(output.standardError.isEmpty)
+        #expect(await checked.names == ["cs-spec"])
+    }
+
+    @Test("the API check waits and asks again until the API is ready")
+    func checkWaitsForTheAPI() async throws {
+        let checked = Counter()
+
+        let (status, _, _) = try await run(
+            ["start", "cs-spec"], runtime(),
+            apiReady: { cluster in
+                await checked.add(cluster.name)
+                return await checked.names.count >= 3
+            })
+
+        #expect(status == 0)
+        #expect(await checked.names.count == 3)
+    }
+
+    @Test("an API that is not ready inside the limit exits 1 and names the recovery", arguments: ["start", "create"])
+    func apiNotReadyExits1(subcommand: String) async throws {
+        let checked = Counter()
+        let started = ContinuousClock.now
+
+        let (status, output, _) = try await run(
+            [subcommand, "cs-spec"], runtime(),
+            apiReady: { cluster in
+                await checked.add(cluster.name)
+                return false
+            })
+
+        #expect(status == 1)
+        #expect(await checked.names.count >= 2)
+        #expect(started.duration(to: .now) < .seconds(2))
+        #expect(
+            output.standardError
+                == "cstack cluster: cluster cs-spec started, but its API is not ready after 0.05 s. "
+                + "To recover, run 'cstack cluster stop cs-spec', then 'cstack cluster start cs-spec'.\n")
+    }
+
+    @Test("a cluster with no published API port and no FQDN skips the check and says so")
+    func noEndpointSkipsTheCheck() async throws {
+        let checked = Counter()
+        let noPort = String(decoding: clusterListJSON([(#""ports":["6445->6443"],"#, "")]), as: UTF8.self)
+
+        let (status, output, _) = try await run(
+            ["start", "cs-spec"], runtime(listJSON: noPort),
+            apiReady: { cluster in
+                await checked.add(cluster.name)
+                return false
+            })
+
+        #expect(status == 0)
+        #expect(await checked.names.isEmpty)
+        #expect(
+            output.standardError
+                == "cstack cluster: cluster cs-spec has no published API port and no FQDN; the API check is skipped.\n")
+    }
+
+    @Test("stop, rm and kubeconfig do not check the API", arguments: ["stop", "rm", "kubeconfig"])
+    func otherCommandsDoNotCheck(subcommand: String) async throws {
+        let checked = Counter()
+
+        let (status, _, _) = try await run(
+            [subcommand, "cs-spec"], runtime(),
+            apiReady: { cluster in
+                await checked.add(cluster.name)
+                return false
+            })
+
+        #expect(status == 0)
+        #expect(await checked.names.isEmpty)
     }
 
     @Test("a failed list exits 1 and shows the runtime's error text")

@@ -22,6 +22,11 @@ public struct ClusterCLI: Sendable {
         case kubeconfig(String)
     }
 
+    public struct ReadyWait: Sendable {
+        let interval: Duration
+        let limit: Duration
+    }
+
     struct UsageError: Error {
         let message: String
     }
@@ -31,15 +36,36 @@ public struct ClusterCLI: Sendable {
     let commands: ClusterCommands
     let write: @Sendable (String) -> Void
     let writeError: @Sendable (String) -> Void
+    let apiReady: @Sendable (KubernetesCluster) async -> Bool
+    let readyWait: ReadyWait
 
     public init(
         commands: ClusterCommands,
         write: @escaping @Sendable (String) -> Void,
         writeError: @escaping @Sendable (String) -> Void
     ) {
+        let kubeconfig = commands.managedKubeconfig
+        self.init(
+            commands: commands, write: write, writeError: writeError,
+            apiReady: { cluster in
+                await ClusterAPIReady.isReady(
+                    endpoint: cluster.apiEndpoint, context: cluster.name, kubeconfig: kubeconfig)
+            },
+            readyWait: ReadyWait(interval: .seconds(5), limit: .seconds(30)))
+    }
+
+    init(
+        commands: ClusterCommands,
+        write: @escaping @Sendable (String) -> Void,
+        writeError: @escaping @Sendable (String) -> Void,
+        apiReady: @escaping @Sendable (KubernetesCluster) async -> Bool,
+        readyWait: ReadyWait
+    ) {
         self.commands = commands
         self.write = write
         self.writeError = writeError
+        self.apiReady = apiReady
+        self.readyWait = readyWait
     }
 
     private func print(_ line: String) {
@@ -64,15 +90,14 @@ public struct ClusterCLI: Sendable {
                 printError("cstack cluster: \(capability)")
                 return 69
             }
-            try await execute(command)
-            return 0
+            return try await execute(command)
         } catch {
             printError("cstack cluster: \(error)")
             return 1
         }
     }
 
-    private func execute(_ command: Command) async throws {
+    private func execute(_ command: Command) async throws -> Int32 {
         switch command {
         case .list(let json):
             let output = try await commands.list()
@@ -83,8 +108,10 @@ public struct ClusterCLI: Sendable {
             }
         case .create(let name, let options):
             try await commands.create(name: name, options: options)
+            return try await apiReadyAfterStart(name) ? 0 : 1
         case .start(let name):
             try await commands.start(name: name)
+            return try await apiReadyAfterStart(name) ? 0 : 1
         case .stop(let name):
             try await commands.stop(name: name)
         case .remove(let name):
@@ -94,6 +121,28 @@ public struct ClusterCLI: Sendable {
             print("kubectl --kubeconfig ~/.containerstack/kubeconfig --context \(name) get nodes")
             print("export KUBECONFIG=~/.containerstack/kubeconfig")
         }
+        return 0
+    }
+
+    private func apiReadyAfterStart(_ name: String) async throws -> Bool {
+        let cluster = try await KubernetesCluster.decodeList(Data(commands.list().utf8)).first { $0.name == name }
+        if let cluster, cluster.apiEndpoint == nil {
+            printError(
+                "cstack cluster: cluster \(name) has no published API port and no FQDN; the API check is skipped.")
+            return true
+        }
+        let deadline = ContinuousClock.now + readyWait.limit
+        while let cluster {
+            if await apiReady(cluster) { return true }
+            guard ContinuousClock.now + readyWait.interval < deadline else { break }
+            try await Task.sleep(for: readyWait.interval)
+        }
+        let limit = Double(readyWait.limit.components.seconds) + Double(readyWait.limit.components.attoseconds) / 1e18
+        let seconds = limit == limit.rounded() ? String(Int(limit)) : String(limit)
+        printError(
+            "cstack cluster: cluster \(name) started, but its API is not ready after \(seconds) s. "
+                + "To recover, run 'cstack cluster stop \(name)', then 'cstack cluster start \(name)'.")
+        return false
     }
 
     private func printTable(_ clusters: [KubernetesCluster]) async {

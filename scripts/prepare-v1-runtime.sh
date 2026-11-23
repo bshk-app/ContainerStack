@@ -6,14 +6,18 @@ set -euo pipefail
 # its data directory aside. It never deletes data or starts a daemon for you.
 
 readonly TARGET_CONTAINER_VERSION="1.7.1"
-# A fork build of Apple Container 1.7.1, not Apple's release. The fork changes only dependencies:
-# containerization 0.54.0 with a ReadStream fix and a bearer token reuse fix, and async-http-client
-# with four early-response fixes. Without them, the memory of container-core-images grows with each
-# image push, and each blob upload sends its body two times. The fork has the same XPC API as
-# Apple's 1.7.1, so socktainer builds against Apple's packages. Move back to Apple's release when a
-# release of Apple Container contains these fixes.
+# A fork build of Apple Container 1.7.1, not Apple's release. The fork changes:
+# - dependencies: containerization 0.54.0 with a ReadStream fix and a bearer token reuse fix, and
+#   async-http-client with four early-response fixes. Without them, the memory of
+#   container-core-images grows with each image push, and each blob upload sends its body two times;
+# - state directories (1.7.1-bshk.2): volume, container and machine creates reserve their directory
+#   and refuse a name that the file system folds onto an existing one. Without this, `Web` beside
+#   `web` on the default case-insensitive volume formats the other volume or removes the other
+#   container's root file system.
+# The fork has the same XPC API as Apple's 1.7.1, so socktainer builds against Apple's packages.
+# Move back to Apple's release when a release of Apple Container contains these fixes.
 readonly TARGET_RELEASE_REPOSITORY="beshkenadze/container"
-readonly TARGET_RELEASE_TAG="${TARGET_CONTAINER_VERSION}-bshk.1"
+readonly TARGET_RELEASE_TAG="${TARGET_CONTAINER_VERSION}-bshk.2"
 readonly TARGET_RELEASE_URL="https://github.com/${TARGET_RELEASE_REPOSITORY}/releases/tag/${TARGET_RELEASE_TAG}"
 # Apple Container reports its own data directory as `appRoot`, and the path has moved between
 # versions — 1.2.2 and later use com.apple.container, while com.apple.containerization is a
@@ -30,7 +34,7 @@ readonly DATA_ROOT_FALLBACK="${HOME}/Library/Application Support/com.apple.conta
 #     port — exactly what adding a second port produces.
 # Unpin only once every one of them is upstream.
 readonly SOCKTAINER_REPO_URL="https://github.com/beshkenadze/socktainer.git"
-readonly SOCKTAINER_REV="166bbd50a588b424517d671cf2c88b3477079886"
+readonly SOCKTAINER_REV="6b3393b21358500258df37e7a625d0c32de33e7d"
 readonly SOCKTAINER_SOURCE_ROOT="${HOME}/Library/Application Support/ContainerStack/socktainer"
 readonly SOCKTAINER_BIN_DIR="${HOME}/.local/bin"
 readonly SOCKTAINER_BIN="${SOCKTAINER_BIN_DIR}/socktainer"

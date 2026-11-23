@@ -14,17 +14,18 @@ private struct TLSFixture: ~Copyable {
             .write(to: directory.appending(path: "leaf.ext"), atomically: true, encoding: .utf8)
         for name in ["ca", "other-ca"] {
             try openssl([
-                "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "\(name).key", "-out", "\(name).crt",
-                "-days", "30", "-subj", "/CN=\(name)", "-addext", "basicConstraints=critical,CA:TRUE",
-                "-addext", "keyUsage=critical,keyCertSign",
+                "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", path("\(name).key"), "-out",
+                path("\(name).crt"), "-days", "30", "-subj", "/CN=\(name)", "-addext",
+                "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign",
             ])
         }
         try openssl([
-            "req", "-newkey", "rsa:2048", "-nodes", "-keyout", "leaf.key", "-out", "leaf.csr", "-subj", "/CN=127.0.0.1",
+            "req", "-newkey", "rsa:2048", "-nodes", "-keyout", path("leaf.key"), "-out", path("leaf.csr"), "-subj",
+            "/CN=127.0.0.1",
         ])
         try openssl([
-            "x509", "-req", "-in", "leaf.csr", "-CA", "ca.crt", "-CAkey", "ca.key", "-CAcreateserial", "-out",
-            "leaf.crt", "-days", "30", "-extfile", "leaf.ext",
+            "x509", "-req", "-in", path("leaf.csr"), "-CA", path("ca.crt"), "-CAkey", path("ca.key"), "-set_serial",
+            "1", "-out", path("leaf.crt"), "-days", "30", "-extfile", path("leaf.ext"),
         ])
     }
 
@@ -32,16 +33,10 @@ private struct TLSFixture: ~Copyable {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    private func openssl(_ arguments: [String], in subdirectory: String = "") throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
-        process.arguments = arguments
-        process.currentDirectoryURL = directory.appending(path: subdirectory)
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
+    private func openssl(_ arguments: [String]) throws {
+        let result = try ProcessRunner.run(
+            executablePath: "/usr/bin/openssl", arguments: arguments, timeout: .seconds(60))
+        guard result.status == 0 else { throw CocoaError(.fileWriteUnknown) }
     }
 
     func kubeconfig(context: String = "dev", caFile: String = "ca.crt") throws -> URL {
@@ -69,20 +64,37 @@ private struct TLSFixture: ~Copyable {
         return url
     }
 
-    func serve(_ response: String) throws -> (Process, Int) {
+    func serve(_ response: String) throws -> TLSServer {
         try Data(response.utf8).write(to: directory.appending(path: "www/readyz"))
         let port = try freePort()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
         process.arguments = [
-            "s_server", "-accept", "\(port)", "-cert", "../leaf.crt", "-key", "../leaf.key", "-HTTP", "-quiet",
+            "s_server", "-accept", "\(port)", "-cert", path("leaf.crt"), "-key", path("leaf.key"), "-HTTP", "-quiet",
         ]
         process.currentDirectoryURL = directory.appending(path: "www")
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         try process.run()
-        return (process, port)
+        return TLSServer(process: process, port: port, exited: exited)
+    }
+
+    func path(_ name: String) -> String {
+        directory.appending(path: name).path
+    }
+}
+
+private struct TLSServer {
+    let process: Process
+    let port: Int
+    let exited: DispatchSemaphore
+
+    func stop() {
+        process.terminate()
+        _ = exited.wait(timeout: .now() + 5)
     }
 }
 
@@ -129,14 +141,11 @@ private func waitUntilListening(_ port: Int) async throws {
 struct ClusterAPIReadyTests {
     private func ready(_ response: String, caFile: String = "ca.crt") async throws -> Bool {
         let fixture = try TLSFixture()
-        let (server, port) = try fixture.serve(response)
-        defer {
-            server.terminate()
-            server.waitUntilExit()
-        }
-        try await waitUntilListening(port)
+        let server = try fixture.serve(response)
+        defer { server.stop() }
+        try await waitUntilListening(server.port)
         return await ClusterAPIReady.isReady(
-            endpoint: URL(string: "https://127.0.0.1:\(port)"), context: "dev",
+            endpoint: URL(string: "https://127.0.0.1:\(server.port)"), context: "dev",
             kubeconfig: try fixture.kubeconfig(caFile: caFile))
     }
 
@@ -153,6 +162,23 @@ struct ClusterAPIReadyTests {
     @Test("a body other than ok is API not ready")
     func otherBodyIsNotReady() async throws {
         #expect(try await !ready("HTTP/1.0 200 OK\r\nContent-Length: 6\r\n\r\nfailed"))
+    }
+
+    @Test("a redirect to an ok page is API not ready")
+    func redirectIsNotReady() async throws {
+        let fixture = try TLSFixture()
+        try Data("HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok".utf8).write(
+            to: fixture.directory.appending(path: "www/healthz"))
+        let server = try fixture.serve(
+            "HTTP/1.0 302 Found\r\nLocation: /healthz\r\nContent-Length: 0\r\n\r\n")
+        defer { server.stop() }
+        try await waitUntilListening(server.port)
+
+        let ready = await ClusterAPIReady.isReady(
+            endpoint: URL(string: "https://127.0.0.1:\(server.port)"), context: "dev",
+            kubeconfig: try fixture.kubeconfig())
+
+        #expect(!ready)
     }
 
     @Test("a server with another CA is API not ready")
@@ -178,15 +204,12 @@ struct ClusterAPIReadyTests {
     @Test("no context in the file is API not ready")
     func noContextIsNotReady() async throws {
         let fixture = try TLSFixture()
-        let (server, port) = try fixture.serve("HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok")
-        defer {
-            server.terminate()
-            server.waitUntilExit()
-        }
-        try await waitUntilListening(port)
+        let server = try fixture.serve("HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\nok")
+        defer { server.stop() }
+        try await waitUntilListening(server.port)
 
         let ready = await ClusterAPIReady.isReady(
-            endpoint: URL(string: "https://127.0.0.1:\(port)"), context: "prod",
+            endpoint: URL(string: "https://127.0.0.1:\(server.port)"), context: "prod",
             kubeconfig: try fixture.kubeconfig(context: "dev"))
 
         #expect(!ready)

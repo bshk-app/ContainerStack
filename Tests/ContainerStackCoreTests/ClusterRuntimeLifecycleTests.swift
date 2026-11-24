@@ -138,6 +138,52 @@ struct ClusterRuntimeLifecycleTests {
         #expect(!recorder.launches.contains { $0.arguments.contains("--name") })
     }
 
+    @Test func preflightStopsAtThirtySecondsAndTheTimeToConfirmDoesNotUseTheStopBudget() async throws {
+        let home = try TemporaryHome()
+        let clock = ClusterTestClock()
+        let inventory = clusterInventory(cluster("first", count: 2), cluster("second", day: 2, count: 2))
+        let recorder = ClusterSpawnRecorder { launch in
+            switch launch.arguments.prefix(2) {
+            case ["cluster", "list"]:
+                clock.advance(by: .seconds(20))
+                return .init(status: 0, output: inventory)
+            case ["exec", "first"], ["exec", "second"]:
+                clock.advance(by: launch.timeout)
+                throw ProcessRunnerError.timedOut(executablePath: launch.executablePath, seconds: 10)
+            default:
+                return capabilityReply(launch.arguments)
+            }
+        }
+        let lifecycle = makeLifecycle(home, recorder, clock: clock)
+        let preflight = await lifecycle.preflight()
+        #expect(clock.elapsed == .seconds(30))
+        #expect(preflight?.contains("Cluster second has more than one node and may not start again.") == true)
+        #expect(recorder.launches.filter { $0.arguments.first == "exec" }.count == 1)
+        #expect(!recorder.launches.contains { $0.arguments.contains("--name") })
+
+        clock.advance(by: .seconds(300))
+        _ = await lifecycle.stopClusters()
+        #expect(
+            recorder.launches.filter { $0.arguments.contains("--name") }.map(\.timeout) == [
+                .seconds(80), .seconds(80),
+            ])
+        #expect(clock.elapsed == .seconds(370))
+    }
+
+    @Test func aStopWithLessThanFiveSecondsLeftIsNotLaunched() async throws {
+        let home = try TemporaryHome()
+        let clock = ClusterTestClock()
+        let inventory = clusterInventory(cluster("first"), cluster("second", day: 2))
+        let recorder = ClusterSpawnRecorder { launch in
+            if launch.arguments.last == "json" { return .init(status: 0, output: inventory) }
+            if launch.arguments.contains("first") { clock.advance(by: .seconds(116)) }
+            return capabilityReply(launch.arguments)
+        }
+        let result = await makeLifecycle(home, recorder, clock: clock).stopClusters()
+        #expect(result == ["first: stopped in order", "second: left to system stop"])
+        #expect(recorder.launches.filter { $0.arguments.contains("--name") }.count == 1)
+    }
+
     private func makeLifecycle(
         _ home: borrowing TemporaryHome, _ recorder: ClusterSpawnRecorder, clock: ClusterTestClock = .init()
     ) -> ClusterRuntimeLifecycle {

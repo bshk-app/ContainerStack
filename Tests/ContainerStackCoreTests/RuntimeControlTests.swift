@@ -199,6 +199,10 @@ struct RuntimeRestartPlanTests {
         #expect(serviceStop != nil)
         guard let gracefulStop, let serviceStop else { return }
         #expect(gracefulStop < serviceStop)
+        #expect(
+            RuntimeControlStep.stopContainersTimeout(graceSeconds: RuntimeRestartPlan.gracefulStopSeconds)
+                == .seconds(15))
+        #expect(ProcessRunner.lifecycleTimeout == .seconds(120))
     }
 
     /// F-014: a restart the app starts by itself (the poll's recovery, the stale-build check) must

@@ -12,6 +12,52 @@ PR. Those lines are commit subjects; rewrite them in the PR into what a user
 should read in an update panel. Notes jotted under `## [Unreleased]` between
 releases belong in that section — move them there while reviewing.
 
+## [0.12.0](https://github.com/bshk-app/ContainerStack/compare/v0.11.0...v0.12.0) (2026-11-23)
+
+Fixes for data loss in named volumes, in names that differ only in upper and lower case, and in `docker rename`. Update the app and the container runtime: `brew upgrade --cask containerstack` and `brew upgrade bshk-app/tap/container@1.7.1` (Apple Container 1.7.1-bshk.2). An app update through the app itself does not update the runtime.
+
+### Added
+
+- **Welcome window.** It opens after the first install, after an update to a new major version, and after an update that adds a step to it. It shows what ContainerStack adds to Apple Container. One step installs the `cstack` command in your `PATH` and, after you agree, the agent skill. Open it again from Help › Welcome to ContainerStack; Help › What's New in ContainerStack shows these notes.
+- **Settings in panes.** Settings are grouped in a sidebar.
+- **Window look.** One surface color with thin lines between areas.
+
+### Fixed
+
+- **Postgres volumes (0.1.0 to 0.11.0).** Creating a container whose environment sets `PGDATA` (every official `postgres` image does) on a named volume that held data and still had `lost+found` replaced the volume with an empty file system. The usual trigger was `docker compose up` recreating a Postgres service on a volume that another container, the `container` CLI, or ContainerStack before 0.9.0 had filled. If a database went missing after a `compose up`, restore it from a backup: the volume no longer holds it.
+- **Shared volumes (0.9.0 to 0.11.0).** Creating a container on an empty named volume while another container ran on it replaced the volume under the running container, and that container's later writes were lost.
+- **Names that differ only in case (all versions).** On the macOS default file system, `web` and `Web` share one storage folder in Apple Container. A volume create under the second spelling erased the first volume's data; a container create under it, and a later delete, removed the first container's files; a machine create overwrote the first machine's configuration. Apple Container 1.7.1-bshk.2 refuses such a name, and Docker answers 409 "Conflict. The container name … is already in use by container …".
+- **`docker rename` (all versions).** Apple Container cannot rename, so ContainerStack deleted the container and created it again: a container that had run lost every file that it wrote outside its volumes and bind mounts, and its logs.
+- **A container whose stored state fails to load** is kept at the next start of the runtime, not deleted.
+- `-v name:/path:nocopy` works; before, the container failed to start.
+- `cstack <command> --help` prints the usage instead of running the command, also when the help flag comes before `compose`.
+- Container group dividers and the list rows have one style in every resource list.
+
+### Changed: what is now refused or only warned
+
+- A new volume is filled from the image (which also removes `lost+found`) only after the container was created, only when the volume is empty and clean, and only when no other container uses it, running or not. Otherwise the volume stays as it is, and `docker create`, `docker run` and `docker compose` print a warning that names the volume, says why, and says how to fix it.
+- `nocopy` (also `volume-nocopy=true`) is honoured as in Docker: the volume is not filled from that mount.
+- `docker rename` of a container that has run is refused with an error that says why. Create a new container under the new name from the same image instead, and copy data out of the old one first with `docker cp`. A container that was created and never started still renames, so `docker compose up` keeps re-creating services. A container that never ran can still be refused when ContainerStack cannot tell that it never ran: remove it and create it again.
+- A rename to a name that differs from another container's name only in case is refused before anything changes, also when the runtime keeps its data on a case-sensitive volume, where it would have worked.
+- A create that finds a folder left by an interrupted earlier create, with files in it, is refused with the folder's path and how to keep the files (`mv` it away). An empty folder is reused.
+
+### What to do when a volume was not prepared
+
+When another container already uses a new volume, when two services that share one new volume are created at the same time, or when `nocopy` is set, ContainerStack does not prepare the volume. When the container needs the image's files there, or Postgres refuses to start because of `lost+found`:
+
+1. Stop every container that uses the volume.
+2. Copy the files in, or run `docker run --rm -v <volume>:/v busybox rmdir /v/lost+found`.
+3. Start the container again.
+
+Or start the container that fills the volume first, or point `PGDATA` at a subdirectory.
+
+### Known limitations
+
+- The rename check runs before the delete. A container started with the `container` CLI at that moment is not seen and loses its files, as before.
+- A volume is filled from the image only when Apple Container keeps its data in its default folder.
+- When a create is refused because a storage folder that belongs to no container, volume or machine holds files, the message suggests an `mv` command. That command fails when the folder's path contains an apostrophe or when the name is about 250 characters long. Move the folder away by hand.
+- When a container that has no network exists under a name that differs only in case from `buildkit`, `container build` fails with a misleading message. The same is true for `container cluster create` and a container under the cluster's name in another case. No data is changed.
+
 ## [0.11.0](https://github.com/bshk-app/ContainerStack/compare/v0.10.0...v0.11.0) (2026-11-17)
 
 Shared runtimes: several `docker run -i --rm` sessions of one group can run in one VM, not one VM for each run. Both groups are off by default.

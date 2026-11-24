@@ -38,16 +38,23 @@ public struct ClusterCommands: Sendable {
     private let environment: [String: String]
     private let spawn: Spawn
     let capabilityCache: ClusterCapabilityCache
+    private let mutationOutput: ProcessRunner.OutputMode
     private let lock: ClusterOperationLock
 
-    public init(containerPath: String, home: URL, environment: [String: String]) {
-        self.init(containerPath: containerPath, home: home, environment: environment, spawn: Self.processRunnerSpawn)
+    public init(
+        containerPath: String, home: URL, environment: [String: String],
+        mutationOutput: ProcessRunner.OutputMode = .inherit
+    ) {
+        self.init(
+            containerPath: containerPath, home: home, environment: environment,
+            mutationOutput: mutationOutput, spawn: Self.processRunnerSpawn)
     }
 
     init(
         containerPath: String,
         home: URL,
         environment: [String: String],
+        mutationOutput: ProcessRunner.OutputMode = .inherit,
         spawn: @escaping Spawn,
         capabilityCache: ClusterCapabilityCache = .shared,
         lock: ClusterOperationLock = .shared
@@ -55,6 +62,7 @@ public struct ClusterCommands: Sendable {
         self.containerPath = containerPath
         self.home = home
         self.environment = environment
+        self.mutationOutput = mutationOutput
         self.spawn = spawn
         self.capabilityCache = capabilityCache
         self.lock = lock
@@ -64,7 +72,7 @@ public struct ClusterCommands: Sendable {
         home.appending(path: ".containerstack/kubeconfig")
     }
 
-    var userKubeconfig: URL {
+    public var userKubeconfig: URL {
         home.appending(path: ".kube/config")
     }
 
@@ -98,12 +106,13 @@ public struct ClusterCommands: Sendable {
     private func run(
         _ arguments: [String],
         timeout: Duration,
-        output: ProcessRunner.OutputMode = .inherit,
+        output: ProcessRunner.OutputMode? = nil,
         kubeconfig: Kubeconfig = .managed,
         changesState: Bool = true
     ) async throws -> String {
         let execute = { @Sendable in
-            try await launch(["cluster"] + arguments, timeout: timeout, output: output, kubeconfig: kubeconfig)
+            try await launch(
+                ["cluster"] + arguments, timeout: timeout, output: output ?? mutationOutput, kubeconfig: kubeconfig)
         }
         let result = try await changesState ? lock.run(execute) : execute()
         guard result.status == 0 else {
@@ -130,7 +139,7 @@ public struct ClusterCommands: Sendable {
         return try await Task.detached { try spawn(launch) }.value
     }
 
-    func prepareKubeconfig() throws {
+    public func prepareKubeconfig() throws {
         if let managed = Self.fileID(managedKubeconfig.path), managed == Self.fileID(userKubeconfig.path) {
             throw ClusterCommandError.kubeconfigAlias
         }

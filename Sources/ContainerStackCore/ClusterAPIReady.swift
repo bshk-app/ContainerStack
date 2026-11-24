@@ -2,17 +2,50 @@ import Foundation
 import Security
 
 public enum ClusterAPIReady {
+    public enum Result: Equatable, Sendable {
+        case ready, notReady, connectionFailed
+    }
+
+    public static let localNetworkHint =
+        "Likely cause: the runtime has no Local Network permission. Allow container-runtime-linux "
+        + "in System Settings > Privacy & Security > Local Network."
+
+    static func classify(_ error: NSError) -> Result {
+        if error.domain == NSPOSIXErrorDomain {
+            return [Int(ECONNREFUSED), Int(ECONNRESET)].contains(error.code) ? .connectionFailed : .notReady
+        }
+        if error.userInfo["_kCFStreamErrorDomainKey"] as? Int == 1,
+            let code = error.userInfo["_kCFStreamErrorCodeKey"] as? Int,
+            [Int(ECONNREFUSED), Int(ECONNRESET)].contains(code)
+        {
+            return .connectionFailed
+        }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return classify(underlying)
+        }
+        return .notReady
+    }
+
     public static func isReady(
         endpoint: URL?,
         context: String,
         kubeconfig: URL,
         timeout: Duration = .seconds(3)
     ) async -> Bool {
+        await check(endpoint: endpoint, context: context, kubeconfig: kubeconfig, timeout: timeout) == .ready
+    }
+
+    public static func check(
+        endpoint: URL?,
+        context: String,
+        kubeconfig: URL,
+        timeout: Duration = .seconds(3)
+    ) async -> Result {
         guard let endpoint,
             let text = try? String(contentsOf: kubeconfig, encoding: .utf8),
             let encoded = KubeconfigCA.data(context: context, in: text),
             let anchor = KubeconfigCA.certificate(base64: encoded)
-        else { return false }
+        else { return .notReady }
 
         let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
         let configuration = URLSessionConfiguration.ephemeral
@@ -25,10 +58,13 @@ public enum ClusterAPIReady {
 
         var request = URLRequest(url: endpoint.appending(path: "readyz"), timeoutInterval: seconds)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let (body, response) = try? await session.data(for: request),
-            (response as? HTTPURLResponse)?.statusCode == 200
-        else { return false }
-        return String(decoding: body, as: UTF8.self) == "ok"
+        do {
+            let (body, response) = try await session.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .notReady }
+            return String(decoding: body, as: UTF8.self) == "ok" ? .ready : .notReady
+        } catch {
+            return classify(error as NSError)
+        }
     }
 }
 

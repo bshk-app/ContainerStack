@@ -124,6 +124,7 @@ public struct DockerContainerDetail: Equatable, Sendable, Identifiable {
     /// reports no limit. Host-resident as the guest fills it, not a free ceiling — see
     /// `MemoryCommitment`.
     public let memoryLimitBytes: Int64?
+    public let cpuLimit: Double?
 
     public var composeProject: String? {
         labels["com.docker.compose.project"]
@@ -145,7 +146,8 @@ public struct DockerContainerDetail: Equatable, Sendable, Identifiable {
         finishedAt: String?,
         command: String?,
         labels: [String: String],
-        memoryLimitBytes: Int64? = nil
+        memoryLimitBytes: Int64? = nil,
+        cpuLimit: Double? = nil
     ) {
         self.id = id
         self.name = name
@@ -159,6 +161,7 @@ public struct DockerContainerDetail: Equatable, Sendable, Identifiable {
         self.command = command
         self.labels = labels
         self.memoryLimitBytes = memoryLimitBytes
+        self.cpuLimit = cpuLimit
     }
 }
 

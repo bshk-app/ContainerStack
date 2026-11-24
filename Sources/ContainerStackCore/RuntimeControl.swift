@@ -131,6 +131,12 @@ public enum RuntimeControlStep: Equatable, Sendable {
         ["stop", "--all", "--time", String(graceSeconds)]
     }
 
+    public func clearClusterStartEvidenceAfterStep() {
+        if case .run(let executablePath, let arguments) = self, arguments == ["system", "stop"] {
+            ClusterCommands.clearRuntimeStartEvidence(containerPath: executablePath)
+        }
+    }
+
     public static func stopContainersTimeout(graceSeconds: Int) -> Duration {
         .seconds(graceSeconds + 10)
     }

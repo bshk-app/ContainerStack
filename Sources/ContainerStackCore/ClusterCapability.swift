@@ -49,6 +49,11 @@ extension ClusterCommands {
         guard try await launch(["system", "status"], timeout: probe, budget: budget).status == 0 else {
             return .runtimeNotRunning
         }
+        return try await clusterCommandCapability(budget: budget)
+    }
+
+    func clusterCommandCapability(budget: ClusterCommandBudget?) async throws -> ClusterCapability {
+        let probe = ProcessRunner.diagnosticTimeout
         let build = try await launch(["--version"], timeout: probe, budget: budget)
         if build.status == 0, let known = await capabilityCache.value(for: build.output) {
             return known

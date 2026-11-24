@@ -1,6 +1,17 @@
 import Foundation
 
 public struct ClusterRuntimeLifecycle: Sendable {
+    public enum Preflight: Sendable {
+        case inspect(question: String?)
+        case empty
+        case statusUnavailable
+
+        public var question: String? {
+            if case .inspect(let question) = self { return question }
+            return nil
+        }
+    }
+
     private let commands: ClusterCommands
     private let listNodes: @Sendable (Duration) async throws -> Set<String>
     private let now: @Sendable () -> ContinuousClock.Instant
@@ -26,13 +37,18 @@ public struct ClusterRuntimeLifecycle: Sendable {
     }
 
     @MainActor
-    public func preflight(isCurrent: () -> Bool = { true }) async -> String? {
+    public func preflight(isCurrent: () -> Bool = { true }) async -> Preflight {
         let budget = ClusterCommandBudget(end: now() + .seconds(30), now: now)
-        guard let inventory = await inventory(budget, isCurrent: isCurrent) else { return nil }
+        guard let inventory = await inventory(budget, isCurrent: isCurrent) else { return .empty }
         switch inventory {
+        case .empty:
+            return .empty
+        case .statusUnavailable:
+            return .statusUnavailable
         case .unknown:
-            return "Cluster inventory unknown: running clusters may stop."
-        case .listed(let entries, _):
+            return .inspect(question: "Cluster inventory unknown: running clusters may stop.")
+        case .listed(let entries):
+            guard !entries.isEmpty else { return .empty }
             let warnings = entries.compactMap(\.warning)
             let ordinary = entries.filter { $0.risk == nil }.map(\.cluster.name)
             let question =
@@ -42,28 +58,50 @@ public struct ClusterRuntimeLifecycle: Sendable {
                     : [
                         "Clusters \(ordinary.joined(separator: ", ")) stop and stay stopped."
                     ])
-            return question.isEmpty ? nil : question.joined(separator: " ")
+            return .inspect(question: question.joined(separator: " "))
         }
     }
 
     @MainActor
     public func stopClusters(
+        preflight: Preflight = .inspect(question: nil),
         isCurrent: () -> Bool = { true },
         progress: (String) -> Void = { _ in }
     ) async -> [String]? {
+        guard isCurrent() else { return nil }
         let budget = ClusterCommandBudget(end: now() + .seconds(120), now: now)
-        guard let inventory = await inventory(budget, isCurrent: isCurrent) else { return nil }
-        guard case .listed(let entries, let canStop) = inventory else { return ["cluster inventory unknown"] }
+        let inventory: Inventory? =
+            switch preflight {
+            case .empty: Inventory.empty
+            case .statusUnavailable: Inventory.statusUnavailable
+            case .inspect: await self.inventory(budget, isCurrent: isCurrent)
+            }
+        guard let inventory else { return nil }
+        switch inventory {
+        case .empty: return []
+        case .statusUnavailable, .unknown: return unknownInventoryResult(inventory)
+        case .listed(let entries): return await stop(entries, budget: budget, isCurrent: isCurrent, progress: progress)
+        }
+    }
 
+    @MainActor
+    private func stop(
+        _ entries: [Entry], budget: ClusterCommandBudget, isCurrent: () -> Bool, progress: (String) -> Void
+    ) async -> [String]? {
         var lines: [String] = []
+        var unconfirmedStops = Set(entries.map(\.cluster.name))
+        defer {
+            for name in unconfirmedStops { commands.clearStartEvidence(for: name) }
+        }
         for entry in entries {
-            let outcome: String
-            if canStop, budget.canLaunch {
+            let outcome: StopOutcome
+            if budget.canLaunch {
                 progress(entry.cluster.name)
                 outcome = await stop(entry, budget: budget, isCurrent: isCurrent)
             } else {
-                outcome = "left to system stop"
+                outcome = .leftToSystemStop
             }
+            if outcome != .leftToSystemStop { unconfirmedStops.remove(entry.cluster.name) }
             guard isCurrent() else { return nil }
             lines.append(entry.result(outcome))
         }
@@ -71,15 +109,26 @@ public struct ClusterRuntimeLifecycle: Sendable {
     }
 
     private enum Inventory {
+        case empty
+        case statusUnavailable
         case unknown
-        case listed([Entry], canStop: Bool)
+        case listed([Entry])
     }
 
     @MainActor
     private func inventory(_ budget: ClusterCommandBudget, isCurrent: () -> Bool) async -> Inventory? {
-        let capability = try? await commands.capability(budget: budget)
+        let status = try? await commands.launch(
+            ["system", "status"], timeout: ProcessRunner.diagnosticTimeout,
+            output: .captureSeparately, budget: budget, preparesKubeconfig: false)
         guard isCurrent() else { return nil }
-        if capability == .noClusterStart { return .listed([], canStop: false) }
+        guard let status else { return .statusUnavailable }
+        if RuntimeStatusParser.isStopped(status.output + "\n" + status.errorOutput) { return .empty }
+        guard status.status == 0 else { return .statusUnavailable }
+
+        let capability = try? await commands.clusterCommandCapability(budget: budget)
+        guard isCurrent() else { return nil }
+        if capability == .noClusterStart { return .empty }
+        guard capability == .capable else { return .unknown }
 
         let clusters: [KubernetesCluster]
         do {
@@ -89,6 +138,9 @@ public struct ClusterRuntimeLifecycle: Sendable {
         } catch {
             return isCurrent() ? .unknown : nil
         }
+        for cluster in clusters where cluster.state == .stopped {
+            commands.clearStartEvidence(for: cluster.name)
+        }
         let active = clusters.filter { $0.state != .stopped }.sorted { $0.creationDate < $1.creationDate }
         var entries: [Entry] = []
         for cluster in active {
@@ -96,7 +148,18 @@ public struct ClusterRuntimeLifecycle: Sendable {
             guard isCurrent() else { return nil }
             entries.append(Entry(cluster: cluster, risk: risk))
         }
-        return .listed(entries, canStop: capability == .capable)
+        return .listed(entries)
+    }
+
+    private func unknownInventoryResult(_ inventory: Inventory) -> [String] {
+        ClusterCommands.clearRuntimeStartEvidence(containerPath: commands.containerPath)
+        if case .statusUnavailable = inventory {
+            guard let kubeconfig = try? String(contentsOf: commands.managedKubeconfig, encoding: .utf8),
+                KubeconfigCA.entries(of: "contexts", in: kubeconfig).contains(where: { $0["name"] != nil })
+            else { return [] }
+            return ["cluster inventory unknown: running clusters may have been stopped"]
+        }
+        return ["cluster inventory unknown"]
     }
 
     private func risk(for cluster: KubernetesCluster, budget: ClusterCommandBudget) async -> Risk? {
@@ -114,20 +177,26 @@ public struct ClusterRuntimeLifecycle: Sendable {
     }
 
     @MainActor
-    private func stop(_ entry: Entry, budget: ClusterCommandBudget, isCurrent: () -> Bool) async -> String {
+    private func stop(_ entry: Entry, budget: ClusterCommandBudget, isCurrent: () -> Bool) async -> StopOutcome {
         do {
             try await commands.stop(name: entry.cluster.name, budget: budget)
         } catch {
-            return "left to system stop"
+            return .leftToSystemStop
         }
-        guard isCurrent() else { return "" }
+        guard isCurrent() else { return .stoppedInOrder }
         if entry.risk == .removedOnStop, budget.remaining > .zero,
             let names = try? await listNodes(min(.seconds(5), budget.remaining)),
             !entry.cluster.nodes.isEmpty, entry.cluster.nodes.allSatisfy({ !names.contains($0.name) })
         {
-            return "nodes removed"
+            return .nodesRemoved
         }
-        return "stopped in order"
+        return .stoppedInOrder
+    }
+
+    private enum StopOutcome: String {
+        case stoppedInOrder = "stopped in order"
+        case leftToSystemStop = "left to system stop"
+        case nodesRemoved = "nodes removed"
     }
 
     private enum Risk {
@@ -146,14 +215,14 @@ public struct ClusterRuntimeLifecycle: Sendable {
             }
         }
 
-        func result(_ outcome: String) -> String {
+        func result(_ outcome: StopOutcome) -> String {
             let detail: String
             switch risk {
-            case .removedOnStop where outcome != "nodes removed": detail = ". Created with --rm."
+            case .removedOnStop where outcome != .nodesRemoved: detail = ". Created with --rm."
             case .endpointUnproven: detail = ". It has more than one node and may not start again."
             default: detail = ""
             }
-            return "\(cluster.name): \(outcome)\(detail)"
+            return "\(cluster.name): \(outcome.rawValue)\(detail)"
         }
     }
 

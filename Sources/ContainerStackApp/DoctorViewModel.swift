@@ -142,7 +142,13 @@ final class DoctorViewModel {
     func perform(_ action: DoctorAction) async {
         guard canPerform(action) else { return }
         repairing = action
-        if action == .restartRuntime, await !repairs.confirmRuntimeRestart() {
+        let preflight: ClusterRuntimeLifecycle.Preflight? =
+            if action == .restartRuntime {
+                await repairs.confirmRuntimeRestart()
+            } else {
+                .inspect(question: nil)
+            }
+        guard let preflight else {
             repairing = nil
             return
         }
@@ -151,7 +157,7 @@ final class DoctorViewModel {
         owesRun = true
         let repaired =
             switch action {
-            case .restartRuntime: await repairs.restartRuntime()
+            case .restartRuntime: await repairs.restartRuntime(preflight)
             case .repairDockerContext: await repairs.repairDockerContext()
             }
         // The app lowers its restart flag before returning, so the model's look at that edge is
@@ -278,7 +284,7 @@ enum DoctorAction: Equatable, Sendable {
 /// The app's existing repairs and the state that gates them, injected so the section's rules are
 /// testable without restarting anything.
 struct DoctorRepairs {
-    var restartRuntime: @MainActor () async -> Bool
+    var restartRuntime: @MainActor (ClusterRuntimeLifecycle.Preflight) async -> Bool
     var repairDockerContext: @MainActor () async -> Bool
     /// `RuntimeViewModel.canRestartRuntime`: false while restarting or starting.
     var canRestartRuntime: @MainActor () -> Bool
@@ -287,12 +293,12 @@ struct DoctorRepairs {
     var isRuntimeRestarting: @MainActor () -> Bool
     var runtimeMessage: @MainActor () -> String? = { nil }
     var runtimeFailure: @MainActor () -> String? = { nil }
-    var confirmRuntimeRestart: @MainActor () async -> Bool = { true }
+    var confirmRuntimeRestart: @MainActor () async -> ClusterRuntimeLifecycle.Preflight? = { .inspect(question: nil) }
 
     /// For a model with nothing to repair through: every remedy is unavailable.
     static var unavailable: DoctorRepairs {
         DoctorRepairs(
-            restartRuntime: { false },
+            restartRuntime: { _ in false },
             repairDockerContext: { false },
             canRestartRuntime: { false },
             isRuntimeRestarting: { false }
@@ -304,16 +310,17 @@ extension DoctorRepairs {
     /// The app's own: its restart, its context-record repair, and its restart state.
     init(runtime: RuntimeViewModel) {
         self.init(
-            restartRuntime: { [weak runtime] in
+            restartRuntime: { [weak runtime] preflight in
                 guard let runtime else { return false }
-                return await runtime.run(.restart(replacingSibling: true), origin: .user) == .completed(true)
+                return await runtime.run(.restart(replacingSibling: true), origin: .user, clusterPreflight: preflight)
+                    == .completed(true)
             },
             repairDockerContext: { [weak runtime] in await runtime?.repairDockerContextRecord() ?? false },
             canRestartRuntime: { [weak runtime] in runtime?.canRestartRuntime ?? false },
             isRuntimeRestarting: { [weak runtime] in runtime?.isRestarting ?? false },
             runtimeMessage: { [weak runtime] in runtime?.runtimeMessage },
             runtimeFailure: { [weak runtime] in runtime?.runtimeFailure },
-            confirmRuntimeRestart: { [weak runtime] in await runtime?.confirmRuntimeRestart() ?? false }
+            confirmRuntimeRestart: { [weak runtime] in await runtime?.confirmRuntimeRestart() }
         )
     }
 }

@@ -184,9 +184,17 @@ public struct RuntimeLaunchPlan: Equatable, Sendable {
 }
 
 public enum RuntimeStatusParser {
+    static func isStopped(_ output: String) -> Bool {
+        output.localizedCaseInsensitiveContains("apiserver is not running")
+            || output.split(whereSeparator: \.isNewline).contains {
+                let fields = $0.lowercased().split(whereSeparator: \.isWhitespace)
+                return fields.count >= 2 && fields[0] == "status" && fields[1] == "stopped"
+            }
+    }
+
     public static func isRunning(_ output: String) -> Bool {
         let normalizedOutput = output.lowercased()
-        if normalizedOutput.contains("apiserver is not running") {
+        if isStopped(output) {
             return false
         }
         if normalizedOutput.contains("apiserver is running") {

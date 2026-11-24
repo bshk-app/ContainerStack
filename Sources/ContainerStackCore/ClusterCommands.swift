@@ -168,6 +168,17 @@ public struct ClusterCommands: Sendable {
         }
     }
 
+    func clearStartEvidence(for name: String) {
+        let key = ClusterIdentity(containerPath: containerPath, home: home, name: name)
+        Self.successfulStarts.withLock { $0[key] = nil }
+    }
+
+    static func clearRuntimeStartEvidence(containerPath: String) {
+        successfulStarts.withLock { records in
+            records = records.filter { $0.key.containerPath != containerPath }
+        }
+    }
+
     private func checkedOutput(_ result: ProcessRunner.Result, subcommand: String) throws -> String {
         guard result.status == 0 else {
             throw ClusterCommandError.failed(
@@ -182,9 +193,13 @@ public struct ClusterCommands: Sendable {
         timeout: Duration,
         output: ProcessRunner.OutputMode = .capture(includingStandardError: true),
         kubeconfig: Kubeconfig = .managed,
-        budget: ClusterCommandBudget? = nil
+        budget: ClusterCommandBudget? = nil,
+        preparesKubeconfig: Bool = true
     ) async throws -> ProcessRunner.Result {
-        try await invoke(timeout: timeout, output: output, kubeconfig: kubeconfig, budget: budget) { _ in arguments }
+        try await invoke(
+            timeout: timeout, output: output, kubeconfig: kubeconfig, budget: budget,
+            preparesKubeconfig: preparesKubeconfig
+        ) { _ in arguments }
     }
 
     private func invoke(
@@ -192,11 +207,12 @@ public struct ClusterCommands: Sendable {
         output: ProcessRunner.OutputMode,
         kubeconfig: Kubeconfig = .managed,
         budget: ClusterCommandBudget?,
+        preparesKubeconfig: Bool = true,
         arguments: @escaping @Sendable (Duration) throws -> [String]
     ) async throws -> ProcessRunner.Result {
         try await ProcessRunner.offTheCooperativePool {
             if let budget, !budget.canLaunch { throw budget.timeoutError(containerPath) }
-            try prepareKubeconfig()
+            if preparesKubeconfig { try prepareKubeconfig() }
             let now = budget?.now() ?? .now
             if let budget, now > budget.latestStart { throw budget.timeoutError(containerPath) }
             let available = budget.map { min(timeout, now.duration(to: $0.end)) } ?? timeout

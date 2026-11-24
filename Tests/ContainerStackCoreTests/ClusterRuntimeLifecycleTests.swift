@@ -6,6 +6,79 @@ import Testing
 
 @MainActor
 struct ClusterRuntimeLifecycleTests {
+    @Test(arguments: ["stopped", "failed", "timed out", "unsupported"], [true, false])
+    func statusShortCircuitsInventoryAndIsNotRepeatedAfterPreflight(kind: String, hasContext: Bool) async throws {
+        let home = try TemporaryHome()
+        if hasContext {
+            try home.write("contexts:\n- name: dev\n  context:\n    cluster: dev\n", to: home.managed)
+        }
+        let clock = ClusterTestClock()
+        let recorder = ClusterSpawnRecorder { launch in
+            if launch.arguments == ["system", "status"] {
+                if kind == "timed out" {
+                    clock.advance(by: launch.timeout)
+                    throw ProcessRunnerError.timedOut(executablePath: launch.executablePath, seconds: 10)
+                }
+                if kind == "failed" { return .init(status: 1, output: "", errorOutput: "transport error") }
+                if kind == "stopped" { return .init(status: 1, output: "", errorOutput: "Apiserver is not running") }
+            }
+            if launch.arguments.last == "--help" { return .init(status: 0, output: "USAGE: cluster") }
+            if launch.arguments.contains("list") { Issue.record("Inventory started without capability") }
+            return capabilityReply(launch.arguments)
+        }
+        let lifecycle = makeLifecycle(home, recorder, clock: clock)
+        let preparation = await lifecycle.preflight()
+        #expect(preparation.question == nil)
+        let lines = await lifecycle.stopClusters(preflight: preparation)
+        let expected =
+            hasContext && ["failed", "timed out"].contains(kind)
+            ? ["cluster inventory unknown: running clusters may have been stopped"] : []
+        #expect(lines == expected)
+        #expect(recorder.launches.filter { $0.arguments == ["system", "status"] }.map(\.timeout) == [.seconds(10)])
+        #expect(!recorder.launches.contains { $0.arguments.contains("list") })
+        #expect(clock.elapsed == (kind == "timed out" ? .seconds(10) : .zero))
+        if kind != "unsupported" {
+            #expect(FileManager.default.fileExists(atPath: home.managed.path) == hasContext)
+        }
+    }
+
+    @Test(arguments: [
+        "failed stop", "skipped stop", "already stopped", "unknown inventory", "unknown status", "system stop",
+    ])
+    func recoveryDiscardsStaleStartEvidence(kind: String) async throws {
+        let home = try TemporaryHome()
+        let clock = ClusterTestClock()
+        let inventory =
+            kind == "skipped stop"
+            ? clusterInventory(cluster("first"), cluster("dev", day: 2))
+            : clusterInventory(cluster("dev", state: kind == "already stopped" ? "stopped" : "running"))
+        let recorder = ClusterSpawnRecorder { launch in
+            if kind == "unknown status", launch.arguments == ["system", "status"] {
+                return .init(status: 1, output: "", errorOutput: "transport error")
+            }
+            if launch.arguments.contains("list") {
+                return .init(status: kind == "unknown inventory" ? 1 : 0, output: inventory)
+            }
+            if launch.arguments.contains("--time") {
+                if kind == "skipped stop" { clock.advance(by: .seconds(116)) }
+                return .init(status: kind == "failed stop" ? 1 : 0, output: "")
+            }
+            return capabilityReply(launch.arguments)
+        }
+        let commands = makeCommands(home, recorder)
+        let record = try #require(KubernetesCluster.decodeList(Data(inventory.utf8)).last)
+        try await commands.start(name: record.name)
+        #expect(commands.sawSuccessfulStart(of: record))
+        if kind == "system stop" {
+            RuntimeControlStep.run(executablePath: commands.containerPath, arguments: ["system", "stop"])
+                .clearClusterStartEvidenceAfterStep()
+        } else {
+            let lifecycle = ClusterRuntimeLifecycle(commands: commands, now: clock.now)
+            _ = await lifecycle.stopClusters()
+        }
+        #expect(!commands.sawSuccessfulStart(of: record))
+    }
+
     @Test(arguments: [false, true])
     func failedOrTimedOutInventoryHasOneUnknownLine(timedOut: Bool) async throws {
         let home = try TemporaryHome()
@@ -20,7 +93,7 @@ struct ClusterRuntimeLifecycleTests {
         }
         let lifecycle = makeLifecycle(home, recorder)
         #expect(await lifecycle.stopClusters() == ["cluster inventory unknown"])
-        #expect(await lifecycle.preflight() == "Cluster inventory unknown: running clusters may stop.")
+        #expect(await lifecycle.preflight().question == "Cluster inventory unknown: running clusters may stop.")
         #expect(!recorder.launches.contains { $0.arguments.contains("--name") })
     }
 
@@ -86,7 +159,9 @@ struct ClusterRuntimeLifecycleTests {
             commands: makeCommands(home, recorder),
             listNodes: { _ in nodesAreGone ? [] : ["ephemeral"] }
         )
-        #expect(await lifecycle.preflight() == "Cluster ephemeral was created with --rm: its nodes will be removed.")
+        #expect(
+            await lifecycle.preflight().question
+                == "Cluster ephemeral was created with --rm: its nodes will be removed.")
         let expected = nodesAreGone ? "ephemeral: nodes removed" : "ephemeral: stopped in order. Created with --rm."
         #expect(await lifecycle.stopClusters() == [expected])
     }
@@ -108,7 +183,7 @@ struct ClusterRuntimeLifecycleTests {
             default: capabilityReply(launch.arguments)
             }
         }
-        let result = await makeLifecycle(home, recorder).preflight()
+        let result = await makeLifecycle(home, recorder).preflight().question
         #expect(
             result
                 == (proven
@@ -133,7 +208,7 @@ struct ClusterRuntimeLifecycleTests {
             return capabilityReply(launch.arguments)
         }
         let lifecycle = makeLifecycle(home, recorder)
-        #expect(await lifecycle.preflight() == nil)
+        #expect(await lifecycle.preflight().question == nil)
         #expect(await lifecycle.stopClusters() == [])
         #expect(!recorder.launches.contains { $0.arguments.contains("--name") })
     }
@@ -157,7 +232,7 @@ struct ClusterRuntimeLifecycleTests {
         let lifecycle = makeLifecycle(home, recorder, clock: clock)
         let preflight = await lifecycle.preflight()
         #expect(clock.elapsed == .seconds(30))
-        #expect(preflight?.contains("Cluster second has more than one node and may not start again.") == true)
+        #expect(preflight.question?.contains("Cluster second has more than one node and may not start again.") == true)
         #expect(recorder.launches.filter { $0.arguments.first == "exec" }.count == 1)
         #expect(!recorder.launches.contains { $0.arguments.contains("--name") })
 
@@ -195,7 +270,8 @@ private func makeCommands(
     _ home: borrowing TemporaryHome, _ recorder: ClusterSpawnRecorder
 ) -> ClusterCommands {
     ClusterCommands(
-        containerPath: "/fake/runtime", home: home.url, environment: [:], spawn: recorder.spawn,
+        containerPath: home.url.appending(path: "container").path, home: home.url, environment: [:],
+        spawn: recorder.spawn,
         capabilityCache: .init(), lock: .init())
 }
 

@@ -1,8 +1,9 @@
-import ContainerStackCore
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ContainerStackApp
+@testable import ContainerStackCore
 
 /// The acceptance scenarios of docs/specs/2026-10-07-runtime-lifecycle-queue.md, one per
 /// requirement, on the substituted steps of `FakeRuntime` (#102). Requests a scenario must order
@@ -10,6 +11,63 @@ import Testing
 @Suite("Runtime lifecycle acceptance")
 @MainActor
 struct RuntimeLifecycleAcceptanceTests {
+    @Test(arguments: ["stopped", "failed", "timed out", "unsupported"], [true, false])
+    func appRestartDoesNotWaitForAnUnavailableClusterInventory(kind: String, automatic: Bool) async throws {
+        let (model, runtime) = makeModel(client: Self.healthyClient())
+        runtime.agentIsRegistered = true
+        runtime.socketAnswers = true
+        let home = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        let managed = home.appending(path: ".containerstack/kubeconfig")
+        try FileManager.default.createDirectory(
+            at: managed.deletingLastPathComponent(), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        try Data("contexts:\n- name: dev\n  context:\n    cluster: dev\n".utf8).write(to: managed)
+        let calls = Mutex([[String]]())
+        let commands = ClusterCommands(
+            containerPath: home.appending(path: "container").path, home: home, environment: [:],
+            spawn: { launch in
+                calls.withLock { $0.append(launch.arguments) }
+                if launch.arguments == ["system", "status"] {
+                    switch kind {
+                    case "stopped": return .init(status: 1, output: "apiserver is not running")
+                    case "failed": return .init(status: 1, output: "", errorOutput: "transport failure")
+                    case "timed out":
+                        throw ProcessRunnerError.timedOut(executablePath: launch.executablePath, seconds: 10)
+                    default: break
+                    }
+                }
+                return .init(status: 0, output: "USAGE: cluster")
+            }, capabilityCache: .init(), lock: .init())
+        let clusters = ClusterRuntimeLifecycle(commands: commands)
+        model.steps.clusterPreflight = { _, current in
+            #expect(!automatic)
+            return await clusters.preflight(isCurrent: current)
+        }
+        model.steps.confirmClusterRestart = { _ in
+            Issue.record("Restart asked for confirmation")
+            return false
+        }
+        model.steps.stopClusters = { _, preflight, current, progress in
+            await clusters.stopClusters(preflight: preflight, isCurrent: current, progress: progress)
+        }
+        let completed =
+            if automatic {
+                await model.run(
+                    .restart(replacingSibling: false), origin: .recovery, observed: model.lifecycle.generation)
+                    == .completed(true)
+            } else {
+                await model.restartRuntime()
+            }
+        #expect(completed)
+        #expect(calls.withLock { $0.filter { $0 == ["system", "status"] }.count } == 1)
+        #expect(!calls.withLock { $0.contains { $0.contains("list") } })
+        let expected =
+            ["failed", "timed out"].contains(kind)
+            ? ["cluster inventory unknown: running clusters may have been stopped"] : []
+        #expect(model.clusterRestartResult == expected)
+        #expect(runtime.performed.map(FakeRuntime.name(of:)).contains("system stop"))
+    }
+
     @Test(arguments: [true, false])
     func currentAutomaticRestartPublishesClusterResultAtTheEnd(succeeds: Bool) async {
         let (model, runtime) = makeModel(client: Self.healthyClient())
@@ -17,9 +75,9 @@ struct RuntimeLifecycleAcceptanceTests {
         runtime.socketAnswers = true
         model.steps.clusterPreflight = { _, _ in
             Issue.record("Automatic recovery requested confirmation")
-            return "unexpected"
+            return .inspect(question: "unexpected")
         }
-        model.steps.stopClusters = { [unowned model] _, _, progress in
+        model.steps.stopClusters = { [unowned model] _, _, _, progress in
             progress("dev")
             #expect(model.runtimeMessage == "Stopping cluster dev…")
             #expect(model.clusterRestartResult.isEmpty)
@@ -42,7 +100,7 @@ struct RuntimeLifecycleAcceptanceTests {
     @Test func supersededClusterStopPublishesNoResult() async throws {
         let (model, runtime) = makeModel(client: Self.healthyClient())
         var stop: LifecycleTurn?
-        model.steps.stopClusters = { [unowned model] _, _, progress in
+        model.steps.stopClusters = { [unowned model] _, _, _, progress in
             progress("dev")
             stop = model.admit(.stop(replacingSibling: false), origin: .user)
             return ["dev: stopped in order"]
@@ -61,7 +119,7 @@ struct RuntimeLifecycleAcceptanceTests {
         runtime.socketAnswers = true
         var reachedConfirmation = false
         var stoppedClusters = false
-        model.steps.clusterPreflight = { _, _ in "Clusters dev stop and stay stopped." }
+        model.steps.clusterPreflight = { _, _ in .inspect(question: "Clusters dev stop and stay stopped.") }
         model.steps.confirmClusterRestart = { question in
             #expect(question == "Clusters dev stop and stay stopped.")
             #expect(!stoppedClusters)
@@ -69,7 +127,7 @@ struct RuntimeLifecycleAcceptanceTests {
             reachedConfirmation = true
             return consented
         }
-        model.steps.stopClusters = { _, _, _ in
+        model.steps.stopClusters = { _, _, _, _ in
             #expect(reachedConfirmation && consented)
             stoppedClusters = true
             return []

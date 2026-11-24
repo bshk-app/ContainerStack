@@ -27,10 +27,15 @@ struct RuntimeSteps {
     var socketWaitTick: Duration = .seconds(1)
 
     var agentRegistered: @MainActor () async -> Bool
-    var clusterPreflight: @MainActor (RuntimeProcessConfiguration, () -> Bool) async -> String? = { _, _ in nil }
-    var stopClusters: @MainActor (RuntimeProcessConfiguration, () -> Bool, (String) -> Void) async -> [String]? = {
-        _, _, _ in []
-    }
+    var clusterPreflight:
+        @MainActor (RuntimeProcessConfiguration, () -> Bool) async -> ClusterRuntimeLifecycle.Preflight = {
+            _, _ in .inspect(question: nil)
+        }
+    var stopClusters:
+        @MainActor (RuntimeProcessConfiguration, ClusterRuntimeLifecycle.Preflight, () -> Bool, (String) -> Void)
+            async -> [String]? = {
+                _, _, _, _ in []
+            }
     var confirmClusterRestart: @MainActor (String) async -> Bool = { _ in false }
 
     static func live(client: DockerAPIClient) -> RuntimeSteps {
@@ -81,9 +86,9 @@ struct RuntimeSteps {
             clusterPreflight: { configuration, isCurrent in
                 await clusterLifecycle(configuration, client: client).preflight(isCurrent: isCurrent)
             },
-            stopClusters: { configuration, isCurrent, progress in
+            stopClusters: { configuration, preflight, isCurrent, progress in
                 await clusterLifecycle(configuration, client: client).stopClusters(
-                    isCurrent: isCurrent, progress: progress)
+                    preflight: preflight, isCurrent: isCurrent, progress: progress)
             },
             confirmClusterRestart: { question in
                 guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return false }

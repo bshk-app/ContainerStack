@@ -41,7 +41,7 @@ struct DoctorRepairTests {
                 return Self.report(await runs.callCount)
             },
             repairs: DoctorRepairs(
-                restartRuntime: {
+                restartRuntime: { _ in
                     _ = await repairGate.runtimeStatus()
                     return app.restartSucceeds
                 },
@@ -555,7 +555,7 @@ struct DoctorRepairWiringTests {
                 return DiagnosticReport(checks: [], ranAt: Date(timeIntervalSince1970: TimeInterval(ordinal)))
             },
             repairs: DoctorRepairs(
-                restartRuntime: {
+                restartRuntime: { _ in
                     restart.isRestarting = true
                     defer { restart.isRestarting = false }
                     _ = await work.runtimeStatus()

@@ -62,8 +62,8 @@ private enum RuntimeControlError: Error, CustomStringConvertible {
 
 @MainActor
 struct RuntimeCLI {
-    let preflight: () async -> String?
-    let stopClusters: () async -> [String]
+    let preflight: () async -> ClusterRuntimeLifecycle.Preflight
+    let stopClusters: (ClusterRuntimeLifecycle.Preflight) async -> [String]
     let runStep: (RuntimeControlStep) throws -> String?
     let agentRegistered: () -> Bool
     let write: (String) -> Void
@@ -73,7 +73,10 @@ struct RuntimeCLI {
     func run(_ invocation: CStackInvocation, configuration: RuntimeProcessConfiguration) async throws -> Int32 {
         switch invocation.positional.first {
         case "restart", .none:
-            if let question = await preflight(), !invocation.isSet("yes") {
+            let preparation: ClusterRuntimeLifecycle.Preflight =
+                invocation.isSet("yes")
+                ? .inspect(question: nil) : await preflight()
+            if let question = preparation.question {
                 guard let readConfirmation else {
                     writeError(question + "\n")
                     return 1
@@ -83,7 +86,7 @@ struct RuntimeCLI {
             }
             let steps = RuntimeRestartPlan.steps(
                 configuration: configuration, agentRegistered: agentRegistered(), replacingSibling: true)
-            let failed = try await apply(steps)
+            let failed = try await apply(steps, preflight: preparation)
             guard failed == 0 else { throw RuntimeControlError.incompleteRestart(failedSteps: failed) }
             write("Runtime restarted. Check with: cstack doctor\n")
         case "stop":
@@ -99,11 +102,14 @@ struct RuntimeCLI {
         return 0
     }
 
-    private func apply(_ steps: [RuntimeControlStep]) async throws -> Int {
+    private func apply(
+        _ steps: [RuntimeControlStep], preflight: ClusterRuntimeLifecycle.Preflight = .inspect(question: nil)
+    ) async throws -> Int {
         var failed = 0
         for step in steps {
+            defer { step.clearClusterStartEvidenceAfterStep() }
             if case .stopClusters = step {
-                for line in await stopClusters() { write(line + "\n") }
+                for line in await stopClusters(preflight) { write(line + "\n") }
             } else if try runStep(step) != nil {
                 failed += 1
             }
@@ -121,7 +127,7 @@ extension CStackCLI {
             home: FileManager.default.homeDirectoryForCurrentUser, environment: ProcessInfo.processInfo.environment)
         let cli = RuntimeCLI(
             preflight: { await clusters.preflight() },
-            stopClusters: { await clusters.stopClusters() ?? [] },
+            stopClusters: { preparation in await clusters.stopClusters(preflight: preparation) ?? [] },
             runStep: { try perform($0, configuration: configuration) },
             agentRegistered: agentRegistered,
             write: writeRuntimeOutput,

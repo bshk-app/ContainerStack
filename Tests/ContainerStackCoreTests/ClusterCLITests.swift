@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ContainerStackCore
@@ -13,6 +14,20 @@ private final class Output: @unchecked Sendable {
 
     func write(_ text: String) { lock.withLock { out.append(text) } }
     func writeError(_ text: String) { lock.withLock { err.append(text) } }
+}
+
+private final class ReadinessTestClock: Clock {
+    let origin = ContinuousClock.now
+    private let elapsed = Mutex(Duration.zero)
+
+    var now: ContinuousClock.Instant { origin + elapsed.withLock { $0 } }
+    var minimumResolution: Duration { .nanoseconds(1) }
+
+    func sleep(until deadline: ContinuousClock.Instant, tolerance: Duration?) async throws {
+        try Task.checkCancellation()
+        let offset = origin.duration(to: deadline)
+        elapsed.withLock { $0 = max($0, offset) }
+    }
 }
 
 private actor Timeline {
@@ -61,8 +76,8 @@ struct ClusterCLITests {
         _ recorder: ClusterSpawnRecorder,
         environment: [String: String] = [:],
         apiReady: @escaping @Sendable (KubernetesCluster, Duration) async -> Bool = { _, _ in true },
-        readyWait: ClusterCLI.ReadyWait = .init(
-            interval: .milliseconds(10), probe: .milliseconds(5), limit: .milliseconds(200))
+        readyWait: ClusterCLI.ReadyWait = .init(interval: .seconds(5), probe: .seconds(3), limit: .seconds(30)),
+        clock: ReadinessTestClock = ReadinessTestClock()
     ) async throws -> (Int32, Output, URL) {
         let home = try TemporaryHome()
         let output = Output()
@@ -71,7 +86,7 @@ struct ClusterCLITests {
             spawn: recorder.spawn, capabilityCache: ClusterCapabilityCache(), lock: ClusterOperationLock())
         let status = await ClusterCLI(
             commands: commands, write: output.write, writeError: output.writeError, apiReady: apiReady,
-            readyWait: readyWait
+            readyWait: readyWait, clock: .init(clock)
         ).run(arguments)
         return (status, output, home.url)
     }
@@ -211,46 +226,46 @@ struct ClusterCLITests {
     @Test("an API that is not ready inside the limit exits 1 and names the recovery", arguments: ["start", "create"])
     func apiNotReadyExits1(subcommand: String) async throws {
         let checked = Counter()
-        let started = ContinuousClock.now
+        let clock = ReadinessTestClock()
 
         let (status, output, _) = try await run(
             [subcommand, "cs-spec"], runtime(),
             apiReady: { cluster, _ in
                 await checked.add(cluster.name)
                 return false
-            })
+            },
+            clock: clock)
 
         #expect(status == 1)
-        #expect(await checked.names.count >= 2)
-        #expect(started.duration(to: .now) < .seconds(2))
+        #expect(await checked.names.count == 6)
+        #expect(clock.origin.duration(to: clock.now) == .seconds(25))
         #expect(
             output.standardError
-                == "cstack cluster: cluster cs-spec started, but its API is not ready after 0.2 s. "
+                == "cstack cluster: cluster cs-spec started, but its API is not ready after 30 s. "
                 + "To recover, run 'cstack cluster stop cs-spec', then 'cstack cluster start cs-spec'.\n")
     }
 
     @Test("probes start on fixed ticks and never run past the limit")
     func probesFollowTicks() async throws {
         let calls = Timeline()
-        let started = ContinuousClock.now
+        let clock = ReadinessTestClock()
 
         let (status, _, _) = try await run(
             ["start", "cs-spec"], runtime(),
             apiReady: { _, limit in
-                await calls.add(started.duration(to: .now), limit)
-                try? await Task.sleep(for: .milliseconds(150))
+                await calls.add(clock.origin.duration(to: clock.now), limit)
+                try? await clock.sleep(for: min(.milliseconds(150), limit))
                 return false
             },
-            readyWait: .init(interval: .milliseconds(200), probe: .milliseconds(300), limit: .milliseconds(700)))
+            readyWait: .init(interval: .milliseconds(200), probe: .milliseconds(300), limit: .milliseconds(700)),
+            clock: clock)
 
         let entries = await calls.entries
         #expect(status == 1)
-        #expect(entries.count == 4)
-        for (index, entry) in entries.enumerated().dropFirst() {
-            #expect(entry.offset - entries[index - 1].offset < .milliseconds(330))
-        }
-        #expect(entries.allSatisfy { $0.limit <= .milliseconds(300) })
-        #expect(entries.last.map { $0.limit <= .milliseconds(700) - ($0.offset - entries[0].offset) } == true)
+        #expect(entries.map(\.offset) == [.zero, .milliseconds(200), .milliseconds(400), .milliseconds(600)])
+        #expect(
+            entries.map(\.limit) == [.milliseconds(300), .milliseconds(300), .milliseconds(300), .milliseconds(100)])
+        #expect(clock.origin.duration(to: clock.now) == .milliseconds(700))
     }
 
     @Test("a cluster that is not in the list after start exits 1 and says so")

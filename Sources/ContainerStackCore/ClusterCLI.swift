@@ -28,6 +28,16 @@ public struct ClusterCLI: Sendable {
         let limit: Duration
     }
 
+    struct ReadinessClock: Sendable {
+        let now: @Sendable () -> ContinuousClock.Instant
+        let sleep: @Sendable (ContinuousClock.Instant) async throws -> Void
+
+        init<C: Clock>(_ clock: C) where C.Instant == ContinuousClock.Instant {
+            now = { clock.now }
+            sleep = { try await clock.sleep(until: $0, tolerance: nil) }
+        }
+    }
+
     struct UsageError: Error {
         let message: String
     }
@@ -39,6 +49,7 @@ public struct ClusterCLI: Sendable {
     let writeError: @Sendable (String) -> Void
     let apiReady: @Sendable (KubernetesCluster, Duration) async -> Bool
     let readyWait: ReadyWait
+    private let clock: ReadinessClock
 
     public init(
         commands: ClusterCommands,
@@ -60,13 +71,15 @@ public struct ClusterCLI: Sendable {
         write: @escaping @Sendable (String) -> Void,
         writeError: @escaping @Sendable (String) -> Void,
         apiReady: @escaping @Sendable (KubernetesCluster, Duration) async -> Bool,
-        readyWait: ReadyWait
+        readyWait: ReadyWait,
+        clock: ReadinessClock = ReadinessClock(ContinuousClock())
     ) {
         self.commands = commands
         self.write = write
         self.writeError = writeError
         self.apiReady = apiReady
         self.readyWait = readyWait
+        self.clock = clock
     }
 
     private func print(_ line: String) {
@@ -137,12 +150,11 @@ public struct ClusterCLI: Sendable {
                 "cstack cluster: cluster \(name) has no published API port and no FQDN; the API check is skipped.")
             return true
         }
-        let clock = ContinuousClock()
-        let deadline = clock.now + readyWait.limit
-        var tick = clock.now
+        var tick = clock.now()
+        let deadline = tick + readyWait.limit
         while tick < deadline {
-            try await clock.sleep(until: tick)
-            let left = clock.now.duration(to: deadline)
+            try await clock.sleep(tick)
+            let left = clock.now().duration(to: deadline)
             guard left > .zero else { break }
             if await apiReady(cluster, min(readyWait.probe, left)) { return true }
             tick += readyWait.interval

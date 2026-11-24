@@ -100,6 +100,36 @@ struct ProcessRunnerTests {
         #expect(started.duration(to: .now) < .seconds(10))
     }
 
+    @Test func absoluteDeadlineIncludesLaunchAndKillingAnUnresponsiveChild() async throws {
+        let started = ContinuousClock.now
+        let pidFile = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().async {
+                #expect(throws: ProcessRunnerError.self) {
+                    try ProcessRunner.run(
+                        executablePath: "/bin/sh",
+                        arguments: ["-c", "trap '' TERM; echo $$ > \"$1\"; exec /bin/sleep 30", "fake", pidFile.path],
+                        output: .captureSeparately,
+                        timeout: .seconds(1),
+                        registry: BoundedChildren(),
+                        deadline: .init(end: started + .seconds(1)),
+                        startDrain: { _, body in
+                            Thread.sleep(forTimeInterval: 0.1)
+                            Thread(block: body).start()
+                        }
+                    )
+                }
+                done.resume()
+            }
+        }
+
+        let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .newlines)))
+        #expect(kill(pid, 0) == -1)
+        #expect(started.duration(to: .now) < .milliseconds(1300))
+    }
+
     @Test("the timeout error names the binary and the deadline")
     func timeoutErrorCarriesItsContext() throws {
         do {

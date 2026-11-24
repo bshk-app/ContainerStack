@@ -112,6 +112,16 @@ public enum ProcessRunner {
         }
     }
 
+    struct Deadline: Sendable {
+        let end: ContinuousClock.Instant
+        let latestStart: ContinuousClock.Instant
+
+        init(end: ContinuousClock.Instant, latestStart: ContinuousClock.Instant? = nil) {
+            self.end = end
+            self.latestStart = min(end, latestStart ?? end)
+        }
+    }
+
     /// Runs `executablePath` and returns once it exits or the deadline passes.
     ///
     /// On timeout the child gets `SIGTERM`, then `SIGKILL` after `gracePeriod`, and
@@ -145,6 +155,7 @@ public enum ProcessRunner {
         timeout: Duration?,
         gracePeriod: Duration = .milliseconds(500),
         registry: BoundedChildren,
+        deadline: Deadline? = nil,
         startDrain: (Drain, @escaping @Sendable () -> Void) -> Void = { startOnOwnThread($1) }
     ) throws -> Result {
         let process = Process()
@@ -157,26 +168,7 @@ public enum ProcessRunner {
         // reason, and nothing here is interactive.
         process.standardInput = FileHandle.nullDevice
 
-        let pipes: [Pipe]
-        switch mode {
-        case .discard:
-            pipes = []
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-        case .inherit:
-            pipes = []
-            process.standardOutput = FileHandle.standardOutput
-            process.standardError = FileHandle.standardError
-        case .capture(let includingStandardError):
-            let created = Pipe()
-            pipes = [created]
-            process.standardOutput = created
-            process.standardError = includingStandardError ? created : FileHandle.nullDevice
-        case .captureSeparately:
-            pipes = [Pipe(), Pipe()]
-            process.standardOutput = pipes[0]
-            process.standardError = pipes[1]
-        }
+        let pipes = configureOutput(mode, for: process)
 
         let exited = DispatchSemaphore(value: 0)
         // Set before run(): a child that exits immediately must still signal.
@@ -187,10 +179,13 @@ public enum ProcessRunner {
         for (pipe, drain) in zip(pipes, drains) {
             let reader = pipe.fileHandleForReading
             startDrain(drain) {
-                collect(from: reader.fileDescriptor, into: drain, gracePeriod: gracePeriod)
+                collect(from: reader.fileDescriptor, into: drain, gracePeriod: gracePeriod, deadline: deadline?.end)
                 drained.signal()
             }
         }
+
+        let timeoutError = ProcessRunnerError.timedOut(
+            executablePath: executablePath, seconds: timeout.map(seconds) ?? 0)
 
         // Only once the child is gone or was never started. The wait is bounded by the drain,
         // which stops `gracePeriod` after it notices, so a descendant cannot hold it open.
@@ -199,14 +194,24 @@ public enum ProcessRunner {
                 drain.markChildGone()
             }
             for _ in drains {
-                drained.wait()
+                if let deadline {
+                    if drained.wait(timeout: dispatchDeadline(deadline.end)) == .timedOut { return }
+                } else {
+                    drained.wait()
+                }
             }
         }
 
         // Registered only while this call is waiting on it, so a process that
         // exits mid-wait can take the child with it instead of orphaning it.
         do {
-            if try !registry.start(process, using: { try process.run() }) {
+            if try !registry.start(
+                process,
+                using: {
+                    if let deadline, ContinuousClock.now > deadline.latestStart { throw timeoutError }
+                    try process.run()
+                })
+            {
                 throw ProcessRunnerError.terminatingBeforeWait(executablePath: executablePath)
             }
         } catch {
@@ -223,30 +228,79 @@ public enum ProcessRunner {
         }
 
         defer { registry.remove(process) }
-        if let timeout {
-            if exited.wait(timeout: .now() + seconds(timeout)) == .timedOut {
-                process.terminate()
-                if exited.wait(timeout: .now() + seconds(gracePeriod)) == .timedOut {
-                    kill(process.processIdentifier, SIGKILL)
-                    exited.wait()
-                }
-                finishDrain()
-                throw ProcessRunnerError.timedOut(
-                    executablePath: executablePath,
-                    seconds: seconds(timeout)
-                )
-            }
-        } else {
-            exited.wait()
-        }
-
+        let timedOut = waitForExit(
+            process, exited: exited, timeout: timeout, gracePeriod: gracePeriod, deadline: deadline?.end)
         finishDrain()
+        if timedOut || deadline.map({ ContinuousClock.now >= $0.end }) == true { throw timeoutError }
 
         return Result(
             status: process.terminationStatus,
             output: drains.first.map { String(decoding: $0.output, as: UTF8.self) } ?? "",
             errorOutput: drains.dropFirst().first.map { String(decoding: $0.output, as: UTF8.self) } ?? ""
         )
+    }
+
+    static func run(
+        executablePath: String,
+        arguments: [String],
+        output: OutputMode,
+        environment: [String: String],
+        deadline: Deadline
+    ) throws -> Result {
+        try run(
+            executablePath: executablePath, arguments: arguments, output: output, environment: environment,
+            timeout: ContinuousClock.now.duration(to: deadline.end), registry: boundedChildren, deadline: deadline)
+    }
+
+    private static func configureOutput(_ mode: OutputMode, for process: Process) -> [Pipe] {
+        switch mode {
+        case .discard:
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            return []
+        case .inherit:
+            process.standardOutput = FileHandle.standardOutput
+            process.standardError = FileHandle.standardError
+            return []
+        case .capture(let includingStandardError):
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = includingStandardError ? pipe : FileHandle.nullDevice
+            return [pipe]
+        case .captureSeparately:
+            let pipes = [Pipe(), Pipe()]
+            process.standardOutput = pipes[0]
+            process.standardError = pipes[1]
+            return pipes
+        }
+    }
+
+    private static func waitForExit(
+        _ process: Process, exited: DispatchSemaphore, timeout: Duration?,
+        gracePeriod: Duration, deadline: ContinuousClock.Instant?
+    ) -> Bool {
+        guard let timeout else {
+            exited.wait()
+            return false
+        }
+        let killReserve: Duration = .milliseconds(100)
+        let exitBy = deadline.map { dispatchDeadline($0 - gracePeriod - killReserve) } ?? (.now() + seconds(timeout))
+        guard exited.wait(timeout: exitBy) == .timedOut else { return false }
+        process.terminate()
+        let killBy = deadline.map { dispatchDeadline($0 - killReserve) } ?? (.now() + seconds(gracePeriod))
+        if exited.wait(timeout: killBy) == .timedOut {
+            kill(process.processIdentifier, SIGKILL)
+            if let deadline {
+                _ = exited.wait(timeout: dispatchDeadline(deadline))
+            } else {
+                exited.wait()
+            }
+        }
+        return true
+    }
+
+    private static func dispatchDeadline(_ instant: ContinuousClock.Instant) -> DispatchTime {
+        .now() + max(0, seconds(ContinuousClock.now.duration(to: instant)))
     }
 
     /// `run` waits for the drain to finish, and a drain queued on a pool behind threads that
@@ -261,11 +315,14 @@ public enum ProcessRunner {
     /// exits, so once the child is gone the read stops `gracePeriod` after the drain noticed —
     /// but not before it has read what was already in the pipe then. Those bytes are the child's
     /// own, and a drain that starts late on a loaded machine must still collect them.
-    private static func collect(from fd: Int32, into drain: Drain, gracePeriod: Duration) {
+    private static func collect(
+        from fd: Int32, into drain: Drain, gracePeriod: Duration, deadline: ContinuousClock.Instant?
+    ) {
         var chunk = [UInt8](repeating: 0, count: 64 * 1024)
         var cutoff: ContinuousClock.Instant?
         var owed = 0
         while true {
+            if let deadline, ContinuousClock.now >= deadline { return }
             if cutoff == nil, drain.isChildGone {
                 cutoff = .now + gracePeriod
                 var pending: Int32 = 0

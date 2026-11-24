@@ -1,4 +1,5 @@
 import ContainerStackCore
+import Darwin
 import Foundation
 import Yams
 
@@ -35,6 +36,7 @@ struct ClusterKubeconfig {
 
     func add(name: String) async throws {
         try checkAdd(name: name)
+        try prepareEmptyUserConfig()
         try await commands.writeConfig(name: name, into: .userDefault)
     }
 
@@ -66,12 +68,41 @@ struct ClusterKubeconfig {
         }
     }
 
+    private func prepareEmptyUserConfig() throws {
+        let path = commands.userKubeconfig
+        guard let text = try Self.readText(path), Self.isEmptyDocument(text) else { return }
+
+        let descriptor = open(path.path, O_RDWR | O_APPEND)
+        guard descriptor >= 0 else {
+            if errno == ENOENT { return }
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        let data = try file.readToEnd() ?? Data()
+        guard let current = String(data: data, encoding: .utf8), Self.isEmptyDocument(current) else {
+            throw ClusterKubeconfigError.unreadable
+        }
+        let separator = current.isEmpty || current.last?.isNewline == true ? "" : "\n"
+        try file.write(contentsOf: Data("\(separator)apiVersion: v1\nkind: Config\n".utf8))
+    }
+
     private static func read(_ path: URL) throws -> KubeconfigIndex? {
+        guard let text = try readText(path), !isEmptyDocument(text) else { return nil }
+        return try YAMLDecoder().decode(KubeconfigIndex.self, from: text)
+    }
+
+    private static func readText(_ path: URL) throws -> String? {
         do {
-            let text = try String(contentsOf: path, encoding: .utf8)
-            return try YAMLDecoder().decode(KubeconfigIndex.self, from: text)
+            return try String(contentsOf: path, encoding: .utf8)
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             return nil
+        }
+    }
+
+    private static func isEmptyDocument(_ text: String) -> Bool {
+        text.split(whereSeparator: \.isNewline).allSatisfy { line in
+            let content = line.trimmingCharacters(in: .whitespaces)
+            return content.isEmpty || content.hasPrefix("#")
         }
     }
 }

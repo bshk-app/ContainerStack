@@ -11,6 +11,7 @@ struct KubernetesKubeconfigTests {
         "clusters:\n- name: \"dev\" # used by another context\n  cluster: {server: https://production.test}\n"
             + "contexts: [{name: another, context: {cluster: dev, user: somebody}}]",
         "users: [{name: \"d\\x65v\", user: {token: secret}}]",
+        "profile: &profile {name: dev, user: {token: secret}}\nusers: [*profile]",
     ])
     func refusesEverySameNameEntry(fixture: String) throws {
         let home = try KubeconfigTestHome()
@@ -59,6 +60,22 @@ struct KubernetesKubeconfigTests {
         #expect(try String(contentsOf: home.userConfig, encoding: .utf8) == "users: [{name: dev}]")
     }
 
+    @Test(arguments: ["", "  \n", "# No contexts yet\n  # Another comment"])
+    func emptyDocumentsAllowAddingContext(fixture: String) async throws {
+        let home = try KubeconfigTestHome()
+        try home.write(fixture)
+        try home.config.checkAdd(name: "dev")
+        #expect(home.launches.withLock { $0 }.isEmpty)
+        #expect(try String(contentsOf: home.userConfig, encoding: .utf8) == fixture)
+
+        try await home.config.add(name: "dev")
+
+        #expect(home.launches.withLock { $0 }.count == 1)
+        let document = try #require(home.userDocumentAtLaunch.withLock { $0 })
+        #expect(document.hasPrefix(fixture))
+        #expect(document.hasSuffix("apiVersion: v1\nkind: Config\n"))
+    }
+
     @Test func reportsInvalidYamlWithoutWriting() async throws {
         let home = try KubeconfigTestHome()
         try home.write("contexts: [")
@@ -91,6 +108,7 @@ struct KubernetesKubeconfigTests {
 private final class KubeconfigTestHome {
     let home = FileManager.default.temporaryDirectory.appending(path: "app-kubeconfig-\(UUID())")
     let launches = Mutex<[ClusterCommands.Launch]>([])
+    let userDocumentAtLaunch = Mutex<String?>(nil)
 
     init() throws {
         try FileManager.default.createDirectory(
@@ -109,6 +127,10 @@ private final class KubeconfigTestHome {
                 containerPath: "/fake/container", home: home, environment: [:],
                 spawn: { [self] launch in
                     launches.withLock { $0.append(launch) }
+                    if launch.environment["KUBECONFIG"] == userConfig.path {
+                        let document = try? String(contentsOf: userConfig, encoding: .utf8)
+                        userDocumentAtLaunch.withLock { $0 = document }
+                    }
                     return .init(status: 0, output: "")
                 }))
     }

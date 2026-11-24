@@ -8,6 +8,7 @@ struct ResourceSelection: Equatable {
     var volumeName: String?
     var networkID: String?
     var stackID: UUID?
+    var clusterName: String?
     /// The inspector's Run sets it, and Images shows the sheet.
     var runImage: RunImage?
     var isInspectorShown = true
@@ -61,6 +62,8 @@ struct ResourceInspector: View {
         case .stacks:
             let stack = model.allStacks.first { $0.id == selection.stackID }
             StackInspector(stack: stack, model: model) { openedStackID = stack?.id }
+        case .kubernetes:
+            ClusterInspector(model: model.clusters, name: selection.clusterName)
         case .overview, .doctor:
             EmptyInspector()
         }

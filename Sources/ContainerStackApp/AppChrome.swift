@@ -125,7 +125,7 @@ extension Color {
 
 extension DashboardDestination {
     static let dockerItems: [DashboardDestination] = [
-        .containers, .stacks, .images, .volumes, .networks, .doctor,
+        .containers, .stacks, .kubernetes, .images, .volumes, .networks, .doctor,
     ]
 
     static let generalItems: [DashboardDestination] = [.overview]
@@ -219,6 +219,8 @@ struct DashboardSidebar: View {
             "\(model.containers.filter(\.isRunning).count)/\(model.containers.count)"
         case .stacks:
             "\(model.allStacks.count)"
+        case .kubernetes:
+            model.clusters.names.isEmpty ? "" : "\(model.clusters.names.count)"
         case .images:
             "\(model.images.count)"
         case .volumes:

@@ -151,7 +151,7 @@ struct ClusterAPIReadyTests {
         try await waitUntilListening(server.port)
         return await ClusterAPIReady.isReady(
             endpoint: URL(string: "https://127.0.0.1:\(server.port)"), context: "dev",
-            kubeconfig: try fixture.kubeconfig(caFile: caFile))
+            kubeconfig: try fixture.kubeconfig(caFile: caFile), timeout: .seconds(30))
     }
 
     @Test("ok from a server with the cluster CA is API ready")

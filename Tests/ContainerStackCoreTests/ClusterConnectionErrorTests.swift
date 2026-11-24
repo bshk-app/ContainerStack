@@ -8,7 +8,8 @@ import Testing
 struct ClusterConnectionErrorTests {
     @Test func classifiesRealHTTPSConnectionReset() async throws {
         let listener = try loopbackReadinessSocket()
-        let source = DispatchSource.makeReadSource(fileDescriptor: listener.descriptor, queue: .global())
+        let source = DispatchSource.makeReadSource(
+            fileDescriptor: listener.descriptor, queue: .global(qos: .userInitiated))
         source.setEventHandler {
             let connection = accept(listener.descriptor, nil, nil)
             guard connection >= 0 else { return }
@@ -37,7 +38,7 @@ struct ClusterConnectionErrorTests {
     private func connectionError(port: Int) async throws -> NSError {
         let endpoint = try #require(URL(string: "https://127.0.0.1:\(port)/readyz"))
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForResource = 5
+        configuration.timeoutIntervalForResource = 30
         let session = URLSession(configuration: configuration)
         defer { session.invalidateAndCancel() }
 

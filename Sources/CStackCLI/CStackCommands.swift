@@ -1,16 +1,21 @@
 import ContainerStackCore
 import Darwin
+import Foundation
 
 extension CStackCLI {
     // MARK: - Commands
 
     static func doctor(_ invocation: CStackInvocation, client: DockerAPIClient) async {
         let configuration = runtimeConfiguration(socketPath: invocation.socketPath)
+        let commands = ClusterCommands(
+            containerPath: configuration.containerPath, home: FileManager.default.homeDirectoryForCurrentUser,
+            environment: ProcessInfo.processInfo.environment)
         let runner = DiagnosticRunner(
             client: client,
             probe: ShellSystemProbe(containerPath: configuration.containerPath),
             socketPath: configuration.socketPath,
-            bridgePath: configuration.socktainerPath
+            bridgePath: configuration.socktainerPath,
+            clusterDiagnostics: ClusterDiagnostics(commands: commands, client: client)
         )
         print(DoctorTextRenderer.render(await runner.run(checks: CheckID.cliSet)))
     }

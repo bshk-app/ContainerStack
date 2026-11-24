@@ -17,6 +17,7 @@ public enum DoctorTextRenderer {
     /// F-004 precedence order: precedence ranks checks, this only decides what a person reads first.
     public static let printOrder: [CheckID] = [
         .foreignBridge, .socket, .versions, .appRoot, .routes, .dockerContext, .sharedRuntimes, .memoryCommitment,
+        .clusters,
     ]
 
     /// Stable, and a check whose id `printOrder` does not name keeps its place at the end rather

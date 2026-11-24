@@ -75,6 +75,10 @@ extension DiagnosticRunner {
         ranked: [UnroutableNetwork]
     ) -> DiagnosticCheck {
         let took = signals.duration(of: id)
+        if id == .clusters {
+            return signals.clusters
+                ?? indeterminate(id, summary: "Kubernetes clusters: could not check", detail: budgetExpired, took: took)
+        }
         if id == .sharedRuntimes {
             return signals.sharedRuntimes
                 ?? indeterminate(

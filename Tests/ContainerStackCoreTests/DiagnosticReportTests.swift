@@ -81,7 +81,7 @@ struct DiagnosticReportTests {
         #expect(
             Set(CheckID.allCases) == [
                 .appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext, .memoryCommitment,
-                .sharedRuntimes,
+                .sharedRuntimes, .clusters,
             ]
         )
     }

@@ -10,11 +10,13 @@ struct CheckIDSetsTests {
     func theTwoCheckSetsAreExactlyThese() {
         #expect(
             CheckID.cliSet == [
-                .appRoot, .socket, .versions, .routes, .foreignBridge, .memoryCommitment, .sharedRuntimes,
+                .appRoot, .socket, .versions, .routes, .foreignBridge, .memoryCommitment, .sharedRuntimes, .clusters,
             ]
         )
         #expect(
-            CheckID.uiSet == [.appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext, .sharedRuntimes]
+            CheckID.uiSet == [
+                .appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext, .sharedRuntimes, .clusters,
+            ]
         )
     }
 

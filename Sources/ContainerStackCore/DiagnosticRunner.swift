@@ -4,6 +4,7 @@ import Foundation
 /// a Docker call cannot answer. Prints nothing and touches no view state.
 public struct DiagnosticRunner: Sendable {
     let client: DockerAPIClient
+    let clusterDiagnostics: ClusterDiagnostics?
     private let probe: any SystemProbe
     let socketPath: String
     var sharedRuntimeSocketPath: String { socketPath }
@@ -67,10 +68,12 @@ public struct DiagnosticRunner: Sendable {
         log: @escaping @Sendable (String) -> Void = DiagnosticLog.line,
         budget: Duration = DiagnosticRunner.defaultBudget,
         sharedRuntimeSocketResponds: (@Sendable (String) async -> Bool)? = nil,
-        bundleIdentifier: @escaping @Sendable (String) -> String? = BridgeOwnership.bundleIdentifier(atPath:)
+        bundleIdentifier: @escaping @Sendable (String) -> String? = BridgeOwnership.bundleIdentifier(atPath:),
+        clusterDiagnostics: ClusterDiagnostics? = nil
     ) {
         self.sharedRuntimeSocketResponds = sharedRuntimeSocketResponds ?? Self.pingSharedRuntimeSocket
         self.client = client
+        self.clusterDiagnostics = clusterDiagnostics
         self.probe = probe
         self.socketPath = socketPath
         self.bridgePath = bridgePath
@@ -114,6 +117,7 @@ public struct DiagnosticRunner: Sendable {
         let bridge: BridgeMeasurement
         let memory: MemoryMeasurement
         let sharedRuntimes: DiagnosticCheck?
+        let clusters: DiagnosticCheck?
         let context: ContextMeasurement
         let durations: [CheckID: Duration]
 
@@ -132,6 +136,7 @@ public struct DiagnosticRunner: Sendable {
         var routes: RoutesMeasurement?
         var memory: MemoryMeasurement?
         var sharedRuntimes: DiagnosticCheck?
+        var clusters: DiagnosticCheck?
         var context: ContextMeasurement?
         var durations: [CheckID: Duration] = [:]
 
@@ -146,6 +151,7 @@ public struct DiagnosticRunner: Sendable {
             if routes == nil { ids.append(.routes) }
             if memory == nil { ids.append(.memoryCommitment) }
             if sharedRuntimes == nil { ids.append(.sharedRuntimes) }
+            if clusters == nil { ids.append(.clusters) }
             if context == nil { ids.append(.dockerContext) }
             return ids
         }
@@ -190,6 +196,11 @@ public struct DiagnosticRunner: Sendable {
         func sharedRuntimes(_ value: DiagnosticCheck) {
             partial.sharedRuntimes = value
             partial.durations[.sharedRuntimes] = value.duration
+        }
+
+        func clusters(_ value: DiagnosticCheck) {
+            partial.clusters = value
+            partial.durations[.clusters] = value.duration
         }
 
         func context(_ value: ContextMeasurement, took: Duration) {
@@ -375,6 +386,13 @@ public struct DiagnosticRunner: Sendable {
                 }
                 await measurements.context(context.value, took: context.elapsed)
             }
+            if checks.contains(.clusters), let clusterDiagnostics {
+                group.addTask {
+                    await measurements.clusters(clusterDiagnostics.run())
+                }
+            } else {
+                await measurements.clusters(Self.notRun(.clusters, took: .zero))
+            }
         }
     }
 
@@ -455,6 +473,7 @@ public struct DiagnosticRunner: Sendable {
             bridge: bridge,
             memory: partial.memory ?? .unmeasurable(reason: Self.budgetExpired),
             sharedRuntimes: partial.sharedRuntimes,
+            clusters: partial.clusters,
             context: partial.context ?? .unmeasurable(reason: Self.budgetExpired),
             durations: durations
         )
@@ -477,7 +496,7 @@ public struct DiagnosticRunner: Sendable {
         }
         let recorded: String?
         do {
-            recorded = try await Self.offTheCooperativePool { [recordedSocketPath] in
+            recorded = try await ProcessRunner.offTheCooperativePool { [recordedSocketPath] in
                 try recordedSocketPath(DockerContext.name)
             }
         } catch {
@@ -507,18 +526,6 @@ public struct DiagnosticRunner: Sendable {
             recordedSocketPath: recorded,
             currentSocketPath: socketPath
         )
-    }
-
-    /// `ProcessRunner.run` holds its thread until the child exits. On the cooperative pool that can
-    /// be the thread the budget's timer needs, and the run outlasts its own deadline (NFR-002).
-    private static func offTheCooperativePool<T: Sendable>(
-        _ work: @escaping @Sendable () throws -> T
-    ) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(with: Result { try work() })
-            }
-        }
     }
 
     /// `ping` retries only what costs a syscall to re-ask (`DockerAPIClient.failsImmediately`), so

@@ -252,6 +252,16 @@ public enum ProcessRunner {
             timeout: ContinuousClock.now.duration(to: deadline.end), registry: boundedChildren, deadline: deadline)
     }
 
+    static func offTheCooperativePool<T: Sendable>(
+        _ work: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Swift.Result { try work() })
+            }
+        }
+    }
+
     private static func configureOutput(_ mode: OutputMode, for process: Process) -> [Pipe] {
         switch mode {
         case .discard:

@@ -3,19 +3,19 @@ import Foundation
 /// Declared in F-004 precedence order, which is the order a report emits: the
 /// check that outranks every other leads.
 public enum CheckID: String, CaseIterable, Codable, Sendable {
-    case foreignBridge, appRoot, socket, versions, routes, dockerContext, memoryCommitment, sharedRuntimes
+    case foreignBridge, appRoot, socket, versions, routes, dockerContext, memoryCommitment, sharedRuntimes, clusters
 }
 
 extension CheckID {
     /// `memoryCommitment` is CLI-only: it costs one `inspectContainer` per running
     /// container, which NFR-001 forbids the UI from paying.
     public static let cliSet: Set<CheckID> = [
-        .appRoot, .socket, .versions, .routes, .foreignBridge, .memoryCommitment, .sharedRuntimes,
+        .appRoot, .socket, .versions, .routes, .foreignBridge, .memoryCommitment, .sharedRuntimes, .clusters,
     ]
 
     /// `dockerContext` is UI-only: the CLI answers it from `cstack context` instead.
     public static let uiSet: Set<CheckID> = [
-        .appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext, .sharedRuntimes,
+        .appRoot, .socket, .versions, .routes, .foreignBridge, .dockerContext, .sharedRuntimes, .clusters,
     ]
 
     /// The prefix every measured summary already leads with, so a skipped row reads the same way.
@@ -29,6 +29,7 @@ extension CheckID {
         case .dockerContext: "Docker context"
         case .sharedRuntimes: "Shared runtimes"
         case .memoryCommitment: "Container memory limits"
+        case .clusters: "Kubernetes clusters"
         }
     }
 }

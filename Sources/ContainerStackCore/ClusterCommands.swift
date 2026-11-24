@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import Synchronization
 
 public enum ClusterCommandError: Error, Equatable, Sendable, CustomStringConvertible {
     case kubeconfigAlias
@@ -40,6 +41,7 @@ public struct ClusterCommands: Sendable {
     private let spawn: Spawn
     let capabilityCache: ClusterCapabilityCache
     private let lock: ClusterOperationLock
+    private static let successfulStarts = Mutex([ClusterIdentity: Date]())
 
     public init(containerPath: String, home: URL, environment: [String: String]) {
         self.init(containerPath: containerPath, home: home, environment: environment, spawn: Self.processRunnerSpawn)
@@ -93,14 +95,16 @@ public struct ClusterCommands: Sendable {
 
     func stop(name: String, budget: ClusterCommandBudget) async throws {
         let timeout = budget.timeoutError(containerPath)
-        let result = try await lock.run(before: budget.latestStart, timeout: timeout) {
-            try await invoke(timeout: .seconds(120), output: .captureSeparately, budget: budget) { remaining in
+        try await lock.run(before: budget.latestStart, timeout: timeout) {
+            let result = try await invoke(timeout: .seconds(120), output: .captureSeparately, budget: budget) {
+                remaining in
                 let grace = min(30, remaining.components.seconds / 3)
                 guard grace >= 1 else { throw timeout }
                 return ["cluster", "stop", "--name", name, "--time", String(grace)]
             }
+            _ = try checkedOutput(result, subcommand: "stop")
+            recordClusterAction("stop", name: name)
         }
-        _ = try checkedOutput(result, subcommand: "stop")
     }
 
     public func delete(name: String) async throws {
@@ -121,11 +125,38 @@ public struct ClusterCommands: Sendable {
         budget: ClusterCommandBudget? = nil
     ) async throws -> String {
         let execute = { @Sendable in
-            try await launch(
+            let result = try await launch(
                 ["cluster"] + arguments, timeout: timeout, output: output, kubeconfig: kubeconfig, budget: budget)
+            let text = try checkedOutput(result, subcommand: arguments[0])
+            if changesState, arguments.count >= 3, arguments[1] == "--name" {
+                recordClusterAction(arguments[0], name: arguments[2])
+            }
+            return text
         }
-        let result = try await changesState ? lock.run(execute) : execute()
-        return try checkedOutput(result, subcommand: arguments[0])
+        return try await changesState ? lock.run(execute) : execute()
+    }
+
+    private struct ClusterIdentity: Hashable {
+        let containerPath: String
+        let home: URL
+        let name: String
+    }
+
+    func sawSuccessfulStart(of cluster: KubernetesCluster) -> Bool {
+        let key = ClusterIdentity(containerPath: containerPath, home: home, name: cluster.name)
+        return Self.successfulStarts.withLock {
+            guard let date = $0[key] else { return false }
+            return date >= cluster.creationDate
+        }
+    }
+
+    private func recordClusterAction(_ action: String, name: String) {
+        let key = ClusterIdentity(containerPath: containerPath, home: home, name: name)
+        switch action {
+        case "create", "start": Self.successfulStarts.withLock { $0[key] = Date() }
+        case "stop", "delete": Self.successfulStarts.withLock { $0[key] = nil }
+        default: break
+        }
     }
 
     private func checkedOutput(_ result: ProcessRunner.Result, subcommand: String) throws -> String {
@@ -154,26 +185,20 @@ public struct ClusterCommands: Sendable {
         budget: ClusterCommandBudget?,
         arguments: @escaping @Sendable (Duration) throws -> [String]
     ) async throws -> ProcessRunner.Result {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(
-                    with: Result {
-                        if let budget, !budget.canLaunch { throw budget.timeoutError(containerPath) }
-                        try prepareKubeconfig()
-                        let now = budget?.now() ?? .now
-                        if let budget, now > budget.latestStart { throw budget.timeoutError(containerPath) }
-                        let available = budget.map { min(timeout, now.duration(to: $0.end)) } ?? timeout
-                        var environment = environment
-                        environment["KUBECONFIG"] = (kubeconfig == .managed ? managedKubeconfig : userKubeconfig).path
-                        return try spawn(
-                            Launch(
-                                executablePath: containerPath, arguments: arguments(available),
-                                environment: environment,
-                                output: output, timeout: available,
-                                deadline: budget.map { .init(end: now + available, latestStart: $0.latestStart) }
-                            ))
-                    })
-            }
+        try await ProcessRunner.offTheCooperativePool {
+            if let budget, !budget.canLaunch { throw budget.timeoutError(containerPath) }
+            try prepareKubeconfig()
+            let now = budget?.now() ?? .now
+            if let budget, now > budget.latestStart { throw budget.timeoutError(containerPath) }
+            let available = budget.map { min(timeout, now.duration(to: $0.end)) } ?? timeout
+            var environment = environment
+            environment["KUBECONFIG"] = (kubeconfig == .managed ? managedKubeconfig : userKubeconfig).path
+            return try spawn(
+                Launch(
+                    executablePath: containerPath, arguments: arguments(available), environment: environment,
+                    output: output, timeout: available,
+                    deadline: budget.map { .init(end: now + available, latestStart: $0.latestStart) }
+                ))
         }
     }
 

@@ -1,18 +1,29 @@
+import Darwin
 import Foundation
 import Security
 
 public enum ClusterAPIReady {
+    enum Observation: Sendable, Equatable {
+        case ready, notReady, connectionRefusedOrReset
+    }
+
     public static func isReady(
         endpoint: URL?,
         context: String,
         kubeconfig: URL,
         timeout: Duration = .seconds(3)
     ) async -> Bool {
+        await observe(endpoint: endpoint, context: context, kubeconfig: kubeconfig, timeout: timeout) == .ready
+    }
+
+    static func observe(
+        endpoint: URL?, context: String, kubeconfig: URL, timeout: Duration = .seconds(3)
+    ) async -> Observation {
         guard let endpoint,
             let text = try? String(contentsOf: kubeconfig, encoding: .utf8),
             let encoded = KubeconfigCA.data(context: context, in: text),
             let anchor = KubeconfigCA.certificate(base64: encoded)
-        else { return false }
+        else { return .notReady }
 
         let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
         let configuration = URLSessionConfiguration.ephemeral
@@ -25,10 +36,30 @@ public enum ClusterAPIReady {
 
         var request = URLRequest(url: endpoint.appending(path: "readyz"), timeoutInterval: seconds)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let (body, response) = try? await session.data(for: request),
-            (response as? HTTPURLResponse)?.statusCode == 200
+        do {
+            let (body, response) = try await session.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .notReady }
+            return String(decoding: body, as: UTF8.self) == "ok" ? .ready : .notReady
+        } catch {
+            return isConnectionRefusedOrReset(error as NSError) ? .connectionRefusedOrReset : .notReady
+        }
+    }
+
+    private static func isConnectionRefusedOrReset(_ error: NSError) -> Bool {
+        let tcpErrors = [Int(ECONNREFUSED), Int(ECONNRESET)]
+        if error.domain == NSPOSIXErrorDomain { return tcpErrors.contains(error.code) }
+        guard error.domain == NSURLErrorDomain,
+            [URLError.cannotConnectToHost.rawValue, URLError.networkConnectionLost.rawValue].contains(error.code)
         else { return false }
-        return String(decoding: body, as: UTF8.self) == "ok"
+        if (error.userInfo["_kCFStreamErrorDomainKey"] as? Int) == 1,
+            let code = error.userInfo["_kCFStreamErrorCodeKey"] as? Int, tcpErrors.contains(code)
+        {
+            return true
+        }
+        if let cause = error.userInfo[NSUnderlyingErrorKey] as? NSError, cause !== error {
+            return isConnectionRefusedOrReset(cause)
+        }
+        return false
     }
 }
 

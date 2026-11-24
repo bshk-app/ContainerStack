@@ -131,7 +131,7 @@ struct DiagnosticRunnerTests {
         #expect(
             report.checks.map(\.id) == [
                 .foreignBridge, .appRoot, .socket, .versions, .routes, .dockerContext,
-                .memoryCommitment, .sharedRuntimes,
+                .memoryCommitment, .sharedRuntimes, .clusters,
             ]
         )
     }

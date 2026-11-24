@@ -322,6 +322,9 @@ extension DoctorViewModel {
     /// The production model: the UI check set, run against the socket and helper the app manages.
     convenience init(runtime: RuntimeViewModel) {
         let configuration = runtime.runtimeConfiguration()
+        let commands = ClusterCommands(
+            containerPath: configuration.containerPath, home: FileManager.default.homeDirectoryForCurrentUser,
+            environment: ProcessInfo.processInfo.environment)
         let runner = DiagnosticRunner(
             client: runtime.client,
             probe: ShellSystemProbe(containerPath: configuration.containerPath),
@@ -330,7 +333,8 @@ extension DoctorViewModel {
             dockerContextSetting: { [weak runtime] in
                 guard let runtime else { return nil }
                 return await DoctorViewModel.contextSetting(of: runtime)
-            }
+            },
+            clusterDiagnostics: ClusterDiagnostics(commands: commands, client: runtime.client)
         )
         self.init(runner: runner, repairs: DoctorRepairs(runtime: runtime))
     }

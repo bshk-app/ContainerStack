@@ -11,27 +11,11 @@ struct KubernetesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            switch model.availability {
-            case .noClusterStart:
-                status(ClusterCapability.noClusterStart.description)
+            if let error = model.inventoryError {
+                status(error)
                 Spacer()
-            case .runtimeNotRunning:
-                status(ClusterCapability.runtimeNotRunning.description)
-                list(allowsActions: false)
-                    .opacity(0.48)
-                    .allowsHitTesting(false)
-            default:
-                if let error = model.inventoryError {
-                    status(error)
-                    Spacer()
-                } else if model.availability == .capable {
-                    createBar
-                    if let error = model.actionError { status(error) }
-                    list(allowsActions: model.canAct)
-                } else {
-                    ProgressView("Loading clusters…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+            } else {
+                inventoryContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -46,6 +30,27 @@ struct KubernetesView: View {
             ClusterDeleteSheet(deletion: deletion, canDelete: model.canAct) {
                 Task { await model.perform(.delete, name: deletion.name) }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var inventoryContent: some View {
+        switch model.availability {
+        case .noClusterStart:
+            status(ClusterCapability.noClusterStart.description)
+            Spacer()
+        case .runtimeNotRunning:
+            status(ClusterCapability.runtimeNotRunning.description)
+            list(allowsActions: false)
+                .opacity(0.48)
+                .allowsHitTesting(false)
+        case .capable:
+            createBar
+            if let error = model.actionError { status(error) }
+            list(allowsActions: model.canAct)
+        case nil:
+            ProgressView("Loading clusters…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

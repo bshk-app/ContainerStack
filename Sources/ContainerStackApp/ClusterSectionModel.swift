@@ -105,43 +105,55 @@ final class ClusterSectionModel {
         }
     }
 
-    func refresh(afterStart: String? = nil) async {
+    @discardableResult
+    func refresh(afterStart: String? = nil) async -> Bool {
+        guard !Task.isCancelled else { return false }
         refreshToken += 1
         let token = refreshToken
         guard services.canReachRuntime() else {
             markRuntimeDown()
-            return
+            return true
         }
+        var confirmedCapability = false
         do {
             let capability = try await services.capability()
-            guard token == refreshToken, !Task.isCancelled else { return }
+            guard token == refreshToken, !Task.isCancelled else { return false }
             guard services.canReachRuntime() else {
                 markRuntimeDown()
-                return
+                return true
             }
             guard capability == .capable else {
                 availability = capability
                 inventoryError = nil
                 refusals.removeAll()
-                return
+                return true
             }
 
+            confirmedCapability = true
             let next = try await services.list()
             let results = await checkReadyClusters(next.clusters)
-            guard token == refreshToken, !Task.isCancelled else { return }
+            guard token == refreshToken, !Task.isCancelled else { return false }
             guard services.canReachRuntime() else {
                 markRuntimeDown()
-                return
+                return true
             }
             publish(next, results: results, afterStart: afterStart)
         } catch {
-            guard token == refreshToken, !Task.isCancelled else { return }
+            guard token == refreshToken, !Task.isCancelled else { return false }
             guard services.canReachRuntime() else {
                 markRuntimeDown()
-                return
+                return true
             }
+            if confirmedCapability { availability = .capable }
             inventoryError = Self.message(error)
             refusals.removeAll()
+        }
+        return true
+    }
+
+    private func refreshAfterOperation(afterStart: String? = nil) async {
+        while !Task.isCancelled {
+            if await refresh(afterStart: afterStart) { return }
         }
     }
 
@@ -237,7 +249,7 @@ final class ClusterSectionModel {
         } catch {
             record(error, name: name, isStartFailure: action == .start || action == .restart)
         }
-        await refresh(afterStart: didStart ? name : nil)
+        await refreshAfterOperation(afterStart: didStart ? name : nil)
         activity = nil
     }
 
@@ -248,11 +260,12 @@ final class ClusterSectionModel {
         var succeeded = false
         do {
             try await services.create(name, draft.options)
+            startFailures.removeValue(forKey: name)
             succeeded = true
         } catch {
             record(error, name: name, isStartFailure: true)
         }
-        await refresh(afterStart: succeeded ? name : nil)
+        await refreshAfterOperation(afterStart: succeeded ? name : nil)
         if let failure = startFailures[name], !names.contains(name) {
             actionError = "Create failed: \(failure)"
         }
@@ -279,7 +292,7 @@ final class ClusterSectionModel {
         guard canWrite(name: name) else { return }
         begin(.writing, name: name)
         do { try await services.write(name, target) } catch { record(error, name: name, isStartFailure: false) }
-        await refresh()
+        await refreshAfterOperation()
         activity = nil
     }
 

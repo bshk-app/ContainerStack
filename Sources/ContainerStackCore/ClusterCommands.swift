@@ -25,6 +25,7 @@ public struct ClusterCommands: Sendable {
         public let environment: [String: String]
         public let output: ProcessRunner.OutputMode
         public let timeout: Duration
+        let deadline: ProcessRunner.Deadline?
     }
 
     public typealias Spawn = @Sendable (Launch) throws -> ProcessRunner.Result
@@ -69,9 +70,13 @@ public struct ClusterCommands: Sendable {
     }
 
     public func list() async throws -> String {
+        try await list(budget: nil)
+    }
+
+    func list(budget: ClusterCommandBudget?) async throws -> String {
         try await run(
             ["list", "--format", "json"], timeout: .seconds(20), output: .captureSeparately,
-            changesState: false)
+            changesState: false, budget: budget)
     }
 
     public func create(name: String, options: [String]) async throws {
@@ -84,6 +89,18 @@ public struct ClusterCommands: Sendable {
 
     public func stop(name: String) async throws {
         try await run(["stop", "--name", name], timeout: .seconds(2 * 60))
+    }
+
+    func stop(name: String, budget: ClusterCommandBudget) async throws {
+        let timeout = budget.timeoutError(containerPath)
+        let result = try await lock.run(before: budget.latestStart, timeout: timeout) {
+            try await invoke(timeout: .seconds(120), output: .captureSeparately, budget: budget) { remaining in
+                let grace = min(30, remaining.components.seconds / 3)
+                guard grace >= 1 else { throw timeout }
+                return ["cluster", "stop", "--name", name, "--time", String(grace)]
+            }
+        }
+        _ = try checkedOutput(result, subcommand: "stop")
     }
 
     public func delete(name: String) async throws {
@@ -100,15 +117,21 @@ public struct ClusterCommands: Sendable {
         timeout: Duration,
         output: ProcessRunner.OutputMode = .inherit,
         kubeconfig: Kubeconfig = .managed,
-        changesState: Bool = true
+        changesState: Bool = true,
+        budget: ClusterCommandBudget? = nil
     ) async throws -> String {
         let execute = { @Sendable in
-            try await launch(["cluster"] + arguments, timeout: timeout, output: output, kubeconfig: kubeconfig)
+            try await launch(
+                ["cluster"] + arguments, timeout: timeout, output: output, kubeconfig: kubeconfig, budget: budget)
         }
         let result = try await changesState ? lock.run(execute) : execute()
+        return try checkedOutput(result, subcommand: arguments[0])
+    }
+
+    private func checkedOutput(_ result: ProcessRunner.Result, subcommand: String) throws -> String {
         guard result.status == 0 else {
             throw ClusterCommandError.failed(
-                command: "cluster \(arguments[0])", status: result.status,
+                command: "cluster \(subcommand)", status: result.status,
                 message: result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
         }
         return result.output
@@ -118,16 +141,40 @@ public struct ClusterCommands: Sendable {
         _ arguments: [String],
         timeout: Duration,
         output: ProcessRunner.OutputMode = .capture(includingStandardError: true),
-        kubeconfig: Kubeconfig = .managed
+        kubeconfig: Kubeconfig = .managed,
+        budget: ClusterCommandBudget? = nil
     ) async throws -> ProcessRunner.Result {
-        try prepareKubeconfig()
-        var environment = environment
-        environment["KUBECONFIG"] = (kubeconfig == .managed ? managedKubeconfig : userKubeconfig).path
-        let launch = Launch(
-            executablePath: containerPath, arguments: arguments, environment: environment, output: output,
-            timeout: timeout)
-        let spawn = spawn
-        return try await Task.detached { try spawn(launch) }.value
+        try await invoke(timeout: timeout, output: output, kubeconfig: kubeconfig, budget: budget) { _ in arguments }
+    }
+
+    private func invoke(
+        timeout: Duration,
+        output: ProcessRunner.OutputMode,
+        kubeconfig: Kubeconfig = .managed,
+        budget: ClusterCommandBudget?,
+        arguments: @escaping @Sendable (Duration) throws -> [String]
+    ) async throws -> ProcessRunner.Result {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(
+                    with: Result {
+                        if let budget, !budget.canLaunch { throw budget.timeoutError(containerPath) }
+                        try prepareKubeconfig()
+                        let now = budget?.now() ?? .now
+                        if let budget, now > budget.latestStart { throw budget.timeoutError(containerPath) }
+                        let available = budget.map { min(timeout, now.duration(to: $0.end)) } ?? timeout
+                        var environment = environment
+                        environment["KUBECONFIG"] = (kubeconfig == .managed ? managedKubeconfig : userKubeconfig).path
+                        return try spawn(
+                            Launch(
+                                executablePath: containerPath, arguments: arguments(available),
+                                environment: environment,
+                                output: output, timeout: available,
+                                deadline: budget.map { .init(end: now + available, latestStart: $0.latestStart) }
+                            ))
+                    })
+            }
+        }
     }
 
     func prepareKubeconfig() throws {
@@ -156,12 +203,30 @@ public struct ClusterCommands: Sendable {
     }
 
     private static let processRunnerSpawn: Spawn = { launch in
-        try ProcessRunner.run(
+        if let deadline = launch.deadline {
+            return try ProcessRunner.run(
+                executablePath: launch.executablePath, arguments: launch.arguments, output: launch.output,
+                environment: launch.environment, deadline: deadline)
+        }
+        return try ProcessRunner.run(
             executablePath: launch.executablePath,
             arguments: launch.arguments,
             output: launch.output,
             environment: launch.environment,
             timeout: launch.timeout
         )
+    }
+}
+
+struct ClusterCommandBudget: Sendable {
+    let end: ContinuousClock.Instant
+    let now: @Sendable () -> ContinuousClock.Instant
+
+    var remaining: Duration { now().duration(to: end) }
+    var latestStart: ContinuousClock.Instant { end - .seconds(5) }
+    var canLaunch: Bool { now() <= latestStart }
+
+    func timeoutError(_ containerPath: String) -> ProcessRunnerError {
+        .timedOut(executablePath: containerPath, seconds: 0)
     }
 }

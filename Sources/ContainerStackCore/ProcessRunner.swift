@@ -112,7 +112,7 @@ public enum ProcessRunner {
         }
     }
 
-    struct Deadline: Sendable {
+    struct Deadline: Equatable, Sendable {
         let end: ContinuousClock.Instant
         let latestStart: ContinuousClock.Instant
 

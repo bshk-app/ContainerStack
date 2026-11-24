@@ -41,23 +41,27 @@ public actor ClusterCapabilityCache {
 
 extension ClusterCommands {
     public func capability() async throws -> ClusterCapability {
+        try await capability(budget: nil)
+    }
+
+    func capability(budget: ClusterCommandBudget?) async throws -> ClusterCapability {
         let probe = ProcessRunner.diagnosticTimeout
-        guard try await launch(["system", "status"], timeout: probe).status == 0 else {
+        guard try await launch(["system", "status"], timeout: probe, budget: budget).status == 0 else {
             return .runtimeNotRunning
         }
-        let build = try await launch(["--version"], timeout: probe).output
-        if let known = await capabilityCache.value(for: build) {
+        let build = try await launch(["--version"], timeout: probe, budget: budget)
+        if build.status == 0, let known = await capabilityCache.value(for: build.output) {
             return known
         }
         var capability = ClusterCapability.capable
         for subcommand in ["start", "stop"] {
-            let help = try await launch(["cluster", subcommand, "--help"], timeout: probe)
+            let help = try await launch(["cluster", subcommand, "--help"], timeout: probe, budget: budget)
             guard help.status == 0 else { return .noClusterStart }
             if !ClusterCapability.usageNames(subcommand, in: help.output) {
                 capability = .noClusterStart
             }
         }
-        await capabilityCache.store(capability, for: build)
+        if build.status == 0 { await capabilityCache.store(capability, for: build.output) }
         return capability
     }
 }

@@ -1,5 +1,6 @@
 import DiagnosticTestSupport
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ContainerStackCore
@@ -19,7 +20,7 @@ struct ClusterDiagnosticsTests {
         let commands = clusterCommands(home, inventory: clusters)
         let check = await ClusterDiagnostics(
             commands: commands, client: DockerAPIClient(transport: transport),
-            probe: { _, _ in .notReady }
+            probe: { _, _, _ in .notReady }
         ).run()
         #expect(check.id == .clusters)
         #expect(check.verdict == .warning)
@@ -94,8 +95,8 @@ struct ClusterDiagnosticsTests {
         #expect(await !transport.paths.contains("/containers/n2/json"))
     }
 
-    @Test(arguments: [true, false])
-    func resetOrRefusalNeedsAllNodesAndEvidenceTheAPIAlreadyStarted(allRunning: Bool) async throws {
+    @Test(arguments: [true, false], [true, false])
+    func resetOrRefusalNeedsAllNodesAndEvidenceTheAPIAlreadyStarted(allRunning: Bool, created: Bool) async throws {
         let home = try TemporaryHome()
         let record = clusterJSON("dev", state: "running").replacingOccurrences(
             of: #""status":"running""#, with: allRunning ? #""status":"running""# : #""status":"exited""#)
@@ -103,15 +104,88 @@ struct ClusterDiagnosticsTests {
         let transport = nodeTransport(present: ["dev"])
         let diagnosis = ClusterDiagnostics(
             commands: commands, client: DockerAPIClient(transport: transport),
-            probe: { _, _ in .connectionRefusedOrReset })
+            probe: { _, _, _ in .connectionFailed })
         let beforeStart = await diagnosis.run()
         #expect(beforeStart.detail?.contains("Likely cause:") == false)
-        try await commands.start(name: "dev")
+        #expect(
+            beforeStart.detail?.contains(
+                "The API can still be starting if the cluster started in the last minute; else the runtime probably has "
+                    + "no Local Network permission. Allow container-runtime-linux in System Settings > Privacy & Security > Local Network."
+            ) == allRunning)
+        if created {
+            try await commands.create(name: "dev", options: [])
+        } else {
+            try await commands.start(name: "dev")
+        }
         let afterStart = await diagnosis.run()
         #expect(
             afterStart.detail?.contains(
                 "Likely cause: the runtime has no Local Network permission. Allow container-runtime-linux "
                     + "in System Settings > Privacy & Security > Local Network.") == allRunning)
+    }
+
+    @Test(arguments: [false, true])
+    func usesPriorProbesWithoutWaitingOrRetryingInAReport(interrupted: Bool) async throws {
+        let home = try TemporaryHome()
+        let start = ContinuousClock.now
+        let offset = Mutex(Duration.zero)
+        let probes = Mutex(0)
+        let commands = clusterCommands(home, inventory: "[\(clusterJSON("dev", state: "running"))]")
+        let diagnostic = ClusterDiagnostics(
+            commands: commands,
+            client: DockerAPIClient(transport: nodeTransport(present: ["dev"])),
+            now: { start + offset.withLock { $0 } },
+            probe: { _, _, _ in
+                probes.withLock { $0 += 1 }
+                return interrupted && offset.withLock({ $0 }) == .seconds(25) ? .notReady : .connectionFailed
+            })
+        for tick in 0...6 {
+            offset.withLock { $0 = .seconds(tick * 5) }
+            let check = await diagnostic.run()
+            #expect(probes.withLock { $0 } == tick + 1)
+            #expect(check.detail?.contains("Likely cause:") == (tick == 6 && !interrupted))
+        }
+    }
+
+    @Test func aRunningRecordWithAMissingNodeStillGetsOneProbeAndNoPermissionHint() async throws {
+        let home = try TemporaryHome()
+        let probes = Mutex(0)
+        let commands = clusterCommands(home, inventory: "[\(clusterJSON("dev", state: "running"))]")
+        let diagnostic = ClusterDiagnostics(
+            commands: commands,
+            client: DockerAPIClient(transport: nodeTransport(present: [])),
+            probe: { _, _, _ in
+                probes.withLock { $0 += 1 }
+                return .connectionFailed
+            })
+        let check = await diagnostic.run()
+        #expect(probes.withLock { $0 } == 1)
+        #expect(check.detail?.contains("Node missing:") == true)
+        #expect(check.detail?.contains("Local Network permission") == false)
+    }
+
+    @Test func capsTheProbeAtTheReportDeadlineAndSkipsItAfterExpiry() async throws {
+        let home = try TemporaryHome()
+        let start = ContinuousClock.now
+        let offset = Mutex(Duration.zero)
+        let limits = Mutex([Duration]())
+        let diagnostic = ClusterDiagnostics(
+            commands: clusterCommands(home, inventory: "[\(clusterJSON("dev", state: "running"))]"),
+            client: DockerAPIClient(transport: nodeTransport(present: ["dev"])),
+            now: { start + offset.withLock { $0 } },
+            probe: { _, _, limit in
+                limits.withLock { $0.append(limit) }
+                return .connectionFailed
+            })
+        let deadline = start + .milliseconds(500)
+        let withinBudget = await diagnostic.run(until: deadline)
+        #expect(withinBudget.verdict == .warning)
+        #expect(limits.withLock { $0 } == [.milliseconds(500)])
+
+        offset.withLock { $0 = .milliseconds(500) }
+        let expired = await diagnostic.run(until: deadline)
+        #expect(expired.verdict == .indeterminate)
+        #expect(limits.withLock { $0 } == [.milliseconds(500)])
     }
 
     private func clusterCommands(

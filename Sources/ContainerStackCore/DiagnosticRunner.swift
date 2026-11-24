@@ -342,12 +342,13 @@ public struct DiagnosticRunner: Sendable {
         let measurements = Measurements()
         let gate = CompletionGate()
         let started = ticks()
+        let deadline = ContinuousClock.now + budget
         _ = Task {
-            await gather(checks: checks, into: measurements)
+            await gather(checks: checks, into: measurements, deadline: deadline)
             await gate.signal()
         }
         let expiry = Task {
-            try? await Task.sleep(for: budget)
+            try? await Task.sleep(until: deadline)
             await gate.signal()
         }
         await gate.wait()
@@ -365,7 +366,9 @@ public struct DiagnosticRunner: Sendable {
 
     /// The groups that share no input. Concurrent with each other and sequential
     /// inside, so the request order NFR-001 pins is the order one socket still sees.
-    private func gather(checks: Set<CheckID>, into measurements: Measurements) async {
+    private func gather(
+        checks: Set<CheckID>, into measurements: Measurements, deadline: ContinuousClock.Instant
+    ) async {
         await withTaskGroup(of: Void.self) { group in
             group.addTask { await self.gatherOverTheAPI(checks: checks, into: measurements) }
             group.addTask {
@@ -388,7 +391,7 @@ public struct DiagnosticRunner: Sendable {
             }
             if checks.contains(.clusters), let clusterDiagnostics {
                 group.addTask {
-                    await measurements.clusters(clusterDiagnostics.run())
+                    await measurements.clusters(clusterDiagnostics.run(until: deadline))
                 }
             } else {
                 await measurements.clusters(Self.notRun(.clusters, took: .zero))

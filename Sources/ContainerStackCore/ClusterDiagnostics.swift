@@ -1,26 +1,39 @@
 import Foundation
 
 public struct ClusterDiagnostics: Sendable {
-    typealias Probe = @Sendable (KubernetesCluster, URL) async -> ClusterAPIReady.Observation
+    typealias Probe = @Sendable (KubernetesCluster, URL, Duration) async -> ClusterAPIReady.Result
 
     private let commands: ClusterCommands
     private let client: DockerAPIClient
     private let probe: Probe
+    private let history: ClusterAPIHistory
+    private let now: @Sendable () -> ContinuousClock.Instant
 
     public init(commands: ClusterCommands, client: DockerAPIClient) {
-        self.init(commands: commands, client: client, probe: Self.apiObservation)
+        self.init(commands: commands, client: client, history: .shared) { cluster, kubeconfig, timeout in
+            await ClusterAPIReady.observe(
+                endpoint: cluster.apiEndpoint, context: cluster.name, kubeconfig: kubeconfig, timeout: timeout)
+        }
     }
 
-    init(commands: ClusterCommands, client: DockerAPIClient, probe: @escaping Probe) {
+    init(
+        commands: ClusterCommands, client: DockerAPIClient, history: ClusterAPIHistory = .init(),
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }, probe: @escaping Probe
+    ) {
         self.commands = commands
         self.client = client
         self.probe = probe
+        self.history = history
+        self.now = now
     }
 
-    func run() async -> DiagnosticCheck {
-        let started = ContinuousClock.now
+    func run(until deadline: ContinuousClock.Instant? = nil) async -> DiagnosticCheck {
+        let started = now()
+        let deadline = deadline ?? started + DiagnosticRunner.defaultBudget
+        guard started < deadline else { return timedOut(started) }
         do {
             let capability = try await commands.capability()
+            guard now() < deadline else { return timedOut(started) }
             if capability != .capable {
                 return check(
                     capability == .noClusterStart ? .failure : .skipped,
@@ -28,30 +41,39 @@ public struct ClusterDiagnostics: Sendable {
             }
             let list = try await commands.list()
             let clusters = try KubernetesCluster.decodeList(Data(list.utf8))
-            return await measure(clusters, started: started)
+            guard now() < deadline else { return timedOut(started) }
+            return await measure(clusters, started: started, deadline: deadline)
         } catch {
+            guard now() < deadline else { return timedOut(started) }
             return check(
                 .failure, summary: "Kubernetes clusters: could not read inventory",
                 detail: String(describing: error), started: started)
         }
     }
 
-    private func measure(_ clusters: [KubernetesCluster], started: ContinuousClock.Instant) async -> DiagnosticCheck {
+    private func measure(
+        _ clusters: [KubernetesCluster], started: ContinuousClock.Instant, deadline: ContinuousClock.Instant
+    ) async -> DiagnosticCheck {
         let summary = "\(clusters.count) clusters, \(clusters.filter { $0.state == .running }.count) running"
         guard !clusters.isEmpty else { return check(.ok, summary: summary, detail: nil, started: started) }
 
-        let presentNodes = try? await Set(client.listClusterNodes().map(\.name))
+        let remaining = now().duration(to: deadline)
+        guard remaining > .zero else { return timedOut(started) }
+        let presentNodes = try? await Set(client.listClusterNodes(timeout: min(.seconds(5), remaining)).map(\.name))
         let kubeconfig = commands.managedKubeconfig
         let text = (try? String(contentsOf: kubeconfig, encoding: .utf8)) ?? ""
         let contexts = Set(KubeconfigCA.entries(of: "contexts", in: text).compactMap { $0["name"] })
         var issues = await withTaskGroup(of: [String].self) { group in
             for cluster in clusters {
-                group.addTask { await warnings(for: cluster, nodes: presentNodes, contexts: contexts) }
+                group.addTask {
+                    await warnings(for: cluster, nodes: presentNodes, contexts: contexts, deadline: deadline)
+                }
             }
             var details: [[String]] = []
             for await warnings in group where !warnings.isEmpty { details.append(warnings) }
             return details.sorted { ($0.first ?? "") < ($1.first ?? "") }.flatMap { $0 }
         }
+        guard now() < deadline else { return timedOut(started) }
         let verdict: Verdict
         if presentNodes == nil {
             verdict = issues.isEmpty ? .indeterminate : .warning
@@ -65,11 +87,23 @@ public struct ClusterDiagnostics: Sendable {
     }
 
     private func warnings(
-        for cluster: KubernetesCluster, nodes: Set<String>?, contexts: Set<String>
+        for cluster: KubernetesCluster, nodes: Set<String>?, contexts: Set<String>, deadline: ContinuousClock.Instant
     ) async -> [String] {
         let name = cluster.name
         var issues: [String] = []
         let missing = nodes.map { present in cluster.nodes.map(\.name).filter { !present.contains($0) } } ?? []
+        let remaining = now().duration(to: deadline)
+        guard remaining > .zero else { return [] }
+        let status =
+            cluster.state == .running
+            ? await probe(cluster, commands.managedKubeconfig, min(.seconds(3), remaining)) : .notReady
+        let observedAt = now()
+        guard observedAt < deadline else { return [] }
+        let connectionFailed = status == .connectionFailed && missing.isEmpty && allNodesRunning(cluster)
+        let persistent = history.record(
+            connectionFailed ? status : .notReady,
+            for: .init(endpoint: cluster.apiEndpoint, context: name, kubeconfig: commands.managedKubeconfig),
+            at: observedAt)
         if !missing.isEmpty {
             issues.append("\(name): Node missing: \(missing.joined(separator: ", "))")
         } else {
@@ -79,12 +113,11 @@ public struct ClusterDiagnostics: Sendable {
             case .degraded:
                 issues.append("\(name): Degraded")
             case .running:
-                let status = await probe(cluster, commands.managedKubeconfig)
                 if status != .ready { issues.append("\(name): API not ready") }
-                if status == .connectionRefusedOrReset, allNodesRunning(cluster),
-                    commands.sawSuccessfulStart(of: cluster)
-                {
-                    issues.append(Self.localNetworkLikelyCause)
+                if connectionFailed {
+                    issues.append(
+                        persistent || commands.sawSuccessfulStart(of: cluster)
+                            ? ClusterAPIReady.localNetworkHint : Self.localNetworkPossibleCause)
                 }
             }
         }
@@ -97,14 +130,14 @@ public struct ClusterDiagnostics: Sendable {
         return !cluster.nodes.isEmpty && cluster.nodes.allSatisfy { running.contains($0.name) }
     }
 
-    static let localNetworkLikelyCause =
-        "Likely cause: the runtime has no Local Network permission. Allow container-runtime-linux "
-        + "in System Settings > Privacy & Security > Local Network."
+    private static let localNetworkPossibleCause =
+        "The API can still be starting if the cluster started in the last minute; else the runtime probably has "
+        + "no Local Network permission. Allow container-runtime-linux in System Settings > Privacy & Security > Local Network."
 
-    private static func apiObservation(_ cluster: KubernetesCluster, _ kubeconfig: URL) async
-        -> ClusterAPIReady.Observation
-    {
-        await ClusterAPIReady.observe(endpoint: cluster.apiEndpoint, context: cluster.name, kubeconfig: kubeconfig)
+    private func timedOut(_ started: ContinuousClock.Instant) -> DiagnosticCheck {
+        check(
+            .indeterminate, summary: "Kubernetes clusters: could not check",
+            detail: DiagnosticRunner.budgetExpired, started: started)
     }
 
     private func check(
@@ -112,6 +145,6 @@ public struct ClusterDiagnostics: Sendable {
     ) -> DiagnosticCheck {
         DiagnosticCheck(
             id: .clusters, verdict: verdict, summary: summary, detail: detail, remedy: nil,
-            duration: started.duration(to: .now))
+            duration: started.duration(to: now()))
     }
 }

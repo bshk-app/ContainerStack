@@ -18,6 +18,8 @@ directory `k8s-fork`, cited as "k8s-fork"):
 - §2.5 limits: no StorageClass, a second start does not apply the control-plane network settings
   again, node IPs change at every start (F-208: nothing stores a node IP).
 - F-001: the fork branch, its base and its three commits.
+- F-209: the name must also end with a lowercase letter or digit (kubeadm endpoint). F-214: the
+  Doctor rule for the Local Network line.
 - §2.1: facts from the live list fixtures (absent keys, the port of a stopped control plane, an
   interrupted start that lists as running, one role per node).
 
@@ -368,6 +370,13 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   server inside the node before it exits, `ClusterBootstrapper+Start.swift:93-103`), or the checks
   have failed this way for 30 s in a row (six checks 5 s apart) [I: a starting API server can also
   refuse for a short time]. The app row (F-210), `cstack` (F-206) and Doctor (F-214) use this rule.
+  Doctor keeps its 20 s report limit (`DiagnosticRunner.swift:39`) and makes one F-205 check per
+  running cluster. When the process has a prior observation (30 s of the same failure, or its own
+  `create` or `start` that exited 0), Doctor shows the likely-cause line. With none (a fresh
+  `cstack doctor`), it shows a warning that names both causes: "The API can still be starting if
+  the cluster started in the last minute; else the runtime probably has no Local Network
+  permission. Allow container-runtime-linux in System Settings > Privacy & Security > Local
+  Network."
 - **Limits of F-205.** The kubeconfig reader reads the shape that the plugin writes; a file of
   another shape reads as no context (API not ready). The request uses the system proxy settings, so
   a proxy that does not exempt `127.0.0.1` or the FQDN can make the check fail.
@@ -418,7 +427,10 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   from the latest list and store no node IP. Files: `KubernetesView.swift`, `RuntimeViewModel+Clusters.swift` (new),
   `DashboardView.swift`.
 - **[F-209] Create form.** Name (lowercase letters, digits and `-`, 1 to 63 characters, the first
-  a lowercase letter or digit as the Runtime requires, `ClusterResource.swift:46-54`; unique among
+  a lowercase letter or digit as the Runtime requires, `ClusterResource.swift:46-54`, and the last a
+  lowercase letter or digit too: without an FQDN the fork gives kubeadm `<name>:6443` as the
+  control-plane endpoint, and kubeadm needs an RFC 1123 name,
+  `Support/ClusterHelper+Networking.swift:30-36` in `feat/cluster-start-stop`; unique among
   clusters); CPUs and memory with the Runtime defaults (`ClusterHelper.swift:34-40`); worker
   groups (count, CPUs, memory; at most 1024 in total); node image (default kindest/node v1.35.5);
   network plugin (kindnet, a manifest file, none); "Share my local images with the cluster" with the
@@ -573,7 +585,7 @@ SHA-256 as before.
 | F-204 | Two `start` requests in one process: the second begins after the first ends. | unit | App |
 | F-205 | A local TLS server with the cluster's CA: `ok` is API ready; a 500, a timeout, another CA are API not ready. | unit | App |
 | F-206 | Argument mapping for each subcommand; the shell's `KUBECONFIG` is not passed; exit codes. | unit | App |
-| F-207 to F-212 | View model tests over fixtures for each row of F-210, including a running control plane with a missing worker (Node missing wins over Degraded), a start that failed followed by `/readyz` `ok` (Start failed stays, Restart offered), and `running` with `/readyz` failing (API not ready); "Add to ~/.kube/config" refuses for a same-name context, for a same-name cluster referenced by another context, and for a same-name user, and the file is byte-equal after; the cleanup commands contain `--kubeconfig "$HOME/.kube/config"`; a name `-dev` is refused. | unit | App |
+| F-207 to F-212 | View model tests over fixtures for each row of F-210, including a running control plane with a missing worker (Node missing wins over Degraded), a start that failed followed by `/readyz` `ok` (Start failed stays, Restart offered), and `running` with `/readyz` failing (API not ready); "Add to ~/.kube/config" refuses for a same-name context, for a same-name cluster referenced by another context, and for a same-name user, and the file is byte-equal after; the cleanup commands contain `--kubeconfig "$HOME/.kube/config"`; the names `-dev` and `dev-` are refused. | unit | App |
 | F-213 | Plan order: `stopClusters` before `stopContainers`. With a fake clock and fake children: a list that times out ends the step with "cluster inventory unknown"; a first stop whose child ignores SIGTERM while two clusters wait: the step ends by the deadline plus the child-termination limit charged to it, the plan goes on, and the result names the first "left to system stop" and the others not reached; several probes that time out leave the later clusters "unproven"; `--time` is whole seconds and no stop starts when it would be 0. Publication: a superseded app plan shows no banner; a plan that fails after the step shows the banner while its token is current; `cstack` prints the result before the next step. Live after S4: `cstack runtime restart --yes` with a running cluster: "stopped in order"; the cluster is Stopped; `cstack cluster start` then brings a new node boot, a NodePort answer from the host and a pod DNS lookup (not only `/readyz`). | unit, live | App |
 | F-217 | Fixtures: `remove: true` gives "its nodes will be removed" in the question and "nodes removed" in the result only when the later list shows them gone; a probe output with `controlPlaneEndpoint: ""` or the key only in a comment is unproven; a non-empty key proves it; a preflight list failure gives "Cluster inventory unknown"; the time to answer the question is not charged; `cstack runtime restart` with no terminal and no `--yes` exits 1; an automatic restart asks nothing. | unit | App |
 | F-214 | Doctor fixtures for each warning; the memory total includes a node found only through the label filter. | unit | App |

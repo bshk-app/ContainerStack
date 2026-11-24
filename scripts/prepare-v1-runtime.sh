@@ -149,6 +149,7 @@ install_socktainer() {
 
 prepare() {
     require_command curl
+    require_command jq
     require_command shasum
     require_command pkgutil
     require_command installer

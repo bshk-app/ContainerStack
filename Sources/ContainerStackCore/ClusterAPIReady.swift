@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 import Security
 
@@ -14,11 +15,18 @@ public enum ClusterAPIReady {
         if error.domain == NSPOSIXErrorDomain {
             return [Int(ECONNREFUSED), Int(ECONNRESET)].contains(error.code) ? .connectionFailed : .notReady
         }
-        if error.userInfo["_kCFStreamErrorDomainKey"] as? Int == 1,
-            let code = error.userInfo["_kCFStreamErrorCodeKey"] as? Int,
-            [Int(ECONNREFUSED), Int(ECONNRESET)].contains(code)
+        if let streamDomain = error.userInfo["_kCFStreamErrorDomainKey"] as? Int,
+            let streamCode = error.userInfo["_kCFStreamErrorCodeKey"] as? Int
         {
-            return .connectionFailed
+            if streamDomain == 1, [Int(ECONNREFUSED), Int(ECONNRESET)].contains(streamCode) {
+                return .connectionFailed
+            }
+            if error.domain == NSURLErrorDomain, error.code == URLError.secureConnectionFailed.rawValue,
+                streamDomain == Int(kCFStreamErrorDomainSSL),
+                [Int(errSSLClosedNoNotify), Int(errSSLClosedAbort)].contains(streamCode)
+            {
+                return .connectionFailed
+            }
         }
         if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
             return classify(underlying)

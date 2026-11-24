@@ -3,6 +3,56 @@
     <channel>
         <title>ContainerStack</title>
         <item>
+            <title>0.12.0</title>
+            <pubDate>Tue, 24 Nov 2026 11:47:38 +0000</pubDate>
+            <sparkle:version>587</sparkle:version>
+            <sparkle:shortVersionString>0.12.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description><![CDATA[<p>Fixes for data loss in named volumes, in names that differ only in upper and lower case, and in <code class="notranslate">docker rename</code>. Update the app and the container runtime: <code class="notranslate">brew upgrade --cask containerstack</code> and <code class="notranslate">brew upgrade bshk-app/tap/container@1.7.1</code> (Apple Container 1.7.1-bshk.2). An app update through the app itself does not update the runtime.</p>
+<h3>Added</h3>
+<ul>
+<li><strong>Welcome window.</strong> It opens after the first install, after an update to a new major version, and after an update that adds a step to it. It shows what ContainerStack adds to Apple Container. One step installs the <code class="notranslate">cstack</code> command in your <code class="notranslate">PATH</code> and, after you agree, the agent skill. Open it again from Help › Welcome to ContainerStack; Help › What's New in ContainerStack shows these notes.</li>
+<li><strong>Settings in panes.</strong> Settings are grouped in a sidebar.</li>
+<li><strong>Window look.</strong> One surface color with thin lines between areas.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li><strong>Postgres volumes (0.1.0 to 0.11.0).</strong> Creating a container whose environment sets <code class="notranslate">PGDATA</code> (every official <code class="notranslate">postgres</code> image does) on a named volume that held data and still had <code class="notranslate">lost+found</code> replaced the volume with an empty file system. The usual trigger was <code class="notranslate">docker compose up</code> recreating a Postgres service on a volume that another container, the <code class="notranslate">container</code> CLI, or ContainerStack before 0.9.0 had filled. If a database went missing after a <code class="notranslate">compose up</code>, restore it from a backup: the volume no longer holds it.</li>
+<li><strong>Shared volumes (0.9.0 to 0.11.0).</strong> Creating a container on an empty named volume while another container ran on it replaced the volume under the running container, and that container's later writes were lost.</li>
+<li><strong>Names that differ only in case (all versions).</strong> On the macOS default file system, <code class="notranslate">web</code> and <code class="notranslate">Web</code> share one storage folder in Apple Container. A volume create under the second spelling erased the first volume's data; a container create under it, and a later delete, removed the first container's files; a machine create overwrote the first machine's configuration. Apple Container 1.7.1-bshk.2 refuses such a name, and Docker answers 409 "Conflict. The container name … is already in use by container …".</li>
+<li><strong><code class="notranslate">docker rename</code> (all versions).</strong> Apple Container cannot rename, so ContainerStack deleted the container and created it again: a container that had run lost every file that it wrote outside its volumes and bind mounts, and its logs.</li>
+<li><strong>A container whose stored state fails to load</strong> is kept at the next start of the runtime, not deleted.</li>
+<li><code class="notranslate">-v name:/path:nocopy</code> works; before, the container failed to start.</li>
+<li><code class="notranslate">cstack &lt;command&gt; --help</code> prints the usage instead of running the command, also when the help flag comes before <code class="notranslate">compose</code>.</li>
+<li>Container group dividers and the list rows have one style in every resource list.</li>
+</ul>
+<h3>Changed: what is now refused or only warned</h3>
+<ul>
+<li>A new volume is filled from the image (which also removes <code class="notranslate">lost+found</code>) only after the container was created, only when the volume is empty and clean, and only when no other container uses it, running or not. Otherwise the volume stays as it is, and <code class="notranslate">docker create</code>, <code class="notranslate">docker run</code> and <code class="notranslate">docker compose</code> print a warning that names the volume, says why, and says how to fix it.</li>
+<li><code class="notranslate">nocopy</code> (also <code class="notranslate">volume-nocopy=true</code>) is honoured as in Docker: the volume is not filled from that mount.</li>
+<li><code class="notranslate">docker rename</code> of a container that has run is refused with an error that says why. Create a new container under the new name from the same image instead, and copy data out of the old one first with <code class="notranslate">docker cp</code>. A container that was created and never started still renames, so <code class="notranslate">docker compose up</code> keeps re-creating services. A container that never ran can still be refused when ContainerStack cannot tell that it never ran: remove it and create it again.</li>
+<li>A rename to a name that differs from another container's name only in case is refused before anything changes, also when the runtime keeps its data on a case-sensitive volume, where it would have worked.</li>
+<li>A create that finds a folder left by an interrupted earlier create, with files in it, is refused with the folder's path and how to keep the files (<code class="notranslate">mv</code> it away). An empty folder is reused.</li>
+</ul>
+<h3>What to do when a volume was not prepared</h3>
+<p>When another container already uses a new volume, when two services that share one new volume are created at the same time, or when <code class="notranslate">nocopy</code> is set, ContainerStack does not prepare the volume. When the container needs the image's files there, or Postgres refuses to start because of <code class="notranslate">lost+found</code>:</p>
+<ol>
+<li>Stop every container that uses the volume.</li>
+<li>Copy the files in, or run <code class="notranslate">docker run --rm -v &lt;volume&gt;:/v busybox rmdir /v/lost+found</code>.</li>
+<li>Start the container again.</li>
+</ol>
+<p>Or start the container that fills the volume first, or point <code class="notranslate">PGDATA</code> at a subdirectory.</p>
+<h3>Known limitations</h3>
+<ul>
+<li>The rename check runs before the delete. A container started with the <code class="notranslate">container</code> CLI at that moment is not seen and loses its files, as before.</li>
+<li>A volume is filled from the image only when Apple Container keeps its data in its default folder.</li>
+<li>When a create is refused because a storage folder that belongs to no container, volume or machine holds files, the message suggests an <code class="notranslate">mv</code> command. That command fails when the folder's path contains an apostrophe or when the name is about 250 characters long. Move the folder away by hand.</li>
+<li>When a container that has no network exists under a name that differs only in case from <code class="notranslate">buildkit</code>, <code class="notranslate">container build</code> fails with a misleading message. The same is true for <code class="notranslate">container cluster create</code> and a container under the cluster's name in another case. No data is changed.</li>
+</ul>]]></description>
+            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.12.0/ContainerStack-0.12.0.dmg" length="24748366" type="application/octet-stream" sparkle:edSignature="a8UiOfbcCRu/Nlv/TIJ9cnSEubSFAzYu0P5ETYMCs7zQQOp8eRxZ6LoqmiABvPOW1KOVTdEcI2Ic1No3dk+CAQ=="/>
+        </item>
+        <item>
             <title>0.11.0</title>
             <pubDate>Tue, 17 Nov 2026 13:22:43 +0000</pubDate>
             <sparkle:version>559</sparkle:version>
@@ -298,54 +348,6 @@ helper dies; restarting only the containers does not repair the host route. Runn
 an image from the Images screen still waits for the container to exit before it<br>
 returns.</p>]]></description>
             <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.6.0/ContainerStack-0.6.0.dmg" length="22411815" type="application/octet-stream" sparkle:edSignature="K7hMPMh35N+LzcUSMm7150wICbPSW3Kb/XI6pAdupdh3htppOBOdycWHlkmdaZqr7Xoi0dgvEa8URthy1CAMDQ=="/>
-        </item>
-        <item>
-            <title>0.5.1</title>
-            <pubDate>Sun, 30 Aug 2026 14:45:29 +0000</pubDate>
-            <sparkle:version>222</sparkle:version>
-            <sparkle:shortVersionString>0.5.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description><![CDATA[<p>A maintenance release about one thing: the app telling the truth about the runtime.<br>
-A single dropped connection no longer blanks every list, a runtime that died no longer<br>
-leaves its containers on screen, and <code class="notranslate">cstack doctor</code> stops calling a network unroutable<br>
-when it simply could not be checked.</p>
-<h3>Fixed</h3>
-<ul>
-<li>One unanswered probe no longer empties the app. The 3-second monitor needs two<br>
-consecutive silences before it calls a healthy runtime offline, and the ping it asks<br>
-now retries a dropped connection the way every other read already did. Declaring the<br>
-runtime dead clears containers, images, volumes and networks and throws away a refresh<br>
-in flight, so being wrong once was expensive. Stop still shows its effect immediately:<br>
-silence with a known cause does not wait for a second opinion.</li>
-<li>The dashboard no longer keeps showing a dead runtime's containers. A runtime that<br>
-fails clears the inventory it described, an explicit failure outranks a lingering<br>
-"Starting", and a refresh still in flight when the runtime was declared dead can no<br>
-longer resurrect what it published.</li>
-<li><code class="notranslate">cstack doctor</code> tells "nothing publishes a port" apart from "nothing could be<br>
-checked". A missing routing table, or a network whose subnet is empty, is reported as<br>
-uncheckable rather than NO ROUTE, and only the networks a published port actually<br>
-depends on are judged.</li>
-<li>Stopping the runtime asks the containers to exit before the service goes down.</li>
-<li>Images Run and <code class="notranslate">cstack run</code> no longer give up after five seconds while a micro-VM<br>
-boots: starting and cleaning up a container get the same 120-second window as every<br>
-other VM operation. Run still waits for the container to exit before returning.</li>
-<li>The runtime helper no longer runs blind. When it cannot open<br>
-<code class="notranslate">~/Library/Logs/ContainerStack/runtime.log</code> it falls back to a temporary file and<br>
-records why the first destination failed, instead of returning silently — which left<br>
-a crash-looping helper indistinguishable from one that never started.</li>
-<li>Editing a Compose file validates through a uniquely named temporary file, so two<br>
-saves of the same stack can no longer collide next to your compose file.</li>
-<li>An icon that fails to load is now visibly wrong rather than invisible: release builds<br>
-draw a placeholder where a missing asset used to render as a control with no icon.</li>
-</ul>
-<h3>Known limitations</h3>
-<p>Published ports still require a runtime restart if a bridge-created network's vmnet<br>
-helper dies; restarting only the containers does not repair the host route.</p>
-<h3>Internal</h3>
-<p>Style gates — swift-format, SwiftLint and the comment-length hook — and the CI wiring<br>
-that runs them on every pull request. No user-visible change.</p>]]></description>
-            <enclosure url="https://github.com/bshk-app/ContainerStack/releases/download/v0.5.1/ContainerStack-0.5.1.dmg" length="22485713" type="application/octet-stream" sparkle:edSignature="rMNE4Ue4kR//GMJmrHYCdUnbKcVO4QTaardhMKPUMMFXLXSWTbt8LVnAxXWQuZtmETCTbYT317bQQvbdhfbSDA=="/>
         </item>
     </channel>
 </rss>

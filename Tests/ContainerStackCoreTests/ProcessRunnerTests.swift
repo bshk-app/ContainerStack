@@ -100,34 +100,29 @@ struct ProcessRunnerTests {
         #expect(started.duration(to: .now) < .seconds(10))
     }
 
-    @Test func absoluteDeadlineIncludesLaunchAndKillingAnUnresponsiveChild() async throws {
+    @Test func absoluteDeadlineIncludesLaunchAndKillingAnUnresponsiveChild() {
         let started = ContinuousClock.now
-        let pidFile = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: pidFile) }
+        let deadline = ProcessRunner.Deadline(end: started + .seconds(1), latestStart: started + .milliseconds(300))
+        var now = started + .milliseconds(200)
+        var waits: [Duration] = []
+        var signals: [Int32] = []
+        #expect(deadline.canStart(at: now))
+        #expect(!deadline.canStart(at: started + .milliseconds(301)))
 
-        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
-            DispatchQueue.global().async {
-                #expect(throws: ProcessRunnerError.self) {
-                    try ProcessRunner.run(
-                        executablePath: "/bin/sh",
-                        arguments: ["-c", "trap '' TERM; echo $$ > \"$1\"; exec /bin/sleep 30", "fake", pidFile.path],
-                        output: .captureSeparately,
-                        timeout: .seconds(1),
-                        registry: BoundedChildren(),
-                        deadline: .init(end: started + .seconds(1)),
-                        startDrain: { _, body in
-                            Thread.sleep(forTimeInterval: 0.1)
-                            Thread(block: body).start()
-                        }
-                    )
-                }
-                done.resume()
-            }
-        }
+        let timedOut = deadline.waitForExit(
+            gracePeriod: .milliseconds(500),
+            waitUntil: { cutoff in
+                waits.append(now.duration(to: cutoff))
+                now = cutoff
+                return signals.last == SIGKILL
+            },
+            terminate: { signals.append(SIGTERM) },
+            kill: { signals.append(SIGKILL) })
 
-        let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8).trimmingCharacters(in: .newlines)))
-        #expect(kill(pid, 0) == -1)
-        #expect(started.duration(to: .now) < .milliseconds(1300))
+        #expect(timedOut)
+        #expect(signals == [SIGTERM, SIGKILL])
+        #expect(waits == [.milliseconds(200), .milliseconds(500), .milliseconds(100)])
+        #expect(now == deadline.end)
     }
 
     @Test("the timeout error names the binary and the deadline")

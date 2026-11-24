@@ -120,6 +120,24 @@ public enum ProcessRunner {
             self.end = end
             self.latestStart = min(end, latestStart ?? end)
         }
+
+        func canStart(at instant: ContinuousClock.Instant) -> Bool {
+            instant <= latestStart
+        }
+
+        func waitForExit(
+            gracePeriod: Duration, waitUntil: (ContinuousClock.Instant) -> Bool,
+            terminate: () -> Void, kill: () -> Void
+        ) -> Bool {
+            let killBy = end - .milliseconds(100)
+            guard !waitUntil(killBy - gracePeriod) else { return false }
+            terminate()
+            if !waitUntil(killBy) {
+                kill()
+                _ = waitUntil(end)
+            }
+            return true
+        }
     }
 
     /// Runs `executablePath` and returns once it exits or the deadline passes.
@@ -208,7 +226,7 @@ public enum ProcessRunner {
             if try !registry.start(
                 process,
                 using: {
-                    if let deadline, ContinuousClock.now > deadline.latestStart { throw timeoutError }
+                    if let deadline, !deadline.canStart(at: .now) { throw timeoutError }
                     try process.run()
                 })
             {
@@ -229,7 +247,7 @@ public enum ProcessRunner {
 
         defer { registry.remove(process) }
         let timedOut = waitForExit(
-            process, exited: exited, timeout: timeout, gracePeriod: gracePeriod, deadline: deadline?.end)
+            process, exited: exited, timeout: timeout, gracePeriod: gracePeriod, deadline: deadline)
         finishDrain()
         if timedOut || deadline.map({ ContinuousClock.now >= $0.end }) == true { throw timeoutError }
 
@@ -287,24 +305,24 @@ public enum ProcessRunner {
 
     private static func waitForExit(
         _ process: Process, exited: DispatchSemaphore, timeout: Duration?,
-        gracePeriod: Duration, deadline: ContinuousClock.Instant?
+        gracePeriod: Duration, deadline: Deadline?
     ) -> Bool {
         guard let timeout else {
             exited.wait()
             return false
         }
-        let killReserve: Duration = .milliseconds(100)
-        let exitBy = deadline.map { dispatchDeadline($0 - gracePeriod - killReserve) } ?? (.now() + seconds(timeout))
-        guard exited.wait(timeout: exitBy) == .timedOut else { return false }
+        if let deadline {
+            return deadline.waitForExit(
+                gracePeriod: gracePeriod,
+                waitUntil: { exited.wait(timeout: dispatchDeadline($0)) == .success },
+                terminate: { process.terminate() },
+                kill: { kill(process.processIdentifier, SIGKILL) })
+        }
+        guard exited.wait(timeout: .now() + seconds(timeout)) == .timedOut else { return false }
         process.terminate()
-        let killBy = deadline.map { dispatchDeadline($0 - killReserve) } ?? (.now() + seconds(gracePeriod))
-        if exited.wait(timeout: killBy) == .timedOut {
+        if exited.wait(timeout: .now() + seconds(gracePeriod)) == .timedOut {
             kill(process.processIdentifier, SIGKILL)
-            if let deadline {
-                _ = exited.wait(timeout: dispatchDeadline(deadline))
-            } else {
-                exited.wait()
-            }
+            exited.wait()
         }
         return true
     }

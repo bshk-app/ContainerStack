@@ -10,6 +10,85 @@ import Testing
 @Suite("Runtime lifecycle acceptance")
 @MainActor
 struct RuntimeLifecycleAcceptanceTests {
+    @Test(arguments: [true, false])
+    func currentAutomaticRestartPublishesClusterResultAtTheEnd(succeeds: Bool) async {
+        let (model, runtime) = makeModel(client: Self.healthyClient())
+        runtime.agentIsRegistered = true
+        runtime.socketAnswers = true
+        model.steps.clusterPreflight = { _, _ in
+            Issue.record("Automatic recovery requested confirmation")
+            return "unexpected"
+        }
+        model.steps.stopClusters = { _, _, progress in
+            progress("dev")
+            await runtime.gates.pass("cluster")
+            return ["dev: stopped in order"]
+        }
+        let control = model.steps.control
+        model.steps.control = { step in
+            try await control(step)
+            if !succeeds, FakeRuntime.name(of: step) == "system stop" {
+                throw CocoaError(.fileWriteNoPermission)
+            }
+        }
+        await runtime.gates.hold("cluster")
+        await runtime.gates.hold("system stop")
+        let restart = Task {
+            await model.run(.restart(replacingSibling: false), origin: .recovery, observed: model.lifecycle.generation)
+        }
+        await runtime.gates.waitUntilEntered("cluster")
+        #expect(model.runtimeMessage == "Stopping cluster dev…")
+        #expect(model.clusterRestartResult.isEmpty)
+        await runtime.gates.release("cluster")
+        await runtime.gates.waitUntilEntered("system stop")
+        #expect(model.clusterRestartResult.isEmpty)
+        await runtime.gates.release("system stop")
+        #expect(await settled(restart) == .completed(succeeds))
+        #expect(model.clusterRestartResult == ["dev: stopped in order"])
+    }
+
+    @Test func supersededClusterOrSystemStopPublishesNoResult() async {
+        let (model, runtime) = makeModel(client: Self.healthyClient())
+        model.steps.stopClusters = { _, _, progress in
+            progress("dev")
+            await runtime.gates.pass("cluster")
+            return ["dev: stopped in order"]
+        }
+        await runtime.gates.hold("cluster")
+        let restart = Task { await model.restartRuntime() }
+        await runtime.gates.waitUntilEntered("cluster")
+        let stop = model.admit(.stop(replacingSibling: false), origin: .user)
+        await runtime.gates.release("cluster")
+        #expect(await settled(restart) == false)
+        #expect(await model.execute(.stop(replacingSibling: false), stop) == .completed(true))
+        #expect(model.clusterRestartResult.isEmpty)
+        #expect(runtime.performed.map(FakeRuntime.name(of:)) == ["stopBridge"])
+    }
+
+    @Test func manualRestartWaitsForConsentBeforeStoppingAnything() async {
+        let (model, runtime) = makeModel(client: Self.healthyClient())
+        runtime.agentIsRegistered = true
+        runtime.socketAnswers = true
+        model.steps.clusterPreflight = { _, _ in "Clusters dev stop and stay stopped." }
+        model.steps.confirmClusterRestart = { question in
+            #expect(question == "Clusters dev stop and stay stopped.")
+            await runtime.gates.pass("confirmation")
+            return true
+        }
+        model.steps.stopClusters = { _, _, _ in
+            await runtime.gates.pass("cluster")
+            return []
+        }
+        await runtime.gates.hold("confirmation")
+        let restart = Task { await model.restartRuntime() }
+        await runtime.gates.waitUntilEntered("confirmation")
+        #expect(await runtime.gates.count("cluster") == 0)
+        #expect(runtime.performed.isEmpty)
+        await runtime.gates.release("confirmation")
+        #expect(await settled(restart) == true)
+        #expect(await runtime.gates.count("cluster") == 1)
+    }
+
     @Test("F-001: a Start clicked while Restart is in system stop begins only after it returned")
     func startWaitsForRestartsSystemStop() async {
         let (model, runtime) = makeModel(client: Self.healthyClient())

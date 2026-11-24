@@ -40,6 +40,10 @@ extension RuntimeViewModel {
             lifecycleTickets[id] = ticket
             turn = .wait(ticket, token: id)
         }
+        if origin == .user, case .dropped = turn {
+            return turn
+        }
+        if origin == .user { manualLifecycleRevision &+= 1 }
         isStopping = lifecycle.latest.isStop
         return turn
     }
@@ -79,7 +83,19 @@ extension RuntimeViewModel {
     /// restart a person asked for, the only kind that may stop another copy's bridge (F-014).
     @discardableResult
     func restartRuntime(replacingSibling: Bool = false) async -> Bool {
-        await run(.restart(replacingSibling: replacingSibling), origin: .user) == .completed(true)
+        guard await confirmRuntimeRestart() else { return false }
+        return await run(.restart(replacingSibling: replacingSibling), origin: .user) == .completed(true)
+    }
+
+    func confirmRuntimeRestart() async -> Bool {
+        guard !isCheckingClusterRestart else { return false }
+        isCheckingClusterRestart = true
+        defer { isCheckingClusterRestart = false }
+        let observed = manualLifecycleRevision
+        let question = await steps.clusterPreflight(runtimeConfiguration()) { self.manualLifecycleRevision == observed }
+        guard manualLifecycleRevision == observed else { return false }
+        guard let question else { return true }
+        return await steps.confirmClusterRestart(question) && manualLifecycleRevision == observed
     }
 
     @discardableResult
@@ -244,9 +260,16 @@ extension RuntimeViewModel {
         runtimeRecoveryRequested = false
         isRestarting = true
         runtimeFailure = nil
+        var clusterResult: [String]?
         defer {
-            if lifecycle.isCurrent(token) { isRestarting = false }
+            if lifecycle.isCurrent(token) {
+                if let clusterResult { clusterRestartResult = clusterResult }
+                isRestarting = false
+            }
         }
+        let configuration = runtimeConfiguration()
+        clusterResult = bridgeOnly ? nil : await stopClusters(configuration, token: token)
+        guard lifecycle.isCurrent(token) else { return false }
         // A helper still alive here would make the `.startBridge` step a silent no-op (#71).
         await endRuntimeHelper()
         guard lifecycle.isCurrent(token) else { return false }
@@ -254,9 +277,10 @@ extension RuntimeViewModel {
         let agentRegistered = await self.steps.agentRegistered()
         guard lifecycle.isCurrent(token) else { return false }
         let plan = bridgeOnly ? RuntimeRestartPlan.bridgeSteps : RuntimeRestartPlan.steps
-        let steps = plan(runtimeConfiguration(), agentRegistered, replacingSibling)
+        let steps = plan(configuration, agentRegistered, replacingSibling)
         var launched = false
         for step in steps {
+            if case .stopClusters = step { continue }
             runtimeMessage = message(for: step)
             if step == .startBridge {
                 guard await launchAndWait(token: token) else { return false }
@@ -289,6 +313,16 @@ extension RuntimeViewModel {
                 }
             }
         )
+    }
+
+    private func stopClusters(_ configuration: RuntimeProcessConfiguration, token: Int) async -> [String]? {
+        await steps.stopClusters(
+            configuration,
+            { self.lifecycle.isCurrent(token) },
+            { name in
+                guard self.lifecycle.isCurrent(token) else { return }
+                self.runtimeMessage = "Stopping cluster \(name)…"
+            })
     }
 }
 

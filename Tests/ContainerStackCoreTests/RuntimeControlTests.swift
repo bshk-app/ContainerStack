@@ -159,6 +159,7 @@ struct RuntimeRestartPlanTests {
 
         #expect(
             steps == [
+                .stopClusters(executablePath: "/usr/local/bin/container"),
                 .stopBridge(
                     executablePath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer",
                     socketPath: nil
@@ -212,8 +213,9 @@ struct RuntimeRestartPlanTests {
         )
         let bridge = "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
 
-        #expect(automatic.first == .stopBridge(executablePath: bridge, socketPath: nil))
-        #expect(requested.first == .stopBridge(executablePath: bridge, socketPath: configuration.socketPath))
+        #expect(automatic.dropFirst().first == .stopBridge(executablePath: bridge, socketPath: nil))
+        #expect(
+            requested.dropFirst().first == .stopBridge(executablePath: bridge, socketPath: configuration.socketPath))
         #expect(
             RuntimeRestartPlan.stopSteps(configuration: configuration)
                 == [.stopBridge(executablePath: bridge, socketPath: nil)])

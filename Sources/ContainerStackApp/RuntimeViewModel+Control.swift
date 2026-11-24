@@ -144,6 +144,7 @@ extension RuntimeViewModel {
 
     func message(for step: RuntimeControlStep) -> String {
         switch step {
+        case .stopClusters: "Stopping Kubernetes clusters…"
         case .stopBridge: "Stopping Docker bridge…"
         case .stopContainers: "Asking containers to exit…"
         case .run(_, let arguments) where arguments.contains("stop"): "Stopping Apple Container…"
@@ -158,6 +159,8 @@ extension RuntimeViewModel {
 enum RuntimeShell {
     static func perform(_ step: RuntimeControlStep) async throws {
         switch step {
+        case .stopClusters:
+            preconditionFailure("The lifecycle handles the cluster step.")
         case .stopBridge(let executablePath, let socketPath):
             try await Task.detached {
                 try RuntimeShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
@@ -170,7 +173,7 @@ enum RuntimeShell {
                 try RuntimeShell.run(
                     executablePath: executablePath,
                     arguments: RuntimeControlStep.stopContainersArguments(graceSeconds: graceSeconds),
-                    timeout: .seconds(graceSeconds + 10)
+                    timeout: RuntimeControlStep.stopContainersTimeout(graceSeconds: graceSeconds)
                 )
             }.value
         case .run(let executablePath, let arguments):

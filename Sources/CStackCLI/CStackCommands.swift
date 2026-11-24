@@ -246,7 +246,7 @@ extension CStackCLI {
                                      Point the docker CLI at this runtime
 
             Runtime:
-              runtime [restart|stop|start]
+              runtime [restart [--yes]|stop|start]
                                      Recover the runtime when ports stop working
 
             Kubernetes:

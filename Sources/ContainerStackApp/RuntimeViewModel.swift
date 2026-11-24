@@ -46,6 +46,9 @@ final class RuntimeViewModel {
     var dockerContextMutationWaiters: [CheckedContinuation<Void, Never>] = []
     let dockerContextTakeoverPreference: DockerContextTakeoverPreference
     internal(set) var runtimeFailure: String?
+    var clusterRestartResult: [String] = []
+    @ObservationIgnored var isCheckingClusterRestart = false
+    @ObservationIgnored var manualLifecycleRevision = 0
     internal(set) var isRestarting = false
     /// Raised by a stop that lost the XPC connection, consumed by the monitor poll: the poll is the
     /// only place that restarts the runtime, so a failed stop and a probe can never race two

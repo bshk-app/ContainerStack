@@ -70,5 +70,6 @@ let package = Package(
             dependencies: ["ContainerStackApp", "DiagnosticTestSupport"],
             path: "Tests/ContainerStackAppTests"
         ),
+        .testTarget(name: "CStackCLITests", dependencies: ["CStackCLI", "ContainerStackCore"]),
     ]
 )

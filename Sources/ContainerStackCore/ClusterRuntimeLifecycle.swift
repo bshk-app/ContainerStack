@@ -17,6 +17,14 @@ public struct ClusterRuntimeLifecycle: Sendable {
         self.now = now
     }
 
+    public init(containerPath: String, client: DockerAPIClient, home: URL, environment: [String: String]) {
+        self.init(
+            commands: ClusterCommands(containerPath: containerPath, home: home, environment: environment),
+            listNodes: { timeout in
+                Set(try await client.listClusterNodes(timeout: timeout).map(\.name))
+            })
+    }
+
     @MainActor
     public func preflight(isCurrent: () -> Bool = { true }) async -> String? {
         let budget = ClusterCommandBudget(end: now() + .seconds(30), now: now)

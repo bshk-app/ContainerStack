@@ -60,102 +60,127 @@ private enum RuntimeControlError: Error, CustomStringConvertible {
     }
 }
 
-extension CStackCLI {
-    static func runtimeControl(_ invocation: CStackInvocation) throws {
-        let configuration = runtimeConfiguration(socketPath: invocation.socketPath)
+@MainActor
+struct RuntimeCLI {
+    let preflight: () async -> String?
+    let stopClusters: () async -> [String]
+    let runStep: (RuntimeControlStep) throws -> String?
+    let agentRegistered: () -> Bool
+    let write: (String) -> Void
+    let writeError: (String) -> Void
+    var readConfirmation: (() -> Bool)?
 
+    func run(_ invocation: CStackInvocation, configuration: RuntimeProcessConfiguration) async throws -> Int32 {
         switch invocation.positional.first {
         case "restart", .none:
-            let failed = try apply(
-                RuntimeRestartPlan.steps(
-                    configuration: configuration,
-                    agentRegistered: agentRegistered(),
-                    replacingSibling: true
-                ),
-                configuration: configuration
-            )
-            guard failed.isEmpty else {
-                throw RuntimeControlError.incompleteRestart(failedSteps: failed.count)
+            if let question = await preflight(), !invocation.isSet("yes") {
+                guard let readConfirmation else {
+                    writeError(question + "\n")
+                    return 1
+                }
+                writeError(question + " [y/N] ")
+                guard readConfirmation() else { return 1 }
             }
-            print("Runtime restarted. Check with: cstack doctor")
+            let steps = RuntimeRestartPlan.steps(
+                configuration: configuration, agentRegistered: agentRegistered(), replacingSibling: true)
+            let failed = try await apply(steps)
+            guard failed == 0 else { throw RuntimeControlError.incompleteRestart(failedSteps: failed) }
+            write("Runtime restarted. Check with: cstack doctor\n")
         case "stop":
-            try apply(
-                RuntimeRestartPlan.stopSteps(configuration: configuration, replacingSibling: true),
-                configuration: configuration
-            )
-            print("Docker bridge stopped. Apple Container is still running.")
+            _ = try await apply(RuntimeRestartPlan.stopSteps(configuration: configuration, replacingSibling: true))
+            write("Docker bridge stopped. Apple Container is still running.\n")
         case "start":
-            try apply([.startBridge], configuration: configuration)
-            print("Docker bridge starting. Check with: cstack doctor")
+            _ = try await apply([.startBridge])
+            write("Docker bridge starting. Check with: cstack doctor\n")
         case let other?:
-            fputs("cstack runtime: unknown action '\(other)'\n", stderr)
-            exit(64)
+            writeError("cstack runtime: unknown action '\(other)'\n")
+            return 64
         }
+        return 0
     }
 
-    /// Returns the steps that failed. Apple Container's `system stop`/`start` are
-    /// best-effort inside a recovery sequence, so a non-zero exit, launch failure,
-    /// or timeout is reported rather than aborting the remaining steps — but an
-    /// incomplete sequence must still make `cstack` exit non-zero.
-    @discardableResult
-    private static func apply(
-        _ steps: [RuntimeControlStep],
-        configuration: RuntimeProcessConfiguration
-    ) throws -> [String] {
-        var failed: [String] = []
+    private func apply(_ steps: [RuntimeControlStep]) async throws -> Int {
+        var failed = 0
         for step in steps {
-            switch step {
-            case .stopBridge(let executablePath, let socketPath):
-                let stopped = try CommandShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
-                print("Stopped \(stopped) bridge process(es)")
-            case .stopContainers(let executablePath, let graceSeconds):
-                // Advisory on purpose, and so deliberately absent from `failed`: an idle machine has
-                // nothing to stop, and a wedged daemon cannot answer. Neither means the restart
-                // failed, and neither may stop the sequence reaching `system stop`.
-                print("Asking containers to exit (\(graceSeconds)s grace)")
-                _ = try? CommandShell.run(
-                    executablePath: executablePath,
-                    arguments: RuntimeControlStep.stopContainersArguments(graceSeconds: graceSeconds),
-                    timeout: .seconds(graceSeconds + 10)
-                )
-            case .run(let executablePath, let arguments):
-                let description = "\(executablePath) \(arguments.joined(separator: " "))"
-                print("Running \(description)")
-                do {
-                    let status = try CommandShell.run(
-                        executablePath: executablePath,
-                        arguments: arguments
-                    )
-                    if status != 0 {
-                        failed.append(description)
-                        fputs("warning: \(description) exited with status \(status)\n", stderr)
-                    }
-                } catch {
-                    failed.append(description)
-                    fputs("warning: \(description) failed: \(error)\n", stderr)
-                }
-            case .startBridge:
-                print("Starting \(configuration.socktainerPath)")
-                try startBridge(configuration: configuration)
-            case .kickstartAgent(let label):
-                let description = "launchctl kickstart gui/\(getuid())/\(label)"
-                print("Restarting LaunchAgent \(label)")
-                do {
-                    let status = try CommandShell.run(
-                        executablePath: "/bin/launchctl",
-                        arguments: ["kickstart", "-k", "gui/\(getuid())/\(label)"]
-                    )
-                    if status != 0 {
-                        failed.append(description)
-                        fputs("warning: \(description) exited with status \(status)\n", stderr)
-                    }
-                } catch {
-                    failed.append(description)
-                    fputs("warning: \(description) failed: \(error)\n", stderr)
-                }
+            if case .stopClusters = step {
+                for line in await stopClusters() { write(line + "\n") }
+            } else if try runStep(step) != nil {
+                failed += 1
             }
         }
         return failed
+    }
+}
+
+extension CStackCLI {
+    @MainActor
+    static func runtimeControl(_ invocation: CStackInvocation, client: DockerAPIClient) async throws -> Int32 {
+        let configuration = runtimeConfiguration(socketPath: invocation.socketPath)
+        let clusters = ClusterRuntimeLifecycle(
+            containerPath: configuration.containerPath, client: client,
+            home: FileManager.default.homeDirectoryForCurrentUser, environment: ProcessInfo.processInfo.environment)
+        let cli = RuntimeCLI(
+            preflight: { await clusters.preflight() },
+            stopClusters: { await clusters.stopClusters() ?? [] },
+            runStep: { try perform($0, configuration: configuration) },
+            agentRegistered: agentRegistered,
+            write: writeRuntimeOutput,
+            writeError: { FileHandle.standardError.write(Data($0.utf8)) },
+            readConfirmation: isatty(STDIN_FILENO) == 1
+                ? {
+                    let answer = readLine()?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    return answer == "y" || answer == "yes"
+                } : nil
+        )
+        return try await cli.run(invocation, configuration: configuration)
+    }
+
+    private static func writeRuntimeOutput(_ value: String) {
+        FileHandle.standardOutput.write(Data(value.utf8))
+    }
+
+    private static func perform(
+        _ step: RuntimeControlStep,
+        configuration: RuntimeProcessConfiguration
+    ) throws -> String? {
+        switch step {
+        case .stopClusters:
+            preconditionFailure("RuntimeCLI handles the cluster step.")
+        case .stopBridge(let executablePath, let socketPath):
+            let stopped = try CommandShell.terminateBridge(executablePath: executablePath, socketPath: socketPath)
+            writeRuntimeOutput("Stopped \(stopped) bridge process(es)\n")
+        case .stopContainers(let executablePath, let graceSeconds):
+            writeRuntimeOutput("Asking containers to exit (\(graceSeconds)s grace)\n")
+            _ = try? CommandShell.run(
+                executablePath: executablePath,
+                arguments: RuntimeControlStep.stopContainersArguments(graceSeconds: graceSeconds),
+                timeout: RuntimeControlStep.stopContainersTimeout(graceSeconds: graceSeconds))
+        case .run(let executablePath, let arguments):
+            let description = "\(executablePath) \(arguments.joined(separator: " "))"
+            writeRuntimeOutput("Running \(description)\n")
+            return runRecoveryCommand(executablePath, arguments, description: description)
+        case .startBridge:
+            writeRuntimeOutput("Starting \(configuration.socktainerPath)\n")
+            try startBridge(configuration: configuration)
+        case .kickstartAgent(let label):
+            let target = "gui/\(getuid())/\(label)"
+            writeRuntimeOutput("Restarting LaunchAgent \(label)\n")
+            return runRecoveryCommand(
+                "/bin/launchctl", ["kickstart", "-k", target],
+                description: "launchctl kickstart \(target)")
+        }
+        return nil
+    }
+
+    private static func runRecoveryCommand(_ path: String, _ arguments: [String], description: String) -> String? {
+        do {
+            let status = try CommandShell.run(executablePath: path, arguments: arguments)
+            guard status != 0 else { return nil }
+            fputs("warning: \(description) exited with status \(status)\n", stderr)
+        } catch {
+            fputs("warning: \(description) failed: \(error)\n", stderr)
+        }
+        return description
     }
 
     static func cluster(_ invocation: CStackInvocation) async -> Never {

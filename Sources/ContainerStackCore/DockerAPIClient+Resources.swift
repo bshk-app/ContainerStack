@@ -299,6 +299,15 @@ extension DockerAPIClient {
         return try await decode([DockerContainerSummary].self, response: response).map(\.id)
     }
 
+    static let clusterNodesPath =
+        "/containers/json?all=1&filters=%7B%22label%22%3A%5B%22com.apple.container.plugin%3Dcluster%22%5D%7D"
+
+    public func listClusterNodes(timeout: Duration = .seconds(5)) async throws -> [DockerContainerSummary] {
+        try await decode(
+            [DockerContainerSummary].self,
+            response: request(method: "GET", path: Self.clusterNodesPath, timeout: timeout))
+    }
+
     /// The diagnostic read of the micro-VM size: `requestRetryingImmediateFailures` excludes
     /// `.timedOut`, so a wedged socket is waited on once per container, not three times (NFR-002).
     func memoryLimitBytes(containerID: String) async throws -> Int64? {

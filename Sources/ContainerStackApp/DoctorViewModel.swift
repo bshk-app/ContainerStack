@@ -142,6 +142,10 @@ final class DoctorViewModel {
     func perform(_ action: DoctorAction) async {
         guard canPerform(action) else { return }
         repairing = action
+        if action == .restartRuntime, await !repairs.confirmRuntimeRestart() {
+            repairing = nil
+            return
+        }
         repairFailure = nil
         report = nil
         owesRun = true
@@ -283,6 +287,7 @@ struct DoctorRepairs {
     var isRuntimeRestarting: @MainActor () -> Bool
     var runtimeMessage: @MainActor () -> String? = { nil }
     var runtimeFailure: @MainActor () -> String? = { nil }
+    var confirmRuntimeRestart: @MainActor () async -> Bool = { true }
 
     /// For a model with nothing to repair through: every remedy is unavailable.
     static var unavailable: DoctorRepairs {
@@ -299,12 +304,16 @@ extension DoctorRepairs {
     /// The app's own: its restart, its context-record repair, and its restart state.
     init(runtime: RuntimeViewModel) {
         self.init(
-            restartRuntime: { [weak runtime] in await runtime?.restartRuntime(replacingSibling: true) ?? false },
+            restartRuntime: { [weak runtime] in
+                guard let runtime else { return false }
+                return await runtime.run(.restart(replacingSibling: true), origin: .user) == .completed(true)
+            },
             repairDockerContext: { [weak runtime] in await runtime?.repairDockerContextRecord() ?? false },
             canRestartRuntime: { [weak runtime] in runtime?.canRestartRuntime ?? false },
             isRuntimeRestarting: { [weak runtime] in runtime?.isRestarting ?? false },
             runtimeMessage: { [weak runtime] in runtime?.runtimeMessage },
-            runtimeFailure: { [weak runtime] in runtime?.runtimeFailure }
+            runtimeFailure: { [weak runtime] in runtime?.runtimeFailure },
+            confirmRuntimeRestart: { [weak runtime] in await runtime?.confirmRuntimeRestart() ?? false }
         )
     }
 }

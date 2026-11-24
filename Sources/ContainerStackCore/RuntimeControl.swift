@@ -110,6 +110,7 @@ public enum LegacySocktainerRetirement {
 }
 
 public enum RuntimeControlStep: Equatable, Sendable {
+    case stopClusters(executablePath: String)
     /// With a socket, another ContainerStack copy's bridge holding it is stopped too (F-014, see
     /// `BridgeOwnership.pidsToStop`). Nil leaves the holder alone: only a person asks for that.
     case stopBridge(executablePath: String, socketPath: String?)
@@ -128,6 +129,10 @@ public enum RuntimeControlStep: Equatable, Sendable {
     /// The command behind `stopContainers`, kept here so both executors spell it the same way.
     public static func stopContainersArguments(graceSeconds: Int) -> [String] {
         ["stop", "--all", "--time", String(graceSeconds)]
+    }
+
+    public static func stopContainersTimeout(graceSeconds: Int) -> Duration {
+        .seconds(graceSeconds + 10)
     }
 }
 
@@ -148,20 +153,21 @@ public enum RuntimeRestartPlan {
         agentRegistered: Bool,
         replacingSibling: Bool = false
     ) -> [RuntimeControlStep] {
-        stopSteps(configuration: configuration, replacingSibling: replacingSibling) + [
-            // `container system stop` stops the services, and the running guests go down with them
-            // without being asked to exit. Anything holding a filesystem open across that loses the
-            // writes it had not flushed: recovering a wedged network this way once left postgres
-            // reporting `database system was not properly shut down` and an ext4 that needed
-            // `e2fsck` before it would mount.
-            .stopContainers(
-                executablePath: configuration.containerPath,
-                graceSeconds: gracefulStopSeconds
-            ),
-            .run(executablePath: configuration.containerPath, arguments: ["system", "stop"]),
-            .run(executablePath: configuration.containerPath, arguments: configuration.containerStartArguments),
-            bridgeStart(agentRegistered: agentRegistered),
-        ]
+        [.stopClusters(executablePath: configuration.containerPath)]
+            + stopSteps(configuration: configuration, replacingSibling: replacingSibling) + [
+                // `container system stop` stops the services, and the running guests go down with them
+                // without being asked to exit. Anything holding a filesystem open across that loses the
+                // writes it had not flushed: recovering a wedged network this way once left postgres
+                // reporting `database system was not properly shut down` and an ext4 that needed
+                // `e2fsck` before it would mount.
+                .stopContainers(
+                    executablePath: configuration.containerPath,
+                    graceSeconds: gracefulStopSeconds
+                ),
+                .run(executablePath: configuration.containerPath, arguments: ["system", "stop"]),
+                .run(executablePath: configuration.containerPath, arguments: configuration.containerStartArguments),
+                bridgeStart(agentRegistered: agentRegistered),
+            ]
     }
 
     /// Restarts only the bridge, so a new socktainer reads config.toml again. The new helper runs

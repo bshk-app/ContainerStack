@@ -18,6 +18,10 @@ directory `k8s-fork`, cited as "k8s-fork"):
 - §2.5 limits: no StorageClass, a second start does not apply the control-plane network settings
   again, node IPs change at every start (F-208: nothing stores a node IP).
 - F-001: the fork branch, its base and its three commits.
+- F-213: the step starts with `system status`; a user with no Kubernetes sees no change in a
+  restart; start evidence is cleared. F-217: a stopped runtime, one without cluster commands, or a
+  failed status probe asks nothing; `--yes` skips the preflight. F-205: the TLS form of a reset.
+  F-206: the likely-cause line in `create` and `start`. F-207: an empty `~/.kube/config`.
 - F-209: the name must also end with a lowercase letter or digit (kubeadm endpoint). F-214: the
   Doctor rule for the Local Network line.
 - §2.1: facts from the live list fixtures (absent keys, the port of a stopped control plane, an
@@ -369,7 +373,10 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   create` or `cluster start` by this process exited 0 before the check (the plugin waits for the API
   server inside the node before it exits, `ClusterBootstrapper+Start.swift:93-103`), or the checks
   have failed this way for 30 s in a row (six checks 5 s apart) [I: a starting API server can also
-  refuse for a short time]. The app row (F-210), `cstack` (F-206) and Doctor (F-214) use this rule.
+  refuse for a short time]. A connection reset is also the form that URLSession gives for a TLS
+  connection that resets: `secureConnectionFailed` with the SSL stream error `errSSLClosedAbort` or
+  `errSSLClosedNoNotify` (`ClusterAPIReady.classify`). A runtime restart clears start evidence as
+  F-213 says. The app row (F-210), `cstack` (F-206) and Doctor (F-214) use this rule.
   Doctor keeps its 20 s report limit (`DiagnosticRunner.swift:39`) and makes one F-205 check per
   running cluster. When the process has a prior observation (30 s of the same failure, or its own
   `create` or `start` that exited 0), Doctor shows the likely-cause line. With none (a fresh
@@ -395,8 +402,9 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   `cstack` uses `~/.containerstack/kubeconfig` and ignores the shell's `KUBECONFIG`. Progress on
   stderr unchanged. After `start` and `create` exit 0, `cstack` checks F-205: a probe every 5 s,
   each with a 3 s limit, for at most 30 s. When the API is not ready, it prints "To recover, run
-  'cstack cluster stop <name>', then 'cstack cluster start <name>'." and exits 1; when the Local
-  Network rule of F-205 matches, it prints the likely-cause line first. A cluster with no
+  'cstack cluster stop <name>', then 'cstack cluster start <name>'." and exits 1. `create` and
+  `start` print the likely-cause line of F-205 first when the last check failed with a connection
+  reset or refusal and every node runs (the command's own exit 0 is the start evidence). A cluster with no
   published API port and no FQDN skips the check, and `cstack` says so. An option written as
   `--opt=value` is a usage error. Exit codes: 0 done; 1 the Runtime command failed, the API is not
   ready, or the kubeconfig alias refusal (F-202); 64 usage; 69 the runtime does not run or has no
@@ -408,7 +416,9 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
   inspector shows two lines with copy buttons:
   `kubectl --kubeconfig ~/.containerstack/kubeconfig --context <name> get nodes` and
   `export KUBECONFIG=~/.containerstack/kubeconfig`. The action "Add to ~/.kube/config…" first
-  reads `$HOME/.kube/config` (read only). When a cluster, context or user named <name> exists
+  reads `$HOME/.kube/config` (read only); an empty or comment-only file counts as no entries, and
+  it is written (`apiVersion: v1`, `kind: Config` added, comments kept) only after the user
+  confirms Add Context. When a cluster, context or user named <name> exists
   there, it refuses: "~/.kube/config already has a cluster, context or user named <name>. container
   would replace it. Remove it first or use the ContainerStack kubeconfig." There is no replace
   option in version 1. Else it asks: "container rewrites the whole file ~/.kube/config. Keys it does
@@ -467,6 +477,14 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
 - **[F-213] Stop clusters before `system stop`.** `RuntimeRestartPlan.steps`
   (`RuntimeControl.swift:146-165`) gets a first step `stopClusters`, advisory like
   `stopContainers` (`RuntimeControl.swift:116-123`): it never stops the plan.
+  - The step starts with `container system status` under the usual 10 s diagnostic limit
+    (`ProcessRunner.diagnosticTimeout`). When it reports the runtime stopped, or a running runtime
+    has no cluster commands (F-203), the inventory is empty and the step gives no cluster result.
+    When `system status` fails or times out, the step does not run `cluster list` and the plan goes
+    on to the recovery steps; the step writes "cluster inventory unknown: running clusters may have
+    been stopped" only when the managed kubeconfig has at least one context. So a user with no
+    Kubernetes sees no change in any restart (`ClusterRuntimeLifecycle.swift`, `inventory`,
+    `unknownInventoryResult`).
   - One monotonic deadline, 120 s from the start of the step, covers the list, the F-217 probes and
     all stops. Process queueing, launch, termination and output drain are charged to it: each
     child process gets the time left as its limit, and the step does not start a child when less
@@ -478,7 +496,12 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
     steps as today.
   - Result per cluster: "stopped in order"; "left to system stop" (not reached, or its stop failed
     or timed out); "nodes removed" only when a later list shows that its nodes are gone; when the
-    list failed, one line "cluster inventory unknown".
+    list failed, or the F-203 probe failed on a running runtime, one line "cluster inventory
+    unknown".
+  - Start evidence (the F-205 Local Network rule): the plan clears the start evidence of each
+    listed cluster whose stop was skipped or failed, and all records for the runtime when the
+    inventory was unknown or the plan ran `system stop`
+    (`RuntimeControlStep.clearClusterStartEvidenceAfterStep`).
   - Publication follows the lifecycle queue contract (`docs/specs/2026-10-07-runtime-lifecycle-queue.md`
     F-002 and §3.5). `cstack runtime restart` prints the result when the step settles, before the
     next step. The app checks its token after the list, after each probe and after each stop; it
@@ -515,6 +538,11 @@ Runtime `Sources/ContainerCommands/DefaultCommand.swift:36-38,69-84`].
     stopped." With no running cluster it asks nothing. When the preflight list fails, the question
     says "Cluster inventory unknown: running clusters may stop." `cstack runtime restart` asks
     `[y/N]` on a terminal; with no terminal it exits 1 with that text unless `--yes` is given.
+    `--yes` skips the preflight. When the preflight finds the runtime stopped or without cluster
+    commands, or its `system status` fails or times out, the restart goes on with no question and
+    needs no `--yes`; the restart takes that result and does not run the status probe or `cluster
+    list` again. When the runtime supports clusters and the preflight `cluster list` fails, the
+    inventory-unknown question stays.
   - `cstack runtime stop` and the app's "Stop Runtime" stop only the bridge and touch no cluster
     (§2.1), so they do not ask.
   - Automatic restarts (poll recovery, stale bridge) have no user to ask and exist to recover a hung

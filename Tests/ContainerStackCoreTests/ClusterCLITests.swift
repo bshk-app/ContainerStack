@@ -47,6 +47,22 @@ private actor Counter {
 }
 
 struct ClusterCLITests {
+    @Test(arguments: ["create", "start"], [true, false])
+    func readinessFailurePrintsPermissionHintOnlyWhenAllNodesRun(command: String, allRunning: Bool) async throws {
+        let json = String(decoding: clusterListFixture, as: UTF8.self)
+        let listing =
+            allRunning ? json : json.replacingOccurrences(of: #""status":"running""#, with: #""status":"exited""#)
+        let (status, output, _) = try await run(
+            [command, "cs-spec"], runtime(listJSON: listing), apiObservation: { _, _ in .connectionFailed })
+        #expect(status == 1)
+        #expect(output.standardError.contains(ClusterAPIReady.localNetworkHint) == allRunning)
+        let recovery = "To recover, run 'cstack cluster stop cs-spec', then 'cstack cluster start cs-spec'."
+        #expect(output.standardError.contains(recovery))
+        if allRunning {
+            #expect(output.standardError.hasPrefix(ClusterAPIReady.localNetworkHint + "\n"))
+        }
+    }
+
     private static let capableHelp: [String: String] = [
         "start": "USAGE: cluster start [--name <name>]",
         "stop": "USAGE: cluster stop [--name <name>]",
@@ -77,7 +93,8 @@ struct ClusterCLITests {
         environment: [String: String] = [:],
         apiReady: @escaping @Sendable (KubernetesCluster, Duration) async -> Bool = { _, _ in true },
         readyWait: ClusterCLI.ReadyWait = .init(interval: .seconds(5), probe: .seconds(3), limit: .seconds(30)),
-        clock: ReadinessTestClock = ReadinessTestClock()
+        clock: ReadinessTestClock = ReadinessTestClock(),
+        apiObservation: (@Sendable (KubernetesCluster, Duration) async -> ClusterAPIReady.Result)? = nil
     ) async throws -> (Int32, Output, URL) {
         let home = try TemporaryHome()
         let output = Output()
@@ -85,7 +102,10 @@ struct ClusterCLITests {
             containerPath: "/opt/runtime/bin/container", home: home.url, environment: environment,
             spawn: recorder.spawn, capabilityCache: ClusterCapabilityCache(), lock: ClusterOperationLock())
         let status = await ClusterCLI(
-            commands: commands, write: output.write, writeError: output.writeError, apiReady: apiReady,
+            commands: commands, write: output.write, writeError: output.writeError,
+            apiObservation: apiObservation ?? { cluster, limit in
+                await apiReady(cluster, limit) ? .ready : .notReady
+            },
             readyWait: readyWait, clock: .init(clock)
         ).run(arguments)
         return (status, output, home.url)

@@ -47,7 +47,7 @@ public struct ClusterCLI: Sendable {
     let commands: ClusterCommands
     let write: @Sendable (String) -> Void
     let writeError: @Sendable (String) -> Void
-    let apiReady: @Sendable (KubernetesCluster, Duration) async -> Bool
+    let apiObservation: @Sendable (KubernetesCluster, Duration) async -> ClusterAPIReady.Result
     let readyWait: ReadyWait
     private let clock: ReadinessClock
 
@@ -59,8 +59,8 @@ public struct ClusterCLI: Sendable {
         let kubeconfig = commands.managedKubeconfig
         self.init(
             commands: commands, write: write, writeError: writeError,
-            apiReady: { cluster, limit in
-                await ClusterAPIReady.isReady(
+            apiObservation: { cluster, limit in
+                await ClusterAPIReady.check(
                     endpoint: cluster.apiEndpoint, context: cluster.name, kubeconfig: kubeconfig, timeout: limit)
             },
             readyWait: ReadyWait(interval: .seconds(5), probe: .seconds(3), limit: .seconds(30)))
@@ -70,14 +70,14 @@ public struct ClusterCLI: Sendable {
         commands: ClusterCommands,
         write: @escaping @Sendable (String) -> Void,
         writeError: @escaping @Sendable (String) -> Void,
-        apiReady: @escaping @Sendable (KubernetesCluster, Duration) async -> Bool,
+        apiObservation: @escaping @Sendable (KubernetesCluster, Duration) async -> ClusterAPIReady.Result,
         readyWait: ReadyWait,
         clock: ReadinessClock = ReadinessClock(ContinuousClock())
     ) {
         self.commands = commands
         self.write = write
         self.writeError = writeError
-        self.apiReady = apiReady
+        self.apiObservation = apiObservation
         self.readyWait = readyWait
         self.clock = clock
     }
@@ -152,15 +152,20 @@ public struct ClusterCLI: Sendable {
         }
         var tick = clock.now()
         let deadline = tick + readyWait.limit
+        var observation: ClusterAPIReady.Result = .notReady
         while tick < deadline {
             try await clock.sleep(tick)
             let left = clock.now().duration(to: deadline)
             guard left > .zero else { break }
-            if await apiReady(cluster, min(readyWait.probe, left)) { return true }
+            observation = await apiObservation(cluster, min(readyWait.probe, left))
+            if observation == .ready { return true }
             tick += readyWait.interval
         }
         let limit = Double(readyWait.limit.components.seconds) + Double(readyWait.limit.components.attoseconds) / 1e18
         let seconds = limit == limit.rounded() ? String(Int(limit)) : String(limit)
+        if observation == .connectionFailed, cluster.allNodesRunning {
+            printError(ClusterAPIReady.localNetworkHint)
+        }
         printError(
             "cstack cluster: cluster \(name) started, but its API is not ready after \(seconds) s. \(recovery)")
         return false

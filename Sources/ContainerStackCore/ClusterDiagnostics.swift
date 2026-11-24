@@ -99,7 +99,7 @@ public struct ClusterDiagnostics: Sendable {
             ? await probe(cluster, commands.managedKubeconfig, min(.seconds(3), remaining)) : .notReady
         let observedAt = now()
         guard observedAt < deadline else { return [] }
-        let connectionFailed = status == .connectionFailed && missing.isEmpty && allNodesRunning(cluster)
+        let connectionFailed = status == .connectionFailed && missing.isEmpty && cluster.allNodesRunning
         let persistent = history.record(
             connectionFailed ? status : .notReady,
             for: .init(endpoint: cluster.apiEndpoint, context: name, kubeconfig: commands.managedKubeconfig),
@@ -123,11 +123,6 @@ public struct ClusterDiagnostics: Sendable {
         }
         if !contexts.contains(name) { issues.append("\(name): no context in the app kubeconfig") }
         return issues
-    }
-
-    private func allNodesRunning(_ cluster: KubernetesCluster) -> Bool {
-        let running = Set(cluster.nodeStatuses.filter { $0.status == "running" }.map(\.name))
-        return !cluster.nodes.isEmpty && cluster.nodes.allSatisfy { running.contains($0.name) }
     }
 
     private static let localNetworkPossibleCause =

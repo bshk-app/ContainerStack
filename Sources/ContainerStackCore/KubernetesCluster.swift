@@ -78,6 +78,11 @@ public struct KubernetesCluster: Decodable, Equatable, Sendable {
         return nil
     }
 
+    var allNodesRunning: Bool {
+        let running = Set(nodeStatuses.filter { $0.status == "running" }.map(\.name))
+        return !nodes.isEmpty && nodes.allSatisfy { running.contains($0.name) }
+    }
+
     public static func decodeList(_ data: Data) throws -> [KubernetesCluster] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601

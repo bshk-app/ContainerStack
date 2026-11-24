@@ -37,6 +37,7 @@ let project = Project(
         ],
         defaultSettings: .recommended
     ),
+    packages: [.remote(url: "https://github.com/jpsim/Yams.git", requirement: .exact("6.2.2"))],
     targets: [
         .target(
             name: "ContainerStackCore",
@@ -71,6 +72,7 @@ let project = Project(
             dependencies: [
                 .target(name: "ContainerStackCore"),
                 .target(name: "ContainerStackRuntime"),
+                .package(product: "Yams"),
             ]
         ),
         .target(

@@ -130,6 +130,7 @@ final class RuntimeViewModel {
     internal(set) var busyStackID: UUID?
     internal(set) var stackMessage: String?
     internal(set) var stacksErrorMessage: String?
+    @ObservationIgnored lazy var clusters = makeClusterSection()
     let socketPath: String
 
     init(

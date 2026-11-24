@@ -34,7 +34,7 @@ final class DashboardNavigationTests: XCTestCase {
     func testOnlyListSectionsHaveAnInspector() {
         XCTAssertEqual(
             DashboardDestination.allCases.filter(\.hasInspector),
-            [.containers, .images, .volumes, .networks, .stacks]
+            [.containers, .images, .volumes, .networks, .stacks, .kubernetes]
         )
     }
 

@@ -1,3 +1,4 @@
+import CoreFoundation
 import Darwin
 import Foundation
 import Security
@@ -11,6 +12,29 @@ public enum ClusterAPIReady {
     public static let localNetworkHint =
         "Likely cause: the runtime has no Local Network permission. Allow container-runtime-linux "
         + "in System Settings > Privacy & Security > Local Network."
+
+    static func classify(_ error: NSError) -> Result {
+        if error.domain == NSPOSIXErrorDomain {
+            return [Int(ECONNREFUSED), Int(ECONNRESET)].contains(error.code) ? .connectionFailed : .notReady
+        }
+        if let streamDomain = error.userInfo["_kCFStreamErrorDomainKey"] as? Int,
+            let streamCode = error.userInfo["_kCFStreamErrorCodeKey"] as? Int
+        {
+            if streamDomain == 1, [Int(ECONNREFUSED), Int(ECONNRESET)].contains(streamCode) {
+                return .connectionFailed
+            }
+            if error.domain == NSURLErrorDomain, error.code == URLError.secureConnectionFailed.rawValue,
+                streamDomain == Int(kCFStreamErrorDomainSSL),
+                [Int(errSSLClosedNoNotify), Int(errSSLClosedAbort)].contains(streamCode)
+            {
+                return .connectionFailed
+            }
+        }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return classify(underlying)
+        }
+        return .notReady
+    }
 
     public static func isReady(
         endpoint: URL?,
@@ -55,26 +79,10 @@ public enum ClusterAPIReady {
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .notReady }
             return String(decoding: body, as: UTF8.self) == "ok" ? .ready : .notReady
         } catch {
-            return isConnectionRefusedOrReset(error as NSError) ? .connectionFailed : .notReady
+            return classify(error as NSError)
         }
     }
 
-    private static func isConnectionRefusedOrReset(_ error: NSError) -> Bool {
-        let tcpErrors = [Int(ECONNREFUSED), Int(ECONNRESET)]
-        if error.domain == NSPOSIXErrorDomain { return tcpErrors.contains(error.code) }
-        guard error.domain == NSURLErrorDomain,
-            [URLError.cannotConnectToHost.rawValue, URLError.networkConnectionLost.rawValue].contains(error.code)
-        else { return false }
-        if (error.userInfo["_kCFStreamErrorDomainKey"] as? Int) == 1,
-            let code = error.userInfo["_kCFStreamErrorCodeKey"] as? Int, tcpErrors.contains(code)
-        {
-            return true
-        }
-        if let cause = error.userInfo[NSUnderlyingErrorKey] as? NSError, cause !== error {
-            return isConnectionRefusedOrReset(cause)
-        }
-        return false
-    }
 }
 
 final class ClusterAPIHistory: Sendable {

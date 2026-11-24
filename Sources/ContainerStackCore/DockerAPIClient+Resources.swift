@@ -99,9 +99,11 @@ private struct ContainerConfigPayload: Decodable {
 /// being discarded; the micro-VM size is the part worth keeping.
 private struct ContainerHostConfigPayload: Decodable {
     let memory: Int64?
+    let nanoCPUs: Int64?
 
     enum CodingKeys: String, CodingKey {
         case memory = "Memory"
+        case nanoCPUs = "NanoCpus"
     }
 }
 
@@ -139,7 +141,8 @@ private struct ContainerDetailPayload: Decodable {
             command: arguments.isEmpty ? nil : arguments.joined(separator: " "),
             labels: config?.labels ?? [:],
             // Docker writes 0 for "no limit", which is not the same as a 0-byte VM.
-            memoryLimitBytes: (hostConfig?.memory).flatMap { $0 > 0 ? $0 : nil }
+            memoryLimitBytes: (hostConfig?.memory).flatMap { $0 > 0 ? $0 : nil },
+            cpuLimit: (hostConfig?.nanoCPUs).flatMap { $0 > 0 ? Double($0) / 1_000_000_000 : nil }
         )
     }
 }
@@ -247,6 +250,14 @@ extension DockerAPIClient {
     public func restartContainer(id: String) async throws {
         _ = try await request(
             method: "POST", path: "/containers/\(id)/restart", timeout: DockerAPIClient.lifecycleRequestTimeout)
+    }
+
+    public func listClusterNodes() async throws -> [DockerContainerSummary] {
+        let filter = Self.pathEncoded(#"{"label":["com.apple.container.plugin=cluster"]}"#)
+        return try await decode(
+            [DockerContainerSummary].self,
+            response: requestWithRetry(path: "/containers/json?all=1&filters=\(filter)")
+        )
     }
 
     public func inspectContainer(id: String) async throws -> DockerContainerDetail {

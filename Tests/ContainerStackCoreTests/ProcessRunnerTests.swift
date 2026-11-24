@@ -125,6 +125,50 @@ struct ProcessRunnerTests {
         #expect(now == deadline.end)
     }
 
+    @Test func absoluteDeadlineRefusesLateLaunchAndKillsIgnoringChildWithOpenOutput() async throws {
+        let home = try TemporaryHome()
+        let refused = home.url.appending(path: "refused")
+        let childFile = home.url.appending(path: "child")
+        let holderFile = home.url.appending(path: "holder")
+        func pid(at path: URL) throws -> Int32 {
+            try #require(Int32(String(contentsOf: path, encoding: .utf8).trimmingCharacters(in: .newlines)))
+        }
+
+        await #expect(throws: ProcessRunnerError.self) {
+            try await ProcessRunner.offTheCooperativePool {
+                try ProcessRunner.run(
+                    executablePath: "/usr/bin/touch", arguments: [refused.path], output: .discard, environment: [:],
+                    deadline: .init(end: .now + .seconds(8), latestStart: .now - .seconds(1)))
+            }
+        }
+        #expect(!FileManager.default.fileExists(atPath: refused.path))
+
+        let paths = [childFile.path, holderFile.path]
+        defer { if let holder = try? pid(at: holderFile) { kill(holder, SIGKILL) } }
+        let duration = try await ProcessRunner.offTheCooperativePool {
+            let started = ContinuousClock.now
+            let script = """
+                trap '' TERM
+                echo $$ > "$1"
+                /bin/sleep 90 &
+                echo $! > "$2"
+                exec /bin/sleep 90
+                """
+            #expect(throws: ProcessRunnerError.self) {
+                try ProcessRunner.run(
+                    executablePath: "/bin/sh", arguments: ["-c", script, "fake"] + paths,
+                    output: .captureSeparately, environment: [:], deadline: .init(end: started + .seconds(8)))
+            }
+            return started.duration(to: .now)
+        }
+
+        let child = try pid(at: childFile)
+        let holder = try pid(at: holderFile)
+        #expect(kill(child, 0) == -1)
+        #expect(kill(holder, 0) == 0)
+        #expect(duration < .seconds(30))
+    }
+
     @Test("the timeout error names the binary and the deadline")
     func timeoutErrorCarriesItsContext() throws {
         do {

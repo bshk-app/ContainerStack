@@ -29,8 +29,8 @@ readonly CONTAINER_VERSION="1.7.1"
 # The fork reports the same `container --version` as Apple's 1.7.1, so the
 # cache key is the tag, which names the build exactly.
 readonly CONTAINER_REPOSITORY="beshkenadze/container"
-readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.2"
-readonly CONTAINER_PKG_SHA256="07e7760441b673df1c6f7f7c99c257c578b12dae3c5defb6c6e02b3a8a16fefe"
+readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.3"
+readonly CONTAINER_PKG_SHA256="cbce0e28a18ec51d126a5701e993de427e0f7d131189b4aa324ea24e532bfe4d"
 readonly CONTAINER_PKG="container-${CONTAINER_TAG}-installer-signed.pkg"
 readonly CONTAINER_URL="https://github.com/${CONTAINER_REPOSITORY}/releases/download/${CONTAINER_TAG}/${CONTAINER_PKG}"
 

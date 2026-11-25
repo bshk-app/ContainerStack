@@ -32,7 +32,7 @@ struct KubernetesPresentationTests {
                 .environment(\.appTheme, .resolve(scheme))
                 .padding(8)
                 .frame(width: 450, alignment: .leading)
-                .background(Color(nsColor: .alternateSelectedControlColor))
+                .background(Color(nsColor: .selectedContentBackgroundColor))
         )
         renderer.scale = 2
         let image = try #require(renderer.cgImage)

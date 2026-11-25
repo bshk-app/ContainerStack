@@ -97,15 +97,18 @@ public enum ProcessRunner {
         /// Collected and returned. `includingStandardError` merges stderr into the same buffer;
         /// when false stderr is discarded, which is what callers parsing stdout expect.
         case capture(includingStandardError: Bool)
+        case captureSeparately
     }
 
     public struct Result: Sendable {
         public let status: Int32
         public let output: String
+        public let errorOutput: String
 
-        public init(status: Int32, output: String) {
+        public init(status: Int32, output: String, errorOutput: String = "") {
             self.status = status
             self.output = output
+            self.errorOutput = errorOutput
         }
     }
 
@@ -154,30 +157,34 @@ public enum ProcessRunner {
         // reason, and nothing here is interactive.
         process.standardInput = FileHandle.nullDevice
 
-        let pipe: Pipe?
+        let pipes: [Pipe]
         switch mode {
         case .discard:
-            pipe = nil
+            pipes = []
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
         case .inherit:
-            pipe = nil
+            pipes = []
             process.standardOutput = FileHandle.standardOutput
             process.standardError = FileHandle.standardError
         case .capture(let includingStandardError):
             let created = Pipe()
-            pipe = created
+            pipes = [created]
             process.standardOutput = created
             process.standardError = includingStandardError ? created : FileHandle.nullDevice
+        case .captureSeparately:
+            pipes = [Pipe(), Pipe()]
+            process.standardOutput = pipes[0]
+            process.standardError = pipes[1]
         }
 
         let exited = DispatchSemaphore(value: 0)
         // Set before run(): a child that exits immediately must still signal.
         process.terminationHandler = { _ in exited.signal() }
 
-        let drain = Drain()
+        let drains = pipes.map { _ in Drain() }
         let drained = DispatchSemaphore(value: 0)
-        if let pipe {
+        for (pipe, drain) in zip(pipes, drains) {
             let reader = pipe.fileHandleForReading
             startDrain(drain) {
                 collect(from: reader.fileDescriptor, into: drain, gracePeriod: gracePeriod)
@@ -188,9 +195,12 @@ public enum ProcessRunner {
         // Only once the child is gone or was never started. The wait is bounded by the drain,
         // which stops `gracePeriod` after it notices, so a descendant cannot hold it open.
         func finishDrain() {
-            guard pipe != nil else { return }
-            drain.markChildGone()
-            drained.wait()
+            for drain in drains {
+                drain.markChildGone()
+            }
+            for _ in drains {
+                drained.wait()
+            }
         }
 
         // Registered only while this call is waiting on it, so a process that
@@ -200,13 +210,17 @@ public enum ProcessRunner {
                 throw ProcessRunnerError.terminatingBeforeWait(executablePath: executablePath)
             }
         } catch {
-            try? pipe?.fileHandleForWriting.close()
+            for pipe in pipes {
+                try? pipe.fileHandleForWriting.close()
+            }
             finishDrain()
             throw error
         }
         // The parent never writes. Keeping its copy open hides EOF after the
         // child exits, so close it as soon as the child has inherited the fd.
-        try? pipe?.fileHandleForWriting.close()
+        for pipe in pipes {
+            try? pipe.fileHandleForWriting.close()
+        }
 
         defer { registry.remove(process) }
         if let timeout {
@@ -230,7 +244,8 @@ public enum ProcessRunner {
 
         return Result(
             status: process.terminationStatus,
-            output: String(decoding: drain.output, as: UTF8.self)
+            output: drains.first.map { String(decoding: $0.output, as: UTF8.self) } ?? "",
+            errorOutput: drains.dropFirst().first.map { String(decoding: $0.output, as: UTF8.self) } ?? ""
         )
     }
 

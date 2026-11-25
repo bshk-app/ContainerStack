@@ -60,6 +60,26 @@ struct ProcessRunnerTests {
         #expect(stdoutOnly.output.isEmpty)
     }
 
+    @Test(
+        "each output mode keeps stdout and stderr as before, and separate capture keeps both apart",
+        arguments: [
+            (ProcessRunner.OutputMode.capture(includingStandardError: false), "out\n", ""),
+            (.capture(includingStandardError: true), "out\nerr\n", ""),
+            (.discard, "", ""),
+            (.captureSeparately, "out\n", "err\n"),
+        ])
+    func outputModes(mode: ProcessRunner.OutputMode, output: String, errorOutput: String) throws {
+        let result = try ProcessRunner.run(
+            executablePath: "/bin/sh",
+            arguments: ["-c", "echo out; sleep 0.1; echo err >&2"],
+            output: mode,
+            timeout: .seconds(5)
+        )
+
+        #expect(result.output == output)
+        #expect(result.errorOutput == errorOutput)
+    }
+
     /// The regression that wedged the app: `waitUntilExit()` has no deadline, so a hung child
     /// pinned the 3s monitor loop and left Start/Stop permanently unresponsive. Without the
     /// deadline this test does not fail — it hangs until the suite is killed.

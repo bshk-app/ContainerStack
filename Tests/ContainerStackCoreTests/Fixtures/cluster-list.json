@@ -1,0 +1,7 @@
+[{"configuration":{"cni":null,"creationDate":"2026-11-23T17:23:33Z","fqdn":null,
+  "kubernetesVersion":"v1.35.5","labels":{},"name":"cs-spec",
+  "nodes":[{"kind":"linux","name":"cs-spec","roles":["control-plane","worker"]}],
+  "remove":false,"sharedImageStore":false},
+  "id":"cs-spec",
+  "status":{"nodes":[{"addresses":["192.168.64.3"],"name":"cs-spec",
+    "ports":["6445->6443"],"status":"running"}],"state":"running"}}]

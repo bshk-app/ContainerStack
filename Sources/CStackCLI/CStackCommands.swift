@@ -249,6 +249,17 @@ extension CStackCLI {
               runtime [restart|stop|start]
                                      Recover the runtime when ports stop working
 
+            Kubernetes:
+              cluster ls [--json]    List clusters
+              cluster create NAME [--cpus N] [--memory SIZE] [--workers SPEC]...
+                      [--node-image REF] [--cni PATH|NONE] [--shared-image-store]
+                                     Create a cluster
+              cluster start|stop NAME
+                                     Start or stop a cluster
+              cluster rm NAME        Delete a cluster (no prompt)
+              cluster kubeconfig NAME
+                                     Write the context to ~/.containerstack/kubeconfig
+
             Compose:
               compose ARGS...        Run docker compose against the ContainerStack socket
             """)

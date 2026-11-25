@@ -84,6 +84,8 @@ struct CStackCLI {
             try context(invocation)
         case "runtime":
             try runtimeControl(invocation)
+        case "cluster":
+            await cluster(invocation)
         default:
             return false
         }

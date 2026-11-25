@@ -158,6 +158,20 @@ extension CStackCLI {
         return failed
     }
 
+    static func cluster(_ invocation: CStackInvocation) async -> Never {
+        let commands = ClusterCommands(
+            containerPath: runtimeConfiguration(socketPath: invocation.socketPath).containerPath,
+            home: FileManager.default.homeDirectoryForCurrentUser,
+            environment: ProcessInfo.processInfo.environment
+        )
+        let cli = ClusterCLI(
+            commands: commands,
+            write: { FileHandle.standardOutput.write(Data($0.utf8)) },
+            writeError: { FileHandle.standardError.write(Data($0.utf8)) }
+        )
+        exit(await cli.run(invocation.passthrough))
+    }
+
     /// The bridge must outlive the CLI invocation, so it is detached instead of waited on.
     private static func startBridge(configuration: RuntimeProcessConfiguration) throws {
         guard FileManager.default.isExecutableFile(atPath: configuration.socktainerPath) else {

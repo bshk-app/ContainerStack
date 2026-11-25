@@ -1,0 +1,11 @@
+OVERVIEW: Stop a Kubernetes cluster and its nodes
+
+USAGE: cluster stop [--name <name>] [--signal <signal>] [--time <time>]
+
+OPTIONS:
+  --name <name>           Cluster name (default: cluster-dev)
+  -s, --signal <signal>   Signal to send to a node (default: the node image's
+                          stop signal)
+  -t, --time <time>       Seconds to wait before killing a node (default: 30)
+  --version               Show the version.
+  -h, --help              Show help information.

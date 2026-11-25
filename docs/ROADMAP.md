@@ -30,7 +30,7 @@ The gap is architectural: Apple Container boots one micro-VM per container.
 | **M5 Networking** | Container domains, HTTPS, LAN exposure, proxy | OrbStack's strongest convenience feature |
 | **M6 Storage** | Disk usage, data location, danger zone | Users hit disk limits and need to see why |
 | **M7 Linux machines** | Full Linux VMs, USB passthrough | Second OrbStack pillar |
-| **M8 Kubernetes** | Local clusters: create, start, stop, delete, kubectl context, recovery after a runtime restart ([spec](specs/2026-11-23-kubernetes.md)) | The owner's priority since 2026-11-23; Apple Container 1.7 ships the `cluster` plugin |
+| **M8 Kubernetes** | Local clusters: create, start, stop, delete, kubectl context, recovery after a runtime restart ([user guide](kubernetes.md), [spec](specs/2026-11-23-kubernetes.md)) | The owner's priority since 2026-11-23; Apple Container 1.7 ships the `cluster` plugin |
 | **M9 Distribution** | DMG, auto-update, CLI on PATH | Required before anyone else can install it |
 
 ## Known defects driving M1 and M2

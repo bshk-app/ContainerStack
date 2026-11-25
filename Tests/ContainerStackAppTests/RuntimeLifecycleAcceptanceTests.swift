@@ -71,6 +71,7 @@ struct RuntimeLifecycleAcceptanceTests {
     @Test(arguments: [true, false])
     func currentAutomaticRestartPublishesClusterResultAtTheEnd(succeeds: Bool) async {
         let (model, runtime) = makeModel(client: Self.healthyClient())
+        model.clusterRestartResult = ["earlier: stopped in order"]
         runtime.agentIsRegistered = true
         runtime.socketAnswers = true
         model.steps.clusterPreflight = { _, _ in
@@ -99,6 +100,7 @@ struct RuntimeLifecycleAcceptanceTests {
 
     @Test func supersededClusterStopPublishesNoResult() async throws {
         let (model, runtime) = makeModel(client: Self.healthyClient())
+        model.clusterRestartResult = ["earlier: stopped in order"]
         var stop: LifecycleTurn?
         model.steps.stopClusters = { [unowned model] _, _, _, progress in
             progress("dev")
@@ -110,6 +112,30 @@ struct RuntimeLifecycleAcceptanceTests {
         #expect(await model.execute(.stop(replacingSibling: false), turn) == .completed(true))
         #expect(model.clusterRestartResult.isEmpty)
         #expect(runtime.performed.map(FakeRuntime.name(of:)) == ["stopBridge"])
+    }
+
+    @Test func bridgeRestartClearsThePreviousResultOnAdmission() async {
+        let (model, runtime) = makeModel(client: Self.healthyClient())
+        runtime.agentIsRegistered = true
+        runtime.socketAnswers = true
+        model.clusterRestartResult = ["earlier: stopped in order"]
+
+        let turn = model.admit(.restartBridge, origin: .user)
+        #expect(model.clusterRestartResult.isEmpty)
+        #expect(await model.execute(.restartBridge, turn) == .completed(true))
+        #expect(model.clusterRestartResult.isEmpty)
+    }
+
+    @Test(arguments: [true, false])
+    func admissionClearsThePreviousResultOnlyForAcceptedRequests(accepted: Bool) {
+        let (model, _) = makeModel()
+        let observed = model.lifecycle.generation
+        _ = model.admit(.start, origin: .user)
+        model.clusterRestartResult = ["earlier: stopped in order"]
+
+        _ = model.admit(.stop(replacingSibling: false), origin: accepted ? .user : .recovery, observed: observed)
+
+        #expect(model.clusterRestartResult == (accepted ? [] : ["earlier: stopped in order"]))
     }
 
     @Test(arguments: [true, false])

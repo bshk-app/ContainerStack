@@ -42,8 +42,11 @@ extension RuntimeViewModel {
             lifecycleTickets[id] = ticket
             turn = .wait(ticket, token: id)
         }
-        if origin == .user, case .dropped = turn {
-            return turn
+        switch turn {
+        case .dropped:
+            if origin == .user { return turn }
+        case .run, .wait:
+            clusterRestartResult = []
         }
         if origin == .user { manualLifecycleRevision &+= 1 }
         isStopping = lifecycle.latest.isStop

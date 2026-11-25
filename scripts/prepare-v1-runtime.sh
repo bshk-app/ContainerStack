@@ -14,11 +14,14 @@ readonly TARGET_CONTAINER_VERSION="1.7.1"
 #   and refuse a name that the file system folds onto an existing one. Without this, `Web` beside
 #   `web` on the default case-insensitive volume formats the other volume or removes the other
 #   container's root file system.
+# - cluster start and stop, and a packaged cluster-shim for the shared image store.
 # The fork has the same XPC API as Apple's 1.7.1, so socktainer builds against Apple's packages.
 # Move back to Apple's release when a release of Apple Container contains these fixes.
 readonly TARGET_RELEASE_REPOSITORY="beshkenadze/container"
-readonly TARGET_RELEASE_TAG="${TARGET_CONTAINER_VERSION}-bshk.2"
-readonly TARGET_RELEASE_URL="https://github.com/${TARGET_RELEASE_REPOSITORY}/releases/tag/${TARGET_RELEASE_TAG}"
+readonly TARGET_RELEASE_TAG="${TARGET_CONTAINER_VERSION}-bshk.3"
+readonly TARGET_PKG_SHA256="cbce0e28a18ec51d126a5701e993de427e0f7d131189b4aa324ea24e532bfe4d"
+readonly TARGET_PKG="container-${TARGET_RELEASE_TAG}-installer-signed.pkg"
+readonly TARGET_RELEASE_URL="https://github.com/${TARGET_RELEASE_REPOSITORY}/releases/download/${TARGET_RELEASE_TAG}/${TARGET_PKG}"
 # Apple Container reports its own data directory as `appRoot`, and the path has moved between
 # versions — 1.2.2 and later use com.apple.container, while com.apple.containerization is a
 # leftover from earlier builds. Asking the runtime instead of hardcoding is what keeps "moved the
@@ -32,9 +35,10 @@ readonly DATA_ROOT_FALLBACK="${HOME}/Library/Application Support/com.apple.conta
 #     app's ports/volumes editing cannot be applied;
 #   * a fix for an inspect trap that killed the daemon when two host ports publish one container
 #     port — exactly what adding a second port produces.
+#   * a guard against Docker lifecycle and file writes to Kubernetes nodes.
 # Unpin only once every one of them is upstream.
 readonly SOCKTAINER_REPO_URL="https://github.com/beshkenadze/socktainer.git"
-readonly SOCKTAINER_REV="6b3393b21358500258df37e7a625d0c32de33e7d"
+readonly SOCKTAINER_REV="c180d6e5852e03ed6597f5336b7614e48d825d44"
 readonly SOCKTAINER_SOURCE_ROOT="${HOME}/Library/Application Support/ContainerStack/socktainer"
 readonly SOCKTAINER_BIN_DIR="${HOME}/.local/bin"
 readonly SOCKTAINER_BIN="${SOCKTAINER_BIN_DIR}/socktainer"
@@ -157,27 +161,15 @@ prepare() {
         exit 1
     }
 
-    local release_json tmp_dir pkg_url pkg_name expected_digest actual_digest
+    local tmp_dir pkg_path actual_digest
     tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/containerstack-v1.XXXXXX")"
-    release_json="${tmp_dir}/release.json"
-    curl --fail --silent --show-error --location \
-        "https://api.github.com/repos/${TARGET_RELEASE_REPOSITORY}/releases/tags/${TARGET_RELEASE_TAG}" \
-        --output "$release_json"
+    pkg_path="${tmp_dir}/${TARGET_PKG}"
+    curl --fail --silent --show-error --location "$TARGET_RELEASE_URL" --output "$pkg_path"
 
-    pkg_url="$(jq -r '[.assets[] | select(.name | endswith("-installer-signed.pkg")) | .browser_download_url] | if length == 1 then .[0] else empty end' "$release_json")"
-    pkg_name="$(jq -r '[.assets[] | select(.name | endswith("-installer-signed.pkg")) | .name] | if length == 1 then .[0] else empty end' "$release_json")"
-    [[ -n "$pkg_url" && -n "$pkg_name" ]] || {
-        printf 'Could not identify exactly one .pkg asset in %s\n' "$TARGET_RELEASE_URL" >&2
-        exit 1
-    }
-
-    local pkg_path="${tmp_dir}/${pkg_name}"
-    curl --fail --silent --show-error --location "$pkg_url" --output "$pkg_path"
-
-    expected_digest="$(jq -r --arg name "$pkg_name" '.assets[] | select(.name == $name) | .digest' "$release_json")"
-    actual_digest="sha256:$(shasum -a 256 "$pkg_path" | cut -d ' ' -f 1)"
-    [[ "$expected_digest" == "$actual_digest" ]] || {
-        printf 'SHA-256 mismatch for %s\nexpected: %s\nactual:   %s\n' "$pkg_name" "$expected_digest" "$actual_digest" >&2
+    actual_digest="$(shasum -a 256 "$pkg_path" | cut -d ' ' -f 1)"
+    [[ "$TARGET_PKG_SHA256" == "$actual_digest" ]] || {
+        printf 'SHA-256 mismatch for %s\nexpected: %s\nactual:   %s\n' \
+            "$TARGET_PKG" "$TARGET_PKG_SHA256" "$actual_digest" >&2
         exit 1
     }
 

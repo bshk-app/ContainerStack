@@ -118,6 +118,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Test staged cluster plugin checks
+        run: ./scripts/test-staged-cluster-plugins.sh
+
       # Hook scripts and .githooks are the files most recently broken, and
       # `scripts/*.sh` matched neither. The list is built rather than globbed
       # straight into the command: an unmatched glob would reach shellcheck as a

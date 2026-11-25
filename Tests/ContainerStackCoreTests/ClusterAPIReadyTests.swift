@@ -66,7 +66,7 @@ private struct TLSFixture: ~Copyable {
 
     func serve(_ response: String) throws -> TLSServer {
         try Data(response.utf8).write(to: directory.appending(path: "www/readyz"))
-        let port = try freePort()
+        let port = try freeReadinessPort()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/openssl")
         process.arguments = [
@@ -98,24 +98,29 @@ private struct TLSServer {
     }
 }
 
-private func freePort() throws -> Int {
-    let socket = try listeningSocket()
+func freeReadinessPort() throws -> Int {
+    let socket = try loopbackReadinessSocket()
     defer { close(socket.descriptor) }
     return socket.port
 }
 
-private func listeningSocket() throws -> (descriptor: Int32, port: Int) {
+func loopbackReadinessSocket() throws -> (descriptor: Int32, port: Int) {
     let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    guard descriptor >= 0 else { throw POSIXError(.EADDRNOTAVAIL) }
     var address = sockaddr_in()
     address.sin_family = sa_family_t(AF_INET)
     address.sin_addr.s_addr = inet_addr("127.0.0.1")
     var length = socklen_t(MemoryLayout<sockaddr_in>.size)
     let bound = withUnsafeMutablePointer(to: &address) {
         $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            bind(descriptor, $0, length) == 0 && listen(descriptor, 4) == 0 && getsockname(descriptor, $0, &length) == 0
+            bind(descriptor, $0, length) == 0 && listen(descriptor, 4) == 0
+                && getsockname(descriptor, $0, &length) == 0
         }
     }
-    guard descriptor >= 0, bound else { throw POSIXError(.EADDRNOTAVAIL) }
+    guard bound else {
+        close(descriptor)
+        throw POSIXError(.EADDRNOTAVAIL)
+    }
     return (descriptor, Int(UInt16(bigEndian: address.sin_port)))
 }
 
@@ -146,7 +151,7 @@ struct ClusterAPIReadyTests {
         try await waitUntilListening(server.port)
         return await ClusterAPIReady.isReady(
             endpoint: URL(string: "https://127.0.0.1:\(server.port)"), context: "dev",
-            kubeconfig: try fixture.kubeconfig(caFile: caFile))
+            kubeconfig: try fixture.kubeconfig(caFile: caFile), timeout: .seconds(30))
     }
 
     @Test("ok from a server with the cluster CA is API ready")
@@ -189,7 +194,7 @@ struct ClusterAPIReadyTests {
     @Test("a server that does not answer is API not ready within the limit")
     func timeoutIsNotReady() async throws {
         let fixture = try TLSFixture()
-        let silent = try listeningSocket()
+        let silent = try loopbackReadinessSocket()
         defer { close(silent.descriptor) }
         let started = ContinuousClock.now
 

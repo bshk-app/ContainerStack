@@ -125,6 +125,7 @@ extension DashboardDestination {
         case .volumes: .hardDrive
         case .networks: .network
         case .stacks: .layers
+        case .kubernetes: .network
         case .doctor: .stethoscope
         }
     }

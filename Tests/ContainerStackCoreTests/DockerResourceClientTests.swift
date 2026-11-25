@@ -5,6 +5,22 @@ import Testing
 
 struct DockerResourceClientTests {
     @Test
+    func listsNodesWithTheClusterPluginFilter() async throws {
+        let transport = StubDockerTransport(responses: [
+            jsonResponse(#"[{"Id":"abc","Names":["/dev"],"State":"exited"}]"#)
+        ])
+        let client = DockerAPIClient(transport: transport)
+
+        let nodes = try await client.listClusterNodes()
+
+        #expect(nodes.map(\.name) == ["dev"])
+        #expect(
+            await transport.paths == [
+                "/containers/json?all=1&filters=%7B%22label%22%3A%5B%22com.apple.container.plugin%3Dcluster%22%5D%7D"
+            ])
+    }
+
+    @Test
     func listsVolumes() async throws {
         let transport = StubDockerTransport(responses: [
             jsonResponse(
@@ -197,7 +213,7 @@ struct DockerResourceClientTests {
                 "StartedAt":"2026-08-12T17:37:17Z","FinishedAt":"2026-08-12T17:37:18Z"},
                 "Config":{"Image":"alpine:3.20","Cmd":["-c","echo probe"],
                 "Labels":{"com.docker.compose.project":"demo"}},
-                "HostConfig":{"Memory":6442450944}}
+                "HostConfig":{"Memory":6442450944,"NanoCpus":2000000000}}
                 """)
         ])
         let client = DockerAPIClient(transport: transport)
@@ -211,6 +227,7 @@ struct DockerResourceClientTests {
         #expect(detail.command == "-c echo probe")
         #expect(detail.composeProject == "demo")
         #expect(detail.memoryLimitBytes == 6_442_450_944)
+        #expect(detail.cpuLimit == 2)
         #expect(await transport.paths == ["/containers/c1/json"])
     }
 

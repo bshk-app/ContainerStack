@@ -12,8 +12,8 @@ set -euo pipefail
 readonly CONTAINER_VERSION="1.7.1"
 # The fork build that ContainerStack pins. prepare-v1-runtime.sh says why.
 # Apple's 1.7.1 reports the same version, so only the commit identifies the fork.
-readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.2"
-readonly CONTAINER_COMMIT="f11f9ad"
+readonly CONTAINER_TAG="${CONTAINER_VERSION}-bshk.3"
+readonly CONTAINER_COMMIT="abd70e2"
 readonly PKG_URL="https://github.com/beshkenadze/container/releases/download/${CONTAINER_TAG}/container-${CONTAINER_TAG}-installer-signed.pkg"
 readonly APP_SOURCE="${APP_SOURCE:-/tmp/ContainerStack.app}"
 

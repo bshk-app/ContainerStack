@@ -43,6 +43,9 @@ struct SidebarRuntimePanel: View {
     }
 
     private var footerLabel: String {
+        if model.isRestarting, let message = model.runtimeMessage, message.hasPrefix("Stopping cluster ") {
+            return message
+        }
         if let serviceMessage = model.serviceMessage, !serviceMessage.isEmpty {
             return serviceMessage
         }
@@ -101,6 +104,7 @@ struct SidebarRuntimePanel: View {
             }
             // Enabled while a Start or Restart runs: the user's last instruction wins (#102).
             .disabled(model.isStopping)
+            .help("Stops the Docker bridge. Kubernetes clusters keep running.")
             Divider()
             Toggle("Use as Docker Context", isOn: dockerContextBinding)
             if model.conflictingDockerContext != nil
@@ -160,5 +164,33 @@ struct SidebarRuntimePanel: View {
         case .unknown:
             Circle().fill(.secondary).frame(width: 8, height: 8)
         }
+    }
+}
+
+struct ClusterRestartBanner: View {
+    let lines: [String]
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            ViewThatFits(in: .vertical) {
+                message
+                ScrollView { message }
+            }
+            .frame(maxHeight: 128)
+            Button("Dismiss cluster restart result", systemImage: "xmark", action: dismiss)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+        }
+        .padding(8)
+        .frame(width: 176)
+        .background(.regularMaterial, in: .rect(cornerRadius: 6))
+    }
+
+    private var message: some View {
+        Text(lines.joined(separator: "\n"))
+            .font(.caption)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

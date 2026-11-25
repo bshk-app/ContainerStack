@@ -459,6 +459,7 @@ final class FakeRuntime {
 
     static func name(of step: RuntimeControlStep) -> String {
         switch step {
+        case .stopClusters: "stopClusters"
         case .stopBridge: "stopBridge"
         case .stopContainers: "stopContainers"
         case .run(_, let arguments): arguments.prefix(2).joined(separator: " ")

@@ -152,6 +152,7 @@ otool -l "$output_bundle/Contents/MacOS/ContainerStack" \
 if [[ -n "$container_runtime_root" ]]; then
     printf '== staging vendored Apple Container ==\n'
     ditto "$container_runtime_root" "$output_bundle/Contents/Resources/container"
+    "$ROOT/scripts/check-staged-cluster-plugins.sh" "$output_bundle"
 fi
 
 # A signed bundle is a bundle that can be shipped, and a shipped bundle whose

@@ -446,7 +446,7 @@ public actor DockerAPIClient {
         try await request(method: "GET", path: path)
     }
 
-    private func requestWithRetry(path: String) async throws -> DockerHTTPResponse {
+    func requestWithRetry(path: String) async throws -> DockerHTTPResponse {
         try await requestRetrying(path: path, while: Self.isRetryable)
     }
 

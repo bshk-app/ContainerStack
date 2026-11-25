@@ -159,6 +159,7 @@ struct RuntimeRestartPlanTests {
 
         #expect(
             steps == [
+                .stopClusters(executablePath: "/usr/local/bin/container"),
                 .stopBridge(
                     executablePath: "/Applications/ContainerStack.app/Contents/Helpers/socktainer",
                     socketPath: nil
@@ -198,6 +199,10 @@ struct RuntimeRestartPlanTests {
         #expect(serviceStop != nil)
         guard let gracefulStop, let serviceStop else { return }
         #expect(gracefulStop < serviceStop)
+        #expect(
+            RuntimeControlStep.stopContainersTimeout(graceSeconds: RuntimeRestartPlan.gracefulStopSeconds)
+                == .seconds(15))
+        #expect(ProcessRunner.lifecycleTimeout == .seconds(120))
     }
 
     /// F-014: a restart the app starts by itself (the poll's recovery, the stale-build check) must
@@ -212,8 +217,9 @@ struct RuntimeRestartPlanTests {
         )
         let bridge = "/Applications/ContainerStack.app/Contents/Helpers/socktainer"
 
-        #expect(automatic.first == .stopBridge(executablePath: bridge, socketPath: nil))
-        #expect(requested.first == .stopBridge(executablePath: bridge, socketPath: configuration.socketPath))
+        #expect(automatic.dropFirst().first == .stopBridge(executablePath: bridge, socketPath: nil))
+        #expect(
+            requested.dropFirst().first == .stopBridge(executablePath: bridge, socketPath: configuration.socketPath))
         #expect(
             RuntimeRestartPlan.stopSteps(configuration: configuration)
                 == [.stopBridge(executablePath: bridge, socketPath: nil)])

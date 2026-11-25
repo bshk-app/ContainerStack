@@ -99,9 +99,11 @@ private struct ContainerConfigPayload: Decodable {
 /// being discarded; the micro-VM size is the part worth keeping.
 private struct ContainerHostConfigPayload: Decodable {
     let memory: Int64?
+    let nanoCPUs: Int64?
 
     enum CodingKeys: String, CodingKey {
         case memory = "Memory"
+        case nanoCPUs = "NanoCpus"
     }
 }
 
@@ -139,7 +141,8 @@ private struct ContainerDetailPayload: Decodable {
             command: arguments.isEmpty ? nil : arguments.joined(separator: " "),
             labels: config?.labels ?? [:],
             // Docker writes 0 for "no limit", which is not the same as a 0-byte VM.
-            memoryLimitBytes: (hostConfig?.memory).flatMap { $0 > 0 ? $0 : nil }
+            memoryLimitBytes: (hostConfig?.memory).flatMap { $0 > 0 ? $0 : nil },
+            cpuLimit: (hostConfig?.nanoCPUs).flatMap { $0 > 0 ? Double($0) / 1_000_000_000 : nil }
         )
     }
 }
@@ -249,6 +252,14 @@ extension DockerAPIClient {
             method: "POST", path: "/containers/\(id)/restart", timeout: DockerAPIClient.lifecycleRequestTimeout)
     }
 
+    public func listClusterNodes() async throws -> [DockerContainerSummary] {
+        let filter = Self.pathEncoded(#"{"label":["com.apple.container.plugin=cluster"]}"#)
+        return try await decode(
+            [DockerContainerSummary].self,
+            response: requestWithRetry(path: "/containers/json?all=1&filters=\(filter)")
+        )
+    }
+
     public func inspectContainer(id: String) async throws -> DockerContainerDetail {
         let response = try await request(path: "/containers/\(id)/json")
         return try await decode(ContainerDetailPayload.self, response: response).detail
@@ -297,6 +308,15 @@ extension DockerAPIClient {
     func runningBuilderIDs() async throws -> [String] {
         let response = try await requestRetryingImmediateFailures(path: Self.runningBuildersPath)
         return try await decode([DockerContainerSummary].self, response: response).map(\.id)
+    }
+
+    static let clusterNodesPath =
+        "/containers/json?all=1&filters=%7B%22label%22%3A%5B%22com.apple.container.plugin%3Dcluster%22%5D%7D"
+
+    public func listClusterNodes(timeout: Duration = .seconds(5)) async throws -> [DockerContainerSummary] {
+        try await decode(
+            [DockerContainerSummary].self,
+            response: request(method: "GET", path: Self.clusterNodesPath, timeout: timeout))
     }
 
     /// The diagnostic read of the micro-VM size: `requestRetryingImmediateFailures` excludes

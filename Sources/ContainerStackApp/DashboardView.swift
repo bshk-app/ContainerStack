@@ -8,6 +8,7 @@ enum DashboardDestination: String, CaseIterable, Hashable, Identifiable {
     case volumes
     case networks
     case stacks
+    case kubernetes
     case doctor
 
     var id: Self { self }
@@ -20,13 +21,14 @@ enum DashboardDestination: String, CaseIterable, Hashable, Identifiable {
         case .volumes: "Volumes"
         case .networks: "Networks"
         case .stacks: "Stacks"
+        case .kubernetes: "Kubernetes"
         case .doctor: "Doctor"
         }
     }
 
     var hasInspector: Bool {
         switch self {
-        case .containers, .images, .volumes, .networks, .stacks: true
+        case .containers, .images, .volumes, .networks, .stacks, .kubernetes: true
         case .overview, .doctor: false
         }
     }
@@ -125,6 +127,12 @@ struct DashboardView: View {
                             selectedStackID: $resources.stackID,
                             openedStackID: $navigation.openedStackID
                         )
+                    case .kubernetes:
+                        KubernetesView(
+                            model: model.clusters, searchText: navigation.searchText,
+                            selection: $resources.clusterName
+                        )
+                        .task(id: model.clusterRuntimeReachable) { await model.clusters.poll() }
                     case .doctor:
                         DoctorView(doctor: doctor)
                     }
@@ -206,6 +214,13 @@ struct DashboardView: View {
                 }
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            if !model.clusterRestartResult.isEmpty {
+                ClusterRestartBanner(lines: model.clusterRestartResult) { model.clusterRestartResult = [] }
+                    .padding(.leading, 10)
+                    .padding(.bottom, 44)
+            }
+        }
         .modifier(ThemedToolbarBackground())
         .modifier(AppThemeInjector())
         .onChange(of: WelcomeSidebarNavigation.shared.destination, initial: true) { _, step in
@@ -256,6 +271,9 @@ struct DashboardView: View {
             return "\(running) of \(model.containers.count) running"
         case .stacks:
             return "\(model.allStacks.count) stacks"
+        case .kubernetes:
+            return model.clusters.availability == .capable
+                ? KubernetesCluster.countLabel(model.clusters.names.count) : ""
         case .images:
             return "\(model.images.count) images"
         case .volumes:

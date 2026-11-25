@@ -411,7 +411,7 @@ struct DoctorTextRendererTests {
         #expect(
             DoctorTextRenderer.printOrder == [
                 .foreignBridge, .socket, .versions, .appRoot, .routes, .dockerContext, .sharedRuntimes,
-                .memoryCommitment,
+                .memoryCommitment, .clusters,
             ]
         )
         #expect(DoctorTextRenderer.printOrder != CheckID.allCases)

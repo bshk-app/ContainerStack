@@ -4,7 +4,7 @@ extension DiagnosticRunner {
     /// The one check whose cost grows with the container count (NFR-001): one inspect per
     /// running container, which is why F-002 keeps it out of the UI set.
     func memoryMeasurement(_ listing: ContainersMeasurement) async -> MemoryMeasurement {
-        let listedContainers: [DockerContainerSummary]
+        var listedContainers: [DockerContainerSummary]
         switch listing {
         case .notAsked:
             return .notAsked
@@ -12,6 +12,13 @@ extension DiagnosticRunner {
             return .unmeasurable(reason: reason)
         case .listed(let listed):
             listedContainers = listed
+        }
+        if clusterDiagnostics != nil {
+            guard let nodes = try? await client.listClusterNodes() else {
+                return .unmeasurable(reason: "Cluster nodes could not be listed through the Docker bridge.")
+            }
+            let alreadyListed = Set(listedContainers.map(\.id))
+            listedContainers.append(contentsOf: nodes.filter { !alreadyListed.contains($0.id) })
         }
         let active = listedContainers.filter(\.isRunning)
         let running = active.filter { !$0.isSession }

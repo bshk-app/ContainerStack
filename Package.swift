@@ -26,7 +26,8 @@ let package = Package(
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.6")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.6"),
+        .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2")
     ],
     targets: [
         .target(name: "ContainerStackCore"),
@@ -34,6 +35,7 @@ let package = Package(
             name: "ContainerStackApp",
             dependencies: [
                 "ContainerStackCore",
+                .product(name: "Yams", package: "Yams"),
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             resources: [.copy("Resources/Lucide")],
@@ -70,5 +72,6 @@ let package = Package(
             dependencies: ["ContainerStackApp", "DiagnosticTestSupport"],
             path: "Tests/ContainerStackAppTests"
         ),
+        .testTarget(name: "CStackCLITests", dependencies: ["CStackCLI", "ContainerStackCore"]),
     ]
 )

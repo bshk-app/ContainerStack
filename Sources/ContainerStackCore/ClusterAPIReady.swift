@@ -1,18 +1,67 @@
+import CoreFoundation
+import Darwin
 import Foundation
 import Security
+import Synchronization
 
 public enum ClusterAPIReady {
+    public enum Result: Sendable, Equatable {
+        case ready, notReady, connectionFailed
+    }
+
+    public static let localNetworkHint =
+        "Likely cause: the runtime has no Local Network permission. Allow container-runtime-linux "
+        + "in System Settings > Privacy & Security > Local Network."
+
+    static func classify(_ error: NSError) -> Result {
+        if error.domain == NSPOSIXErrorDomain {
+            return [Int(ECONNREFUSED), Int(ECONNRESET)].contains(error.code) ? .connectionFailed : .notReady
+        }
+        if let streamDomain = error.userInfo["_kCFStreamErrorDomainKey"] as? Int,
+            let streamCode = error.userInfo["_kCFStreamErrorCodeKey"] as? Int
+        {
+            if streamDomain == 1, [Int(ECONNREFUSED), Int(ECONNRESET)].contains(streamCode) {
+                return .connectionFailed
+            }
+            if error.domain == NSURLErrorDomain, error.code == URLError.secureConnectionFailed.rawValue,
+                streamDomain == Int(kCFStreamErrorDomainSSL),
+                [Int(errSSLClosedNoNotify), Int(errSSLClosedAbort)].contains(streamCode)
+            {
+                return .connectionFailed
+            }
+        }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return classify(underlying)
+        }
+        return .notReady
+    }
+
     public static func isReady(
         endpoint: URL?,
         context: String,
         kubeconfig: URL,
         timeout: Duration = .seconds(3)
     ) async -> Bool {
+        await check(endpoint: endpoint, context: context, kubeconfig: kubeconfig, timeout: timeout) == .ready
+    }
+
+    public static func check(
+        endpoint: URL?, context: String, kubeconfig: URL, timeout: Duration = .seconds(3)
+    ) async -> Result {
+        let result = await observe(endpoint: endpoint, context: context, kubeconfig: kubeconfig, timeout: timeout)
+        ClusterAPIHistory.shared.record(
+            result, for: .init(endpoint: endpoint, context: context, kubeconfig: kubeconfig))
+        return result
+    }
+
+    static func observe(
+        endpoint: URL?, context: String, kubeconfig: URL, timeout: Duration = .seconds(3)
+    ) async -> Result {
         guard let endpoint,
             let text = try? String(contentsOf: kubeconfig, encoding: .utf8),
             let encoded = KubeconfigCA.data(context: context, in: text),
             let anchor = KubeconfigCA.certificate(base64: encoded)
-        else { return false }
+        else { return .notReady }
 
         let seconds = Double(timeout.components.seconds) + Double(timeout.components.attoseconds) / 1e18
         let configuration = URLSessionConfiguration.ephemeral
@@ -25,10 +74,45 @@ public enum ClusterAPIReady {
 
         var request = URLRequest(url: endpoint.appending(path: "readyz"), timeoutInterval: seconds)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        guard let (body, response) = try? await session.data(for: request),
-            (response as? HTTPURLResponse)?.statusCode == 200
-        else { return false }
-        return String(decoding: body, as: UTF8.self) == "ok"
+        do {
+            let (body, response) = try await session.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .notReady }
+            return String(decoding: body, as: UTF8.self) == "ok" ? .ready : .notReady
+        } catch {
+            return classify(error as NSError)
+        }
+    }
+
+}
+
+final class ClusterAPIHistory: Sendable {
+    static let shared = ClusterAPIHistory()
+
+    struct Key: Hashable {
+        let endpoint: URL?
+        let context: String
+        let kubeconfig: URL
+    }
+
+    private struct Sample {
+        let last: ContinuousClock.Instant
+        let firstRefusal: ContinuousClock.Instant?
+    }
+
+    private let samples = Mutex([Key: Sample]())
+
+    @discardableResult
+    func record(_ result: ClusterAPIReady.Result, for key: Key, at now: ContinuousClock.Instant = .now) -> Bool {
+        samples.withLock { values in
+            let previous = values[key]
+            if let previous, now < previous.last { return false }
+            var first: ContinuousClock.Instant?
+            if result == .connectionFailed {
+                first = previous.flatMap { $0.last.duration(to: now) <= .seconds(6) ? $0.firstRefusal : nil } ?? now
+            }
+            values[key] = Sample(last: now, firstRefusal: first)
+            return first.map { $0.duration(to: now) >= .seconds(30) } ?? false
+        }
     }
 }
 

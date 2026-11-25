@@ -83,7 +83,8 @@ struct CStackCLI {
         case "context":
             try context(invocation)
         case "runtime":
-            try runtimeControl(invocation)
+            let status = try await runtimeControl(invocation, client: client)
+            if status != 0 { exit(status) }
         case "cluster":
             await cluster(invocation)
         default:

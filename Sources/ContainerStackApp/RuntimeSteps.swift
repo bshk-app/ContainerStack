@@ -1,3 +1,4 @@
+import AppKit
 import ContainerStackCore
 import Foundation
 
@@ -26,6 +27,16 @@ struct RuntimeSteps {
     var socketWaitTick: Duration = .seconds(1)
 
     var agentRegistered: @MainActor () async -> Bool
+    var clusterPreflight:
+        @MainActor (RuntimeProcessConfiguration, () -> Bool) async -> ClusterRuntimeLifecycle.Preflight = {
+            _, _ in .inspect(question: nil)
+        }
+    var stopClusters:
+        @MainActor (RuntimeProcessConfiguration, ClusterRuntimeLifecycle.Preflight, () -> Bool, (String) -> Void)
+            async -> [String]? = {
+                _, _, _, _ in []
+            }
+    var confirmClusterRestart: @MainActor (String) async -> Bool = { _ in false }
 
     static func live(client: DockerAPIClient) -> RuntimeSteps {
         RuntimeSteps(
@@ -71,8 +82,36 @@ struct RuntimeSteps {
             },
             agentRegistered: {
                 await Task.detached { RuntimeShell.agentRegistered() }.value
+            },
+            clusterPreflight: { configuration, isCurrent in
+                await clusterLifecycle(configuration, client: client).preflight(isCurrent: isCurrent)
+            },
+            stopClusters: { configuration, preflight, isCurrent, progress in
+                await clusterLifecycle(configuration, client: client).stopClusters(
+                    preflight: preflight, isCurrent: isCurrent, progress: progress)
+            },
+            confirmClusterRestart: { question in
+                guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return false }
+                let alert = NSAlert()
+                alert.messageText = "Restart Runtime?"
+                alert.informativeText = question
+                alert.addButton(withTitle: "Cancel").keyEquivalent = "\r"
+                alert.addButton(withTitle: "Restart").keyEquivalent = ""
+                return await withCheckedContinuation { continuation in
+                    alert.beginSheetModal(for: window) { response in
+                        continuation.resume(returning: response == .alertSecondButtonReturn)
+                    }
+                }
             }
         )
+    }
+
+    private static func clusterLifecycle(
+        _ configuration: RuntimeProcessConfiguration, client: DockerAPIClient
+    ) -> ClusterRuntimeLifecycle {
+        ClusterRuntimeLifecycle(
+            containerPath: configuration.containerPath, client: client,
+            home: FileManager.default.homeDirectoryForCurrentUser, environment: ProcessInfo.processInfo.environment)
     }
 
     @MainActor

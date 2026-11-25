@@ -142,12 +142,22 @@ final class DoctorViewModel {
     func perform(_ action: DoctorAction) async {
         guard canPerform(action) else { return }
         repairing = action
+        let preflight: ClusterRuntimeLifecycle.Preflight? =
+            if action == .restartRuntime {
+                await repairs.confirmRuntimeRestart()
+            } else {
+                .inspect(question: nil)
+            }
+        guard let preflight else {
+            repairing = nil
+            return
+        }
         repairFailure = nil
         report = nil
         owesRun = true
         let repaired =
             switch action {
-            case .restartRuntime: await repairs.restartRuntime()
+            case .restartRuntime: await repairs.restartRuntime(preflight)
             case .repairDockerContext: await repairs.repairDockerContext()
             }
         // The app lowers its restart flag before returning, so the model's look at that edge is
@@ -274,7 +284,7 @@ enum DoctorAction: Equatable, Sendable {
 /// The app's existing repairs and the state that gates them, injected so the section's rules are
 /// testable without restarting anything.
 struct DoctorRepairs {
-    var restartRuntime: @MainActor () async -> Bool
+    var restartRuntime: @MainActor (ClusterRuntimeLifecycle.Preflight) async -> Bool
     var repairDockerContext: @MainActor () async -> Bool
     /// `RuntimeViewModel.canRestartRuntime`: false while restarting or starting.
     var canRestartRuntime: @MainActor () -> Bool
@@ -283,11 +293,12 @@ struct DoctorRepairs {
     var isRuntimeRestarting: @MainActor () -> Bool
     var runtimeMessage: @MainActor () -> String? = { nil }
     var runtimeFailure: @MainActor () -> String? = { nil }
+    var confirmRuntimeRestart: @MainActor () async -> ClusterRuntimeLifecycle.Preflight? = { .inspect(question: nil) }
 
     /// For a model with nothing to repair through: every remedy is unavailable.
     static var unavailable: DoctorRepairs {
         DoctorRepairs(
-            restartRuntime: { false },
+            restartRuntime: { _ in false },
             repairDockerContext: { false },
             canRestartRuntime: { false },
             isRuntimeRestarting: { false }
@@ -299,12 +310,17 @@ extension DoctorRepairs {
     /// The app's own: its restart, its context-record repair, and its restart state.
     init(runtime: RuntimeViewModel) {
         self.init(
-            restartRuntime: { [weak runtime] in await runtime?.restartRuntime(replacingSibling: true) ?? false },
+            restartRuntime: { [weak runtime] preflight in
+                guard let runtime else { return false }
+                return await runtime.run(.restart(replacingSibling: true), origin: .user, clusterPreflight: preflight)
+                    == .completed(true)
+            },
             repairDockerContext: { [weak runtime] in await runtime?.repairDockerContextRecord() ?? false },
             canRestartRuntime: { [weak runtime] in runtime?.canRestartRuntime ?? false },
             isRuntimeRestarting: { [weak runtime] in runtime?.isRestarting ?? false },
             runtimeMessage: { [weak runtime] in runtime?.runtimeMessage },
-            runtimeFailure: { [weak runtime] in runtime?.runtimeFailure }
+            runtimeFailure: { [weak runtime] in runtime?.runtimeFailure },
+            confirmRuntimeRestart: { [weak runtime] in await runtime?.confirmRuntimeRestart() }
         )
     }
 }
@@ -313,6 +329,9 @@ extension DoctorViewModel {
     /// The production model: the UI check set, run against the socket and helper the app manages.
     convenience init(runtime: RuntimeViewModel) {
         let configuration = runtime.runtimeConfiguration()
+        let commands = ClusterCommands(
+            containerPath: configuration.containerPath, home: FileManager.default.homeDirectoryForCurrentUser,
+            environment: ProcessInfo.processInfo.environment)
         let runner = DiagnosticRunner(
             client: runtime.client,
             probe: ShellSystemProbe(containerPath: configuration.containerPath),
@@ -321,7 +340,8 @@ extension DoctorViewModel {
             dockerContextSetting: { [weak runtime] in
                 guard let runtime else { return nil }
                 return await DoctorViewModel.contextSetting(of: runtime)
-            }
+            },
+            clusterDiagnostics: ClusterDiagnostics(commands: commands, client: runtime.client)
         )
         self.init(runner: runner, repairs: DoctorRepairs(runtime: runtime))
     }

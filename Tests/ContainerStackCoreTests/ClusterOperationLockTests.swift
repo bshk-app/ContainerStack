@@ -118,6 +118,32 @@ struct ClusterOperationLockTests {
         #expect(try await lock.run { 7 } == 7)
     }
 
+    @Test func expiredWaiterDoesNotWaitForTheOwnerOrRunAfterRelease() async throws {
+        let lock = ClusterOperationLock()
+        let gate = Gate()
+        let events = EventLog()
+        let first = Task {
+            try await lock.run {
+                await events.append("owner")
+                await gate.wait()
+            }
+        }
+        await events.waitFor("owner")
+        await #expect(throws: ProcessRunnerError.self) {
+            try await lock.run(
+                before: .now + .milliseconds(100),
+                timeout: .timedOut(executablePath: "/fake/runtime", seconds: 0.1)
+            ) {
+                await events.append("expired waiter")
+            }
+        }
+        #expect(await events.events == ["owner"])
+        await gate.open()
+        try await first.value
+        try await lock.run { await events.append("next owner") }
+        #expect(await events.events == ["owner", "next owner"])
+    }
+
     @Test("two cluster start requests in one process do not overlap, also through two wrappers")
     func twoStartsDoNotOverlap() async throws {
         let home = try TemporaryHome()

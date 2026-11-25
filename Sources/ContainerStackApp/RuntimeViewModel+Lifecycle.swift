@@ -13,9 +13,11 @@ extension RuntimeViewModel {
     func run(
         _ operation: RuntimeOperation,
         origin: RuntimeOperationOrigin,
-        observed: Int? = nil
+        observed: Int? = nil,
+        clusterPreflight: ClusterRuntimeLifecycle.Preflight = .inspect(question: nil)
     ) async -> RuntimeOperationOutcome {
-        await execute(operation, admit(operation, origin: origin, observed: observed))
+        await execute(
+            operation, admit(operation, origin: origin, observed: observed), clusterPreflight: clusterPreflight)
     }
 
     /// Asks the queue at once, so the order of the calls is the order of the requests whatever
@@ -40,11 +42,21 @@ extension RuntimeViewModel {
             lifecycleTickets[id] = ticket
             turn = .wait(ticket, token: id)
         }
+        switch turn {
+        case .dropped:
+            if origin == .user { return turn }
+        case .run, .wait:
+            clusterRestartResult = []
+        }
+        if origin == .user { manualLifecycleRevision &+= 1 }
         isStopping = lifecycle.latest.isStop
         return turn
     }
 
-    func execute(_ operation: RuntimeOperation, _ turn: LifecycleTurn) async -> RuntimeOperationOutcome {
+    func execute(
+        _ operation: RuntimeOperation, _ turn: LifecycleTurn,
+        clusterPreflight: ClusterRuntimeLifecycle.Preflight = .inspect(question: nil)
+    ) async -> RuntimeOperationOutcome {
         let token: Int
         switch turn {
         case .dropped:
@@ -58,7 +70,9 @@ extension RuntimeViewModel {
 
         // A request superseded before its task got here never begins: its first writes would land
         // over the request that superseded it.
-        let succeeded = lifecycle.isCurrent(token) ? await perform(operation, token: token) : false
+        let succeeded =
+            lifecycle.isCurrent(token)
+            ? await perform(operation, token: token, clusterPreflight: clusterPreflight) : false
 
         let outcome: RuntimeOperationOutcome = lifecycle.isCurrent(token) ? .completed(succeeded) : .superseded
         if let next = lifecycle.finish(token) {
@@ -79,7 +93,24 @@ extension RuntimeViewModel {
     /// restart a person asked for, the only kind that may stop another copy's bridge (F-014).
     @discardableResult
     func restartRuntime(replacingSibling: Bool = false) async -> Bool {
-        await run(.restart(replacingSibling: replacingSibling), origin: .user) == .completed(true)
+        guard let preflight = await confirmRuntimeRestart() else { return false }
+        return await run(.restart(replacingSibling: replacingSibling), origin: .user, clusterPreflight: preflight)
+            == .completed(true)
+    }
+
+    func confirmRuntimeRestart() async -> ClusterRuntimeLifecycle.Preflight? {
+        guard !isCheckingClusterRestart else { return nil }
+        isCheckingClusterRestart = true
+        defer { isCheckingClusterRestart = false }
+        let observed = manualLifecycleRevision
+        let preflight = await steps.clusterPreflight(runtimeConfiguration()) {
+            self.manualLifecycleRevision == observed
+        }
+        guard manualLifecycleRevision == observed else { return nil }
+        if let question = preflight.question {
+            guard await steps.confirmClusterRestart(question), manualLifecycleRevision == observed else { return nil }
+        }
+        return preflight
     }
 
     @discardableResult
@@ -87,11 +118,14 @@ extension RuntimeViewModel {
         await run(.restartBridge, origin: .user) == .completed(true)
     }
 
-    private func perform(_ operation: RuntimeOperation, token: Int) async -> Bool {
+    private func perform(
+        _ operation: RuntimeOperation, token: Int, clusterPreflight: ClusterRuntimeLifecycle.Preflight
+    ) async -> Bool {
         switch operation {
         case .start: await performStart(token: token)
         case .stop(let replacingSibling): await performStop(replacingSibling: replacingSibling, token: token)
-        case .restart(let replacingSibling): await performRestart(replacingSibling: replacingSibling, token: token)
+        case .restart(let replacingSibling):
+            await performRestart(replacingSibling: replacingSibling, token: token, clusterPreflight: clusterPreflight)
         case .restartBridge: await performRestart(replacingSibling: true, bridgeOnly: true, token: token)
         }
     }
@@ -240,13 +274,23 @@ extension RuntimeViewModel {
 
     /// Also runs inline, under Start's token, when Start adopts a bridge from an older build: a
     /// request from inside an operation would be dropped or wait on itself (§3.4).
-    func performRestart(replacingSibling: Bool, bridgeOnly: Bool = false, token: Int) async -> Bool {
+    func performRestart(
+        replacingSibling: Bool, bridgeOnly: Bool = false, token: Int,
+        clusterPreflight: ClusterRuntimeLifecycle.Preflight = .inspect(question: nil)
+    ) async -> Bool {
         runtimeRecoveryRequested = false
         isRestarting = true
         runtimeFailure = nil
+        var clusterResult: [String]?
         defer {
-            if lifecycle.isCurrent(token) { isRestarting = false }
+            if lifecycle.isCurrent(token) {
+                if let clusterResult { clusterRestartResult = clusterResult }
+                isRestarting = false
+            }
         }
+        let configuration = runtimeConfiguration()
+        clusterResult = bridgeOnly ? nil : await stopClusters(configuration, token: token, preflight: clusterPreflight)
+        guard lifecycle.isCurrent(token) else { return false }
         // A helper still alive here would make the `.startBridge` step a silent no-op (#71).
         await endRuntimeHelper()
         guard lifecycle.isCurrent(token) else { return false }
@@ -254,9 +298,11 @@ extension RuntimeViewModel {
         let agentRegistered = await self.steps.agentRegistered()
         guard lifecycle.isCurrent(token) else { return false }
         let plan = bridgeOnly ? RuntimeRestartPlan.bridgeSteps : RuntimeRestartPlan.steps
-        let steps = plan(runtimeConfiguration(), agentRegistered, replacingSibling)
+        let steps = plan(configuration, agentRegistered, replacingSibling)
         var launched = false
         for step in steps {
+            if case .stopClusters = step { continue }
+            defer { step.clearClusterStartEvidenceAfterStep() }
             runtimeMessage = message(for: step)
             if step == .startBridge {
                 guard await launchAndWait(token: token) else { return false }
@@ -289,6 +335,19 @@ extension RuntimeViewModel {
                 }
             }
         )
+    }
+
+    private func stopClusters(
+        _ configuration: RuntimeProcessConfiguration, token: Int, preflight: ClusterRuntimeLifecycle.Preflight
+    ) async -> [String]? {
+        await steps.stopClusters(
+            configuration,
+            preflight,
+            { self.lifecycle.isCurrent(token) },
+            { name in
+                guard self.lifecycle.isCurrent(token) else { return }
+                self.runtimeMessage = "Stopping cluster \(name)…"
+            })
     }
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ContainerStackCore
@@ -54,9 +55,15 @@ struct ClusterCapabilityTests {
     @Test("the top-level help of the old plugin with exit 0 gives not capable")
     func oldPluginIsNotCapable() async throws {
         let home = try TemporaryHome()
-        let recorder = runtime(start: oldHelp, stop: oldHelp)
+        let cache = ClusterCapabilityCache()
+        let first = runtime(start: oldHelp, stop: oldHelp)
+        let second = runtime(start: startHelp, stop: stopHelp)
 
-        #expect(try await probe(home, recorder, cache: ClusterCapabilityCache()) == .noClusterStart)
+        #expect(try await probe(home, first, cache: cache) == .noClusterStart)
+        #expect(try await probe(home, second, cache: cache) == .noClusterStart)
+        #expect(
+            first.launches.map(\.arguments) == [["system", "status"], ["--version"], ["cluster", "start", "--help"]])
+        #expect(second.launches.map(\.arguments) == [["system", "status"], ["--version"]])
     }
 
     @Test("start present and stop missing gives not capable")
@@ -97,12 +104,47 @@ struct ClusterCapabilityTests {
         let cache = ClusterCapabilityCache()
         let failing = ClusterSpawnRecorder { launch in
             launch.arguments.last == "--help"
-                ? .init(status: 1, output: "Error: XPC connection error") : .init(status: 0, output: "v1")
+                ? .init(status: 1, output: oldHelp) : .init(status: 0, output: "v1")
         }
 
         #expect(try await probe(home, failing, cache: cache) == .noClusterStart)
         #expect(
             try await probe(home, runtime(version: "v1", start: startHelp, stop: stopHelp), cache: cache) == .capable)
+    }
+
+    @Test(arguments: ["start", "stop"], [Int32(0), 1])
+    func retriesTransientHelpBeforeReportingUnsupported(subcommand: String, status: Int32) async throws {
+        let home = try TemporaryHome()
+        let cache = ClusterCapabilityCache()
+        let attempts = Mutex(0)
+        let recorder = ClusterSpawnRecorder { launch in
+            if launch.arguments == ["cluster", subcommand, "--help"] {
+                let attempt = attempts.withLock { value in
+                    value += 1
+                    return value
+                }
+                if attempt == 1 { return .init(status: status, output: "", errorOutput: "service unavailable") }
+            }
+            switch launch.arguments {
+            case ["cluster", "start", "--help"]: return .init(status: 0, output: startHelp)
+            case ["cluster", "stop", "--help"]: return .init(status: 0, output: stopHelp)
+            default: return .init(status: 0, output: "v1")
+            }
+        }
+        #expect(try await probe(home, recorder, cache: cache) == .capable)
+        #expect(attempts.withLock { $0 } == 2)
+    }
+
+    @Test func usageLessHelpIsRetriedAndDoesNotHideLaterMatchingHelp() async throws {
+        let home = try TemporaryHome()
+        let cache = ClusterCapabilityCache()
+        let first = runtime(start: "service unavailable", stop: stopHelp)
+        #expect(try await probe(home, first, cache: cache) == .noClusterStart)
+        #expect(
+            first.launches.map(\.arguments) == [
+                ["system", "status"], ["--version"], ["cluster", "start", "--help"], ["cluster", "start", "--help"],
+            ])
+        #expect(try await probe(home, runtime(start: startHelp, stop: stopHelp), cache: cache) == .capable)
     }
 
     @Test("the command tokens of a usage line must end with cluster and the subcommand")

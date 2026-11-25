@@ -13,13 +13,28 @@ public enum ClusterCapability: Equatable, Sendable, CustomStringConvertible {
         }
     }
 
+    fileprivate enum HelpReply {
+        case confirmed
+        case unsupported
+        case transient
+    }
+
     static func usageNames(_ subcommand: String, in help: String) -> Bool {
-        help.split(whereSeparator: \.isNewline).contains { line in
+        helpReply(for: subcommand, in: help) == .confirmed
+    }
+
+    fileprivate static func helpReply(for subcommand: String, in help: String) -> HelpReply {
+        var hasUsage = false
+        for line in help.split(whereSeparator: \.isNewline) {
             let tokens = line.split(whereSeparator: \.isWhitespace)
-            guard tokens.first == "USAGE:" else { return false }
+            guard tokens.first == "USAGE:" else { continue }
+            hasUsage = true
             let command = tokens.dropFirst().prefix { !"[<-".contains($0.first ?? "-") }
-            return command.suffix(2).elementsEqual(["cluster", Substring(subcommand)])
+            if command.suffix(2).elementsEqual(["cluster", Substring(subcommand)]) {
+                return .confirmed
+            }
         }
+        return hasUsage ? .unsupported : .transient
     }
 }
 
@@ -41,23 +56,45 @@ public actor ClusterCapabilityCache {
 
 extension ClusterCommands {
     public func capability() async throws -> ClusterCapability {
+        try await capability(budget: nil)
+    }
+
+    func capability(budget: ClusterCommandBudget?) async throws -> ClusterCapability {
         let probe = ProcessRunner.diagnosticTimeout
-        guard try await launch(["system", "status"], timeout: probe).status == 0 else {
+        guard try await launch(["system", "status"], timeout: probe, budget: budget).status == 0 else {
             return .runtimeNotRunning
         }
-        let build = try await launch(["--version"], timeout: probe).output
-        if let known = await capabilityCache.value(for: build) {
+        return try await clusterCommandCapability(budget: budget)
+    }
+
+    func clusterCommandCapability(budget: ClusterCommandBudget?) async throws -> ClusterCapability {
+        let probe = ProcessRunner.diagnosticTimeout
+        let build = try await launch(["--version"], timeout: probe, budget: budget)
+        if build.status == 0, let known = await capabilityCache.value(for: build.output) {
             return known
         }
         var capability = ClusterCapability.capable
         for subcommand in ["start", "stop"] {
-            let help = try await launch(["cluster", subcommand, "--help"], timeout: probe)
-            guard help.status == 0 else { return .noClusterStart }
-            if !ClusterCapability.usageNames(subcommand, in: help.output) {
+            let reply = try await probeHelp(for: subcommand, timeout: probe, budget: budget)
+            if reply == .transient { return .noClusterStart }
+            if reply == .unsupported {
                 capability = .noClusterStart
+                break
             }
         }
-        await capabilityCache.store(capability, for: build)
+        if build.status == 0 { await capabilityCache.store(capability, for: build.output) }
         return capability
+    }
+
+    private func probeHelp(
+        for subcommand: String, timeout: Duration, budget: ClusterCommandBudget?
+    ) async throws -> ClusterCapability.HelpReply {
+        for _ in 0..<2 {
+            let help = try await launch(["cluster", subcommand, "--help"], timeout: timeout, budget: budget)
+            guard help.status == 0 else { continue }
+            let reply = ClusterCapability.helpReply(for: subcommand, in: help.output)
+            if reply != .transient { return reply }
+        }
+        return .transient
     }
 }

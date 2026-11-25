@@ -4,16 +4,15 @@ import Testing
 
 @testable import ContainerStackCore
 
-private final class Output: @unchecked Sendable {
-    private let lock = NSLock()
-    private var out: [String] = []
-    private var err: [String] = []
+private final class Output: Sendable {
+    private let out = Mutex<[String]>([])
+    private let err = Mutex<[String]>([])
 
-    var standardOutput: String { lock.withLock { out.joined() } }
-    var standardError: String { lock.withLock { err.joined() } }
+    var standardOutput: String { out.withLock { $0.joined() } }
+    var standardError: String { err.withLock { $0.joined() } }
 
-    func write(_ text: String) { lock.withLock { out.append(text) } }
-    func writeError(_ text: String) { lock.withLock { err.append(text) } }
+    func write(_ text: String) { out.withLock { $0.append(text) } }
+    func writeError(_ text: String) { err.withLock { $0.append(text) } }
 }
 
 private final class ReadinessTestClock: Clock {

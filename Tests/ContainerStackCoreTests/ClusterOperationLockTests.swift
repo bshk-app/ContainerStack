@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ContainerStackCore
@@ -120,13 +121,13 @@ struct ClusterOperationLockTests {
     @Test("two cluster start requests in one process do not overlap, also through two wrappers")
     func twoStartsDoNotOverlap() async throws {
         let home = try TemporaryHome()
-        let intervals = NSLock()
-        nonisolated(unsafe) var spans: [(ContinuousClock.Instant, ContinuousClock.Instant)] = []
+        typealias Span = (start: ContinuousClock.Instant, end: ContinuousClock.Instant)
+        let spans = Mutex<[Span]>([])
         let recorder = ClusterSpawnRecorder { _ in
             let begin = ContinuousClock.now
             usleep(200_000)
             let end = ContinuousClock.now
-            intervals.withLock { spans.append((begin, end)) }
+            spans.withLock { $0.append((begin, end)) }
             return .init(status: 0, output: "")
         }
         func commands() -> ClusterCommands {
@@ -134,12 +135,14 @@ struct ClusterOperationLockTests {
                 containerPath: "/opt/runtime/bin/container", home: home.url, environment: [:], spawn: recorder.spawn)
         }
 
-        async let one: Void = commands().start(name: "a")
-        async let two: Void = commands().start(name: "b")
+        let first = commands()
+        let second = commands()
+        async let one: Void = first.start(name: "a")
+        async let two: Void = second.start(name: "b")
         _ = try await (one, two)
 
-        let sorted = intervals.withLock { spans.sorted { $0.0 < $1.0 } }
-        #expect(sorted.count == 2)
-        #expect(sorted[1].0 >= sorted[0].1)
+        let sorted = spans.withLock { $0.sorted { $0.start < $1.start } }
+        try #require(sorted.count == 2)
+        #expect(sorted[1].start >= sorted[0].end)
     }
 }

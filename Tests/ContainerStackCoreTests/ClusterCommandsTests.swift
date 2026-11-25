@@ -1,11 +1,11 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ContainerStackCore
 
-final class ClusterSpawnRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recorded: [ClusterCommands.Launch] = []
+final class ClusterSpawnRecorder: Sendable {
+    private let recorded = Mutex<[ClusterCommands.Launch]>([])
     private let reply: @Sendable (ClusterCommands.Launch) throws -> ProcessRunner.Result
 
     init(
@@ -17,12 +17,12 @@ final class ClusterSpawnRecorder: @unchecked Sendable {
     }
 
     var launches: [ClusterCommands.Launch] {
-        lock.withLock { recorded }
+        recorded.withLock { $0 }
     }
 
     var spawn: ClusterCommands.Spawn {
         { [self] launch in
-            lock.withLock { recorded.append(launch) }
+            recorded.withLock { $0.append(launch) }
             return try reply(launch)
         }
     }

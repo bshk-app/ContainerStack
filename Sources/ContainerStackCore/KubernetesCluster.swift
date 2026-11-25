@@ -11,6 +11,14 @@ public enum ClusterListError: Error, Equatable, Sendable, CustomStringConvertibl
 }
 
 public struct KubernetesCluster: Decodable, Equatable, Sendable {
+    public static func countLabel(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "cluster" : "clusters")"
+    }
+
+    public static func nodeCountLabel(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "node" : "nodes")"
+    }
+
     public enum State: String, Sendable {
         case running, degraded, stopped
     }

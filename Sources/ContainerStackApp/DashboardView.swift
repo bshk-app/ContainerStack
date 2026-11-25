@@ -214,6 +214,13 @@ struct DashboardView: View {
                 }
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            if !model.clusterRestartResult.isEmpty {
+                ClusterRestartBanner(lines: model.clusterRestartResult) { model.clusterRestartResult = [] }
+                    .padding(.leading, 10)
+                    .padding(.bottom, 44)
+            }
+        }
         .modifier(ThemedToolbarBackground())
         .modifier(AppThemeInjector())
         .onChange(of: WelcomeSidebarNavigation.shared.destination, initial: true) { _, step in
@@ -265,7 +272,8 @@ struct DashboardView: View {
         case .stacks:
             return "\(model.allStacks.count) stacks"
         case .kubernetes:
-            return model.clusters.availability == .capable ? "\(model.clusters.names.count) clusters" : ""
+            return model.clusters.availability == .capable
+                ? KubernetesCluster.countLabel(model.clusters.names.count) : ""
         case .images:
             return "\(model.images.count) images"
         case .volumes:

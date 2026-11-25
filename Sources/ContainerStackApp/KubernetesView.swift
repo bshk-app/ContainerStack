@@ -134,6 +134,7 @@ struct KubernetesRow: View {
     let perform: (ClusterAction) -> Void
     let write: () -> Void
     @Environment(\.appTheme) private var theme
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         ResourceRow {
@@ -148,8 +149,10 @@ struct KubernetesRow: View {
                     }
                     Text(summary).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     if let error = row.error {
-                        Text(error).font(.caption).foregroundStyle(theme.destructive)
-                            .textSelection(.enabled)
+                        Text(error).font(.caption).foregroundStyle(
+                            prominence == .increased ? .white.opacity(0.9) : theme.destructive
+                        )
+                        .textSelection(.enabled)
                     }
                     if row.localNetworkHint {
                         Text(ClusterAPIReady.localNetworkHint)
@@ -180,14 +183,14 @@ struct KubernetesRow: View {
     }
 
     private var summary: String {
-        let count = row.cluster.nodes.count
-        let nodes = count == 1 ? "1 node" : "\(count) nodes"
+        let nodes = KubernetesCluster.nodeCountLabel(row.cluster.nodes.count)
         return
             "\(row.cluster.kubernetesVersion) · \(nodes) · \(row.cluster.apiEndpoint?.absoluteString ?? "No API endpoint")"
     }
 
     private var stateColor: Color {
-        switch row.state {
+        if prominence == .increased { return .white.opacity(0.9) }
+        return switch row.state {
         case .running: theme.success
         case .missing, .startFailed: theme.destructive
         default: .secondary

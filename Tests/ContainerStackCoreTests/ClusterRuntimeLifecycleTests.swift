@@ -187,7 +187,7 @@ struct ClusterRuntimeLifecycleTests {
         #expect(
             result
                 == (proven
-                    ? "Clusters dev stop and stay stopped."
+                    ? "Cluster dev stops and stays stopped."
                     : "Cluster dev has more than one node and may not start again."))
         #expect(
             recorder.launches.contains {

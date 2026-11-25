@@ -57,7 +57,8 @@ enum ClusterRowState: Equatable, Sendable {
         case .startFailed: "Start failed"
         case .apiNotReady: "API not ready"
         case .running: "Running"
-        case .degraded(let running, let total): "Degraded: \(running) of \(total) nodes run"
+        case .degraded(let running, let total):
+            "Degraded: \(running) of \(KubernetesCluster.nodeCountLabel(total)) running"
         case .stopped: "Stopped"
         }
     }

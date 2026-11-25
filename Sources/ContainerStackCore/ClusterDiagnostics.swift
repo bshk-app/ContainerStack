@@ -54,7 +54,8 @@ public struct ClusterDiagnostics: Sendable {
     private func measure(
         _ clusters: [KubernetesCluster], started: ContinuousClock.Instant, deadline: ContinuousClock.Instant
     ) async -> DiagnosticCheck {
-        let summary = "\(clusters.count) clusters, \(clusters.filter { $0.state == .running }.count) running"
+        let summary =
+            "\(KubernetesCluster.countLabel(clusters.count)), \(clusters.filter { $0.state == .running }.count) running"
         guard !clusters.isEmpty else { return check(.ok, summary: summary, detail: nil, started: started) }
 
         let remaining = now().duration(to: deadline)

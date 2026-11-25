@@ -64,6 +64,19 @@ struct ClusterDiagnosticsTests {
         #expect(DoctorTextRenderer.render(report) == "0 clusters, 0 running")
     }
 
+    @Test(arguments: [0, 1, 2])
+    func doctorCountsClustersWithNumberAgreement(count: Int) async throws {
+        let home = try TemporaryHome()
+        let names = (0..<count).map { "node-\($0)" }
+        let inventory = "[" + names.map { clusterJSON($0, state: "running") }.joined(separator: ",") + "]"
+        let check = await ClusterDiagnostics(
+            commands: clusterCommands(home, inventory: inventory),
+            client: DockerAPIClient(transport: nodeTransport(present: names)),
+            probe: { _, _, _ in .ready }
+        ).run()
+        #expect(check.summary == ["0 clusters, 0 running", "1 cluster, 1 running", "2 clusters, 2 running"][count])
+    }
+
     @Test func memoryIncludesRunningNodesOnlyFoundThroughTheLabelFilter() async throws {
         let home = try TemporaryHome()
         let transport = StubDockerTransport(byPath: [

@@ -51,14 +51,16 @@ public struct ClusterRuntimeLifecycle: Sendable {
             guard !entries.isEmpty else { return .empty }
             let warnings = entries.compactMap(\.warning)
             let ordinary = entries.filter { $0.risk == nil }.map(\.cluster.name)
-            let question =
-                warnings
-                + (ordinary.isEmpty
-                    ? []
-                    : [
-                        "Clusters \(ordinary.joined(separator: ", ")) stop and stay stopped."
-                    ])
+            let question = warnings + ordinaryRestartWarnings(ordinary)
             return .inspect(question: question.joined(separator: " "))
+        }
+    }
+
+    private func ordinaryRestartWarnings(_ clusterNames: [String]) -> [String] {
+        switch clusterNames.count {
+        case 0: []
+        case 1: ["Cluster \(clusterNames[0]) stops and stays stopped."]
+        default: ["Clusters \(clusterNames.joined(separator: ", ")) stop and stay stopped."]
         }
     }
 

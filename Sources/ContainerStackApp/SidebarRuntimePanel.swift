@@ -9,11 +9,6 @@ struct SidebarRuntimePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if !model.clusterRestartResult.isEmpty {
-                clusterRestartBanner
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 8)
-            }
             Rectangle()
                 .fill(theme.hairline)
                 .frame(height: 0.5)
@@ -142,22 +137,6 @@ struct SidebarRuntimePanel: View {
         .accessibilityLabel("Runtime actions")
     }
 
-    private var clusterRestartBanner: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text(model.clusterRestartResult.joined(separator: "\n"))
-                .font(.caption)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Dismiss cluster restart result", systemImage: "xmark") {
-                model.clusterRestartResult = []
-            }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-        }
-        .padding(8)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
-    }
-
     private var unhealthyMessage: String? {
         model.isHealthy ? nil : model.runtimeMessage
     }
@@ -185,5 +164,33 @@ struct SidebarRuntimePanel: View {
         case .unknown:
             Circle().fill(.secondary).frame(width: 8, height: 8)
         }
+    }
+}
+
+struct ClusterRestartBanner: View {
+    let lines: [String]
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            ViewThatFits(in: .vertical) {
+                message
+                ScrollView { message }
+            }
+            .frame(maxHeight: 128)
+            Button("Dismiss cluster restart result", systemImage: "xmark", action: dismiss)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+        }
+        .padding(8)
+        .frame(width: 176)
+        .background(.regularMaterial, in: .rect(cornerRadius: 6))
+    }
+
+    private var message: some View {
+        Text(lines.joined(separator: "\n"))
+            .font(.caption)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

@@ -58,15 +58,24 @@ extension ClusterCommands {
         if build.status == 0, let known = await capabilityCache.value(for: build.output) {
             return known
         }
-        var capability = ClusterCapability.capable
         for subcommand in ["start", "stop"] {
-            let help = try await launch(["cluster", subcommand, "--help"], timeout: probe, budget: budget)
-            guard help.status == 0 else { return .noClusterStart }
-            if !ClusterCapability.usageNames(subcommand, in: help.output) {
-                capability = .noClusterStart
+            guard try await confirmsHelp(for: subcommand, timeout: probe, budget: budget) else {
+                return .noClusterStart
             }
         }
-        if build.status == 0 { await capabilityCache.store(capability, for: build.output) }
-        return capability
+        if build.status == 0 { await capabilityCache.store(.capable, for: build.output) }
+        return .capable
+    }
+
+    private func confirmsHelp(
+        for subcommand: String, timeout: Duration, budget: ClusterCommandBudget?
+    ) async throws -> Bool {
+        for _ in 0..<2 {
+            let help = try await launch(["cluster", subcommand, "--help"], timeout: timeout, budget: budget)
+            if help.status == 0, ClusterCapability.usageNames(subcommand, in: help.output) {
+                return true
+            }
+        }
+        return false
     }
 }

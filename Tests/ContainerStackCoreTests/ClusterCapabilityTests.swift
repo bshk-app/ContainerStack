@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import ContainerStackCore
@@ -103,6 +104,36 @@ struct ClusterCapabilityTests {
         #expect(try await probe(home, failing, cache: cache) == .noClusterStart)
         #expect(
             try await probe(home, runtime(version: "v1", start: startHelp, stop: stopHelp), cache: cache) == .capable)
+    }
+
+    @Test(arguments: ["start", "stop"], [Int32(0), 1])
+    func retriesTransientHelpBeforeReportingUnsupported(subcommand: String, status: Int32) async throws {
+        let home = try TemporaryHome()
+        let cache = ClusterCapabilityCache()
+        let attempts = Mutex(0)
+        let recorder = ClusterSpawnRecorder { launch in
+            if launch.arguments == ["cluster", subcommand, "--help"] {
+                let attempt = attempts.withLock { value in
+                    value += 1
+                    return value
+                }
+                if attempt == 1 { return .init(status: status, output: "", errorOutput: "service unavailable") }
+            }
+            switch launch.arguments {
+            case ["cluster", "start", "--help"]: return .init(status: 0, output: startHelp)
+            case ["cluster", "stop", "--help"]: return .init(status: 0, output: stopHelp)
+            default: return .init(status: 0, output: "v1")
+            }
+        }
+        #expect(try await probe(home, recorder, cache: cache) == .capable)
+        #expect(attempts.withLock { $0 } == 2)
+    }
+
+    @Test func anUnsupportedResultDoesNotHideLaterMatchingHelpInTheSameProcess() async throws {
+        let home = try TemporaryHome()
+        let cache = ClusterCapabilityCache()
+        #expect(try await probe(home, runtime(start: oldHelp, stop: oldHelp), cache: cache) == .noClusterStart)
+        #expect(try await probe(home, runtime(start: startHelp, stop: stopHelp), cache: cache) == .capable)
     }
 
     @Test("the command tokens of a usage line must end with cluster and the subcommand")

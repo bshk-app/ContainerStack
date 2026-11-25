@@ -55,9 +55,15 @@ struct ClusterCapabilityTests {
     @Test("the top-level help of the old plugin with exit 0 gives not capable")
     func oldPluginIsNotCapable() async throws {
         let home = try TemporaryHome()
-        let recorder = runtime(start: oldHelp, stop: oldHelp)
+        let cache = ClusterCapabilityCache()
+        let first = runtime(start: oldHelp, stop: oldHelp)
+        let second = runtime(start: startHelp, stop: stopHelp)
 
-        #expect(try await probe(home, recorder, cache: ClusterCapabilityCache()) == .noClusterStart)
+        #expect(try await probe(home, first, cache: cache) == .noClusterStart)
+        #expect(try await probe(home, second, cache: cache) == .noClusterStart)
+        #expect(
+            first.launches.map(\.arguments) == [["system", "status"], ["--version"], ["cluster", "start", "--help"]])
+        #expect(second.launches.map(\.arguments) == [["system", "status"], ["--version"]])
     }
 
     @Test("start present and stop missing gives not capable")
@@ -98,7 +104,7 @@ struct ClusterCapabilityTests {
         let cache = ClusterCapabilityCache()
         let failing = ClusterSpawnRecorder { launch in
             launch.arguments.last == "--help"
-                ? .init(status: 1, output: "Error: XPC connection error") : .init(status: 0, output: "v1")
+                ? .init(status: 1, output: oldHelp) : .init(status: 0, output: "v1")
         }
 
         #expect(try await probe(home, failing, cache: cache) == .noClusterStart)
@@ -129,10 +135,15 @@ struct ClusterCapabilityTests {
         #expect(attempts.withLock { $0 } == 2)
     }
 
-    @Test func anUnsupportedResultDoesNotHideLaterMatchingHelpInTheSameProcess() async throws {
+    @Test func usageLessHelpIsRetriedAndDoesNotHideLaterMatchingHelp() async throws {
         let home = try TemporaryHome()
         let cache = ClusterCapabilityCache()
-        #expect(try await probe(home, runtime(start: oldHelp, stop: oldHelp), cache: cache) == .noClusterStart)
+        let first = runtime(start: "service unavailable", stop: stopHelp)
+        #expect(try await probe(home, first, cache: cache) == .noClusterStart)
+        #expect(
+            first.launches.map(\.arguments) == [
+                ["system", "status"], ["--version"], ["cluster", "start", "--help"], ["cluster", "start", "--help"],
+            ])
         #expect(try await probe(home, runtime(start: startHelp, stop: stopHelp), cache: cache) == .capable)
     }
 
